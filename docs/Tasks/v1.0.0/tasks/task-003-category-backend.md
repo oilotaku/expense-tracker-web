@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: 分類 Category（後端，含系統預設種子）
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
