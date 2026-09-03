@@ -42,20 +42,14 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("uid", name="pk_financial_assets"),
         sa.UniqueConstraint("financial_asset_uid", name="uq_financial_assets_financial_asset_uid"),
         sa.ForeignKeyConstraint(["user_uid"], ["users.user_uid"], name="fk_financial_assets_users"),
-        sa.CheckConstraint(
-            "asset_type IN ('stock', 'metal')", name="ck_financial_assets_asset_type"
-        ),
+        sa.CheckConstraint("asset_type IN ('stock', 'metal')", name="asset_type"),
         sa.CheckConstraint(
             "(asset_type = 'stock' AND input_unit IN ('張', '股')) OR "
             "(asset_type = 'metal' AND input_unit IN ('兩', '錢'))",
-            name="ck_financial_assets_input_unit",
+            name="input_unit",
         ),
-        sa.CheckConstraint(
-            "input_quantity > 0", name="ck_financial_assets_input_quantity_positive"
-        ),
-        sa.CheckConstraint(
-            "base_quantity > 0", name="ck_financial_assets_base_quantity_positive"
-        ),
+        sa.CheckConstraint("input_quantity > 0", name="input_quantity_positive"),
+        sa.CheckConstraint("base_quantity > 0", name="base_quantity_positive"),
         if_not_exists=True,
     )
     op.create_index(
