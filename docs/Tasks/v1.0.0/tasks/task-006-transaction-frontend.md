@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: 交易輸入 / 清單前端頁
-status: pending
+status: done
 parallel: false
 depends_on: [task-004]
 affected_files:
