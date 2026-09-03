@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: 交易 Transaction + 標籤 Tag（後端）
-status: pending
+status: done
 parallel: false
 depends_on: [task-001, task-002, task-003]
 affected_files:
