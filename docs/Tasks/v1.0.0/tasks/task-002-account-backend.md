@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 帳戶 Account（後端）
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
