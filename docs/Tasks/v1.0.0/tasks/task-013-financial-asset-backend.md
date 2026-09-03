@@ -1,7 +1,7 @@
 ---
 id: task-013
 title: 金融資產 FinancialAsset（後端，張/股、兩/錢換算）
-status: pending
+status: done
 parallel: false
 depends_on: [task-001, task-011, task-012]
 affected_files:
