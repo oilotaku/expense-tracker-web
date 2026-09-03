@@ -1,9 +1,9 @@
 # Tasks v1.0.0 — expense-tracker-web
 
-> 狀態：進行中（已完成 9/18）　盲點掃描：propose 拆解前已用 AskUserQuestion 解決三個缺口（負債輸入方式、分類/標籤結構、週期性交易月底夾日規則），已回寫 `propose-v1.0.0.md`。報價資料源仍未定案 → task-011 / task-012 為調查 spike，其結論會影響 task-013 / task-014 的實作細節（非阻塞拆解，可先拆）。
+> 狀態：進行中（已完成 10/18）　盲點掃描：propose 拆解前已用 AskUserQuestion 解決三個缺口（負債輸入方式、分類/標籤結構、週期性交易月底夾日規則），已回寫 `propose-v1.0.0.md`。報價資料源仍未定案 → task-011 / task-012 為調查 spike，其結論會影響 task-013 / task-014 的實作細節（非阻塞拆解，可先拆）。
 > 格式定義：`HARNESS_HOME/rules/00-core/10-propose-tasks-fixed.md`。
 
-- **狀態**：進行中（9 / 18）
+- **狀態**：進行中（10 / 18）
 - **來源**：`propose-v1.0.0.md`
 - **更新**：2026-09-03
 
@@ -16,7 +16,7 @@
 | 003 | 分類 Category（後端，含系統預設種子） | done | ✓ | task-001 | `backend/app/models/category.py`、`backend/app/schemas/category.py`、`backend/app/api/v1/categories.py`、`backend/app/repositories/category_repository.py`、`backend/alembic/versions/{rev}_add_categories.py`、`backend/tests/api/test_categories.py` | sub-agent |
 | 004 | 交易 Transaction + 標籤 Tag（後端） | done |  | task-001, task-002, task-003 | `backend/app/models/transaction.py`、`backend/app/models/tag.py`、`backend/app/schemas/transaction.py`、`backend/app/api/v1/transactions.py`、`backend/app/repositories/transaction_repository.py`、`backend/alembic/versions/{rev}_add_transactions_and_tags.py`、`backend/tests/api/test_transactions.py` | sub-agent |
 | 005 | 認證前端頁面 | done | ✓ | task-001 | `frontend/src/lib/api/authApi.ts`、`frontend/src/app/login/page.tsx`、`frontend/src/app/register/page.tsx`、`frontend/src/components/AuthGuard.tsx` | sub-agent |
-| 006 | 交易輸入 / 清單前端頁 | in_progress |  | task-004 | `frontend/src/lib/api/transactionsApi.ts`、`frontend/src/app/transactions/page.tsx`、`frontend/src/components/TransactionForm.tsx`、`frontend/src/components/TransactionList.tsx` | sub-agent |
+| 006 | 交易輸入 / 清單前端頁 | done |  | task-004 | `frontend/src/lib/api/transactionsApi.ts`、`frontend/src/app/transactions/page.tsx`、`frontend/src/components/TransactionForm.tsx`、`frontend/src/components/TransactionList.tsx` | sub-agent |
 | 007 | 週期性交易（後端，含月底夾日） | in_progress |  | task-004 | `backend/app/models/recurring_rule.py`、`backend/app/schemas/recurring_rule.py`、`backend/app/api/v1/recurring_rules.py`、`backend/app/services/recurring_service.py`、`backend/alembic/versions/{rev}_add_recurring_rules.py`、`backend/tests/services/test_recurring_service.py` | sub-agent |
 | 008 | 週期性交易前端設定頁 | pending |  | task-007 | `frontend/src/lib/api/recurringApi.ts`、`frontend/src/app/recurring/page.tsx` | — |
 | 009 | 預算 Budget（後端） | in_progress |  | task-003, task-004 | `backend/app/models/budget.py`、`backend/app/schemas/budget.py`、`backend/app/api/v1/budgets.py`、`backend/app/services/budget_service.py`、`backend/alembic/versions/{rev}_add_budgets.py`、`backend/tests/api/test_budgets.py` | sub-agent |
