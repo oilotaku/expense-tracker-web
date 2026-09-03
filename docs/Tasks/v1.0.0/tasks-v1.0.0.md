@@ -1,9 +1,9 @@
 # Tasks v1.0.0 — expense-tracker-web
 
-> 狀態：進行中（已完成 7/18）　盲點掃描：propose 拆解前已用 AskUserQuestion 解決三個缺口（負債輸入方式、分類/標籤結構、週期性交易月底夾日規則），已回寫 `propose-v1.0.0.md`。報價資料源仍未定案 → task-011 / task-012 為調查 spike，其結論會影響 task-013 / task-014 的實作細節（非阻塞拆解，可先拆）。
+> 狀態：進行中（已完成 8/18）　盲點掃描：propose 拆解前已用 AskUserQuestion 解決三個缺口（負債輸入方式、分類/標籤結構、週期性交易月底夾日規則），已回寫 `propose-v1.0.0.md`。報價資料源仍未定案 → task-011 / task-012 為調查 spike，其結論會影響 task-013 / task-014 的實作細節（非阻塞拆解，可先拆）。
 > 格式定義：`HARNESS_HOME/rules/00-core/10-propose-tasks-fixed.md`。
 
-- **狀態**：進行中（7 / 18）
+- **狀態**：進行中（8 / 18）
 - **來源**：`propose-v1.0.0.md`
 - **更新**：2026-09-03
 
@@ -23,7 +23,7 @@
 | 010 | 預算前端頁（設定 + 進度顯示） | pending |  | task-009 | `frontend/src/lib/api/budgetsApi.ts`、`frontend/src/app/budgets/page.tsx` | — |
 | 011 | 股票報價來源 spike | done | ✓ | — | `docs/Arch/adr/0001-stock-price-source.md` | sub-agent |
 | 012 | 貴金屬報價來源 spike | done | ✓ | — | `docs/Arch/adr/0002-metal-price-source.md` | sub-agent |
-| 013 | 金融資產 FinancialAsset（後端，張/股、兩/錢換算） | in_progress |  | task-001, task-011, task-012 | `backend/app/models/financial_asset.py`、`backend/app/schemas/financial_asset.py`、`backend/app/api/v1/financial_assets.py`、`backend/app/utils/unit_conversion.py`、`backend/alembic/versions/{rev}_add_financial_assets.py`、`backend/tests/utils/test_unit_conversion.py` | sub-agent |
+| 013 | 金融資產 FinancialAsset（後端，張/股、兩/錢換算） | done |  | task-001, task-011, task-012 | `backend/app/models/financial_asset.py`、`backend/app/schemas/financial_asset.py`、`backend/app/api/v1/financial_assets.py`、`backend/app/utils/unit_conversion.py`、`backend/alembic/versions/{rev}_add_financial_assets.py`、`backend/tests/utils/test_unit_conversion.py` | sub-agent |
 | 014 | 報價 client + Redis 快取層 | pending |  | task-011, task-012, task-013 | `backend/app/clients/stock_price_client.py`、`backend/app/clients/metal_price_client.py`、`backend/app/core/cache.py`、`backend/app/services/pricing_service.py`、`docker-compose.yml`、`.env`、`backend/pyproject.toml`、`backend/tests/services/test_pricing_service.py` | — |
 | 015 | 負債 Liability（後端） | done | ✓ | task-001 | `backend/app/models/liability.py`、`backend/app/schemas/liability.py`、`backend/app/api/v1/liabilities.py`、`backend/alembic/versions/{rev}_add_liabilities.py`、`backend/tests/api/test_liabilities.py` | sub-agent |
 | 016 | 總資產 / 總負債彙總 API | pending |  | task-002, task-013, task-014, task-015 | `backend/app/services/net_worth_service.py`、`backend/app/api/v1/net_worth.py`、`backend/app/schemas/net_worth.py`、`backend/tests/api/test_net_worth.py` | — |
