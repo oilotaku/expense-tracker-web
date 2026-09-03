@@ -1,0 +1,26 @@
+# scaffold-version: 2.1
+#
+# 全庫 LF（CORE-143）。Windows 上 git 預設 core.autocrlf=true，若沒有本檔，backend/ 的 .py 與
+# docker/ 的 Dockerfile 會以 CRLF 簽出：ruff format --check 直接失敗，容器內的
+# entrypoint / shell script 會出現 `bad interpreter`。跨平台團隊必備。
+
+* text=auto eol=lf
+
+*.py     text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.mjs    text eol=lf
+*.js     text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
+*.css    text eol=lf
+*.mako   text eol=lf
+Dockerfile text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

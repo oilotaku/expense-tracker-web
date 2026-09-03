@@ -1,0 +1,10 @@
+title = "expense-tracker-web gitleaks config"
+
+[extend]
+useDefault = true
+
+# 只豁免 .env.<env>.example（內容為 <generate-32-bytes-hex> 佔位，無真值）。
+# docs/ 不豁免；不放任何金鑰字面值到 allowlist。
+[allowlist]
+description = "env example 範本"
+paths = ['''\.env\.[a-z]+\.example$''']

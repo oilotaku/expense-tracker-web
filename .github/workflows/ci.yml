@@ -1,0 +1,161 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test -- --run
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      # CORE-144：模板產物 build 後不得出現未預期的 git 差異（例如工具自己改寫 tsconfig.json）
+      - name: build 不得改動版控檔
+        run: git diff --exit-code
+
+  backend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: ci_test
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          TZ: UTC
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://ci:ci-only-not-a-secret@localhost:5432/ci_test
+      JWT_SECRET_KEY: ci-only-jwt-secret-not-for-production-0000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/pyproject.toml
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app
+      - run: uv run alembic upgrade head
+      - run: uv run pytest
+  dependency-audit:
+    # CICD-028：硬 gate，**禁** continue-on-error。audit 指令本身不決定成敗（`|| true` 只是讓
+    # 報告產出來），由 scripts/audit-gate.mjs 比對 security/audit-exceptions.json 決定：
+    # 未登記的 high / critical → fail；登記的例外必須具名且有 review_by，過期同樣 fail。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm audit（production 依賴）
+        working-directory: ./frontend
+        run: npm audit --omit=dev --audit-level=high --json > npm-audit.json || true
+      - name: npm audit gate
+        run: node scripts/audit-gate.mjs npm frontend/npm-audit.json
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/pyproject.toml
+      - name: pip-audit
+        working-directory: ./backend
+        run: |
+          uv sync --frozen
+          uv run pip-audit -f json -o pip-audit.json || true
+      - name: pip-audit gate
+        run: node scripts/audit-gate.mjs pip backend/pip-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit-reports
+          path: |
+            frontend/npm-audit.json
+            backend/pip-audit.json
+          retention-days: 14
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  sast:
+    runs-on: ubuntu-latest
+    container:
+      # CICD-033：鎖 tag，不用浮動的 latest（版本表 rules/00-core/01-versions.md）
+      image: semgrep/semgrep:1.175.0
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep ci --config p/owasp-top-ten --config p/python --config p/typescript --config p/react --config p/secrets
+        env:
+          SEMGREP_SEND_METRICS: "off"
+
+  container-scan:
+    runs-on: ubuntu-latest
+    needs: [frontend-test, backend-test]
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            dockerfile: docker/backend/Dockerfile
+          - name: frontend
+            dockerfile: docker/frontend/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: build image
+        run: >-
+          docker build -f ${{ matrix.dockerfile }}
+          --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+          -t expense-tracker-web-${{ matrix.name }}:ci .
+      - uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: expense-tracker-web-${{ matrix.name }}:ci
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

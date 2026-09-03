@@ -1,0 +1,50 @@
+# scaffold-version: 2.1
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+coverage/
+next-env.d.ts
+*.tsbuildinfo
+
+# 依賴稽核報告（CI 產生後交給 scripts/audit-gate.mjs，不進版控）
+npm-audit.json
+pip-audit.json
+openapi.json
+
+# Env（每層 .env.<env> 對應 .env.<env>.example；只有 example 進版控）
+.env
+.env.development
+.env.staging
+.env.production
+!.env.*.example
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Misc
+*.log
+*.bak
+
+# Playwright
+playwright-report/
+test-results/
+
+# Harness task workflow runs（本機執行紀錄，不進版控）
+docs/Tasks/*/workflow/
+
+# Harness 本機位置（絕對路徑只在此，不進版控）
+.claude/harness.local.json

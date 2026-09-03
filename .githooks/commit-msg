@@ -1,0 +1,3 @@
+#!/bin/sh
+# .githooks/commit-msg — 跨工具 commit message 格式驗證（→ CORE-087）；由 /harness-init 安裝並設 core.hooksPath
+exec node "$(dirname "$0")/commit-msg.mjs" "$1"

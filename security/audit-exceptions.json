@@ -1,0 +1,12 @@
+{
+  "$comment": "依賴稽核例外清單。CI 的 dependency-audit 是硬 gate：任何 high / critical 漏洞都會擋 PR。真的無法立即修的上游問題才寫進這裡，且必須具名、具日期。空陣列＝目前沒有任何被接受的風險。",
+  "$schema_note": {
+    "id": "GHSA-xxxx-xxxx-xxxx（npm）或 PYSEC-xxxx-xx / GHSA-xxxx（pip-audit 回報的 id）",
+    "package": "受影響套件名",
+    "reason": "為什麼現在不能修（例：上游尚未釋出修補版 / 修補版跨 major 需先評估）",
+    "owner": "接受這個風險的人（角色或帳號）",
+    "review_by": "YYYY-MM-DD；到期後 CI 直接 fail，強制重新檢視。禁止填寫超過 90 天後的日期"
+  },
+  "npm": [],
+  "pip": []
+}
