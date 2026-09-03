@@ -47,4 +47,4 @@ async def login(
     summary="取得目前登入使用者",
 )
 async def me(current_user: CurrentUser) -> ApiResponse[UserResponse]:
-    return success(data=current_user)
+    return success(data=UserResponse.model_validate(current_user))
