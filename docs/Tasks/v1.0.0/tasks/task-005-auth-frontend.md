@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 認證前端頁面
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
