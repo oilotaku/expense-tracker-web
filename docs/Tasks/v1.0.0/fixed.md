@@ -55,10 +55,21 @@
 ## §4 — `tests/test_health.py::test_health_ok` 在跑完整測試套件時偶發 teardown flake（既存，非當版邏輯錯誤）
 
 - **time**: 2026-09-04T06:15:00+08:00
-- **commit**: `pending`
+- **commit**: `8ac72d1`
 - **files**: `backend/tests/test_health.py`、`backend/tests/conftest.py`（推測，尚未深查）
 - **問題**: `docker compose exec backend uv run pytest -q`（跑全部測試檔）偶爾在 `test_health.py::test_health_ok` 報 `RuntimeError: Event loop is closed`（asyncpg connection pool 在 event loop 已關閉後才嘗試 cancel 連線）；單獨跑 `pytest tests/test_health.py` 100% 通過，task-002 與 task-003 的 worker 各自獨立複測過，排除掉自己的改動後依然重現，判斷是既存的 pytest-asyncio + asyncpg fixture 生命週期問題，不是任何一個 task 引入的邏輯錯誤。
 - **根因**: 尚未深入定位；初步推測是多個測試檔共用的 DB session / event loop fixture 在跨檔案執行時的作用域（scope）與 asyncpg pool 的非同步清理時機沒對齊，導致某個連線的 cancel 協程在 event loop 關閉後才被排程。scaffold 產的 `conftest.py` 的 fixture scope 設定可能需要檢視。
 - **修正**: 尚未修正（本次不影響任何 task 的 Acceptance——各 task 都是各自檔案跑綠，全套件跑動只是這一個既存 flake）。暫時因應：CI / 驗收時若遇到這個特定錯誤且只有這一個測試失敗，視為已知 flake，重跑一次確認是否為間歇性，不代表功能壞掉。
 - **rule**: NONE
 - **後續**: 待後續某個 task 需要動 `conftest.py`（例如新增測試 fixture）時一併排查修正；若持續影響 CI 穩定性，應獨立開一個小 task 處理（`estimated_hours: 2` 等級），而非放著不管。
+
+## §5 — CheckConstraint 顯式命名被 naming_convention 雙重前綴（DB naming convention 陷阱）
+
+- **time**: 2026-09-04T06:35:00+08:00
+- **commit**: `ece64d2`
+- **files**: `backend/alembic/versions/2026_09_04_1000-add_financial_assets.py`
+- **問題**: task-004 的 worker 在修自己 migration 的同類問題時，順帶發現 task-013 的 `financial_assets` migration 也有一樣的 bug：`\d financial_assets` 顯示 CHECK constraint 名稱變成 `ck_financial_assets_ck_financial_assets_asset_type`（前綴重複兩次），不是預期的 `ck_financial_assets_asset_type`。task-013 自己的 Acceptance 沒測到（沒斷言 constraint 名稱），所以先前回報全綠沒發現。
+- **根因**: `backend/app/core/db.py` 的 `NAMING_CONVENTION["ck"] = "ck_%(table_name)s_%(constraint_name)s"`——`%(constraint_name)s` 這個 token 的語意是「把你傳給 `name=` 的字串原樣塞進這個位置」，也就是說 `ck` 這條規則**設計上就預期你傳的是短標籤**（例如 `"asset_type"`），讓 SQLAlchemy 自己組出完整名稱。如果你手動先組好完整名稱再傳進去（例如 `name="ck_financial_assets_asset_type"`），SQLAlchemy 還是會再套一次 template，前綴就重複了。這跟 `pk`/`uq`/`fk`/`ix` 那幾條規則不同——那些規則的 template 用的是 `%(table_name)s`／`%(column_0_N_name)s`／`%(referred_table_name)s`，不會回頭引用你傳的 `name=`，所以那幾種即使傳完整名稱也不會出錯（已用 accounts/categories/liabilities 等既有 migration 驗證過，都正確）。**只有 `CheckConstraint` 的 `name=` 必須傳短標籤，其餘 constraint 類型維持現有的完整命名寫法即可。**
+- **修正**: 1. 把四個 `CheckConstraint` 的 `name=` 從完整字串改成短標籤（如 `"asset_type"`）。2. 因為表已經在本機 dev DB 建立過（帶壞名字），用 `ALTER TABLE financial_assets RENAME CONSTRAINT <壞名字> TO <正確名字>`（純改名，非 DROP，不違反毀滅性操作禁令）手動同步 dev DB，讓它跟修正後的 migration 原始碼一致。3. 重建 image、`ruff`/`mypy`/`pytest` 全部重跑確認無回歸。
+- **rule**: NONE（屬於 SQLAlchemy 使用方式問題，非 harness 規則層級；`rules/30-database/00-overview.md` 的命名規則本身沒錯，是實作時對 `%(constraint_name)s` 語意理解錯誤）
+- **後續**: 之後任何 task 若在 migration 裡寫 `sa.CheckConstraint(...)`，`name=` 一律只給短標籤（不含 `ck_<table>_` 前綴），讓 naming_convention 自己組出完整名稱；`pk`/`uq`/`fk`/`ix` 則維持傳完整名稱的現有寫法（兩者规则不同，不要混用同一套心智模型）。建議之後開一個小任務（或併入某個既有 backend task）在 CI 加一條檢查：`SELECT conname FROM pg_constraint WHERE conname LIKE 'ck_%_ck_%'`，抓到就代表又犯了同樣的錯。
