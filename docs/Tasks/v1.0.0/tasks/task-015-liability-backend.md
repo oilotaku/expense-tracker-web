@@ -1,7 +1,7 @@
 ---
 id: task-015
 title: 負債 Liability（後端）
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:

@@ -51,3 +51,14 @@
 - **修正**: 1. `docker compose up -d --build backend` 重建 image，確認 host 上的兩份 migration 檔案其實乾淨（各自 `down_revision = "1046b568e121"`，非循環）。2. 用 `alembic merge -m merge_accounts_and_liabilities <accounts_rev> <liabilities_rev>` 產生合併 revision，整理成專案慣用格式後放回 `backend/alembic/versions/`。3. 驗證 `alembic upgrade head` 成功、單一 head；`alembic downgrade -1` 在合併點會報 `Ambiguous walk`（alembic 已知行為——合併點無法用相對 `-1` 判斷要走哪條分支），改用明確 revision（`alembic downgrade <accounts_rev>`）驗證 round-trip 正常。
 - **rule**: DB-049
 - **後續**: (a) 任何要跑 `docker compose exec backend ...` 驗證 migration / 程式碼行為的 worker，**必須先 `docker compose up -d --build backend` 重建**，否則看到的是舊快照，可能誤判成假的嚴重錯誤；這條應該補進 `AGENTS.md` 或至少每個 task 檔的必讀提醒。(b) 未來若有多個 `parallel: true` task 各自新增 migration 且共享同一個 parent revision，`/propose-to-tasks` 拆解時應該預先安排一個「合併」收尾 task（或由 orchestrator 在多個平行 migration task 完成後自動跑 `alembic merge`），不要假設「檔案不重疊」就等於「這些 task 可以真正平行完成而不需要協調」。(c) 往後任何 task 的 Acceptance 若寫「`alembic downgrade -1` round-trip」，遇到 head 是合併 revision 時要改用明確 revision id，`-1` 在合併點是已知的 ambiguous 案例，不是 bug。
+
+## §4 — `tests/test_health.py::test_health_ok` 在跑完整測試套件時偶發 teardown flake（既存，非當版邏輯錯誤）
+
+- **time**: 2026-09-04T06:15:00+08:00
+- **commit**: `pending`
+- **files**: `backend/tests/test_health.py`、`backend/tests/conftest.py`（推測，尚未深查）
+- **問題**: `docker compose exec backend uv run pytest -q`（跑全部測試檔）偶爾在 `test_health.py::test_health_ok` 報 `RuntimeError: Event loop is closed`（asyncpg connection pool 在 event loop 已關閉後才嘗試 cancel 連線）；單獨跑 `pytest tests/test_health.py` 100% 通過，task-002 與 task-003 的 worker 各自獨立複測過，排除掉自己的改動後依然重現，判斷是既存的 pytest-asyncio + asyncpg fixture 生命週期問題，不是任何一個 task 引入的邏輯錯誤。
+- **根因**: 尚未深入定位；初步推測是多個測試檔共用的 DB session / event loop fixture 在跨檔案執行時的作用域（scope）與 asyncpg pool 的非同步清理時機沒對齊，導致某個連線的 cancel 協程在 event loop 關閉後才被排程。scaffold 產的 `conftest.py` 的 fixture scope 設定可能需要檢視。
+- **修正**: 尚未修正（本次不影響任何 task 的 Acceptance——各 task 都是各自檔案跑綠，全套件跑動只是這一個既存 flake）。暫時因應：CI / 驗收時若遇到這個特定錯誤且只有這一個測試失敗，視為已知 flake，重跑一次確認是否為間歇性，不代表功能壞掉。
+- **rule**: NONE
+- **後續**: 待後續某個 task 需要動 `conftest.py`（例如新增測試 fixture）時一併排查修正；若持續影響 CI 穩定性，應獨立開一個小 task 處理（`estimated_hours: 2` 等級），而非放著不管。
