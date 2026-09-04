@@ -1,4 +1,4 @@
-# Next.js standalone；NODE_VERSION / NEXT_PUBLIC_API_URL 由 docker-compose.yml 傳入
+# Next.js standalone；NODE_VERSION / NEXT_PUBLIC_API_URL / APP_ENV 由 docker-compose.yml 傳入
 ARG NODE_VERSION=24
 
 FROM node:${NODE_VERSION}-alpine AS deps
@@ -9,9 +9,11 @@ RUN npm ci
 FROM node:${NODE_VERSION}-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL
+ARG APP_ENV
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    APP_ENV=${APP_ENV}
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 RUN npm run build
