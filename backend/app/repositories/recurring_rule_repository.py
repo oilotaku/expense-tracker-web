@@ -1,11 +1,12 @@
 from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.recurring_rule import RecurringRule
+from app.models.recurring_rule import RecurringIntervalUnit, RecurringRule
 from app.models.transaction import TransactionType
 
 
@@ -23,7 +24,9 @@ class RecurringRuleRepository:
         amount: Decimal,
         transaction_type: TransactionType,
         payment_method: str,
-        day_of_month: int,
+        interval_unit: RecurringIntervalUnit,
+        interval_count: int,
+        anchor_date: date,
         created_by: UUID,
     ) -> RecurringRule:
         rule = RecurringRule(
@@ -34,7 +37,9 @@ class RecurringRuleRepository:
             amount=amount,
             transaction_type=transaction_type,
             payment_method=payment_method,
-            day_of_month=day_of_month,
+            interval_unit=interval_unit,
+            interval_count=interval_count,
+            anchor_date=anchor_date,
             created_by=created_by,
             updated_by=created_by,
         )
@@ -70,7 +75,9 @@ class RecurringRuleRepository:
         amount: Decimal | None,
         transaction_type: TransactionType | None,
         payment_method: str | None,
-        day_of_month: int | None,
+        interval_unit: RecurringIntervalUnit | None,
+        interval_count: int | None,
+        anchor_date: date | None,
         updated_by: UUID,
     ) -> RecurringRule:
         if account_uid is not None:
@@ -85,8 +92,12 @@ class RecurringRuleRepository:
             rule.transaction_type = transaction_type
         if payment_method is not None:
             rule.payment_method = payment_method
-        if day_of_month is not None:
-            rule.day_of_month = day_of_month
+        if interval_unit is not None:
+            rule.interval_unit = interval_unit
+        if interval_count is not None:
+            rule.interval_count = interval_count
+        if anchor_date is not None:
+            rule.anchor_date = anchor_date
         rule.updated_by = updated_by
         await self.db.flush()
         return rule

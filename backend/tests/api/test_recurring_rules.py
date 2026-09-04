@@ -1,0 +1,167 @@
+"""週期性交易規則 API：`interval_unit` / `interval_count` / `anchor_date`（design-spec §12.3）。"""
+
+from datetime import date
+
+from httpx import AsyncClient
+
+_PASSWORD = "correct horse battery"
+
+
+async def _register_and_login(client: AsyncClient, email: str) -> None:
+    payload = {"email": email, "password": _PASSWORD}
+    await client.post("/api/v1/auth/register", json=payload)
+    res = await client.post("/api/v1/auth/login", json=payload)
+    assert res.status_code == 200
+
+
+async def _make_account_and_category(client: AsyncClient) -> tuple[str, str]:
+    account_res = await client.post("/api/v1/accounts", json={"name": "現金", "balance": "0.00"})
+    category_res = await client.post("/api/v1/categories", json={"name": "訂閱服務"})
+    return account_res.json()["data"]["account_uid"], category_res.json()["data"]["category_uid"]
+
+
+async def test_create_recurring_rule_with_default_interval_fields(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-1@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "Netflix",
+            "amount": "390.00",
+            "transaction_type": "expense",
+            "payment_method": "信用卡",
+            "anchor_date": "2026-09-15",
+        },
+    )
+    assert res.status_code == 201
+    body = res.json()["data"]
+    # 未帶 interval_unit/interval_count 時預設 month/1（既有月規則行為，→ design-spec §12.3）
+    assert body["interval_unit"] == "month"
+    assert body["interval_count"] == 1
+    assert body["anchor_date"] == "2026-09-15"
+
+
+async def test_create_recurring_rule_with_explicit_week_interval(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-2@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "健身房",
+            "amount": "500.00",
+            "transaction_type": "expense",
+            "payment_method": "現金",
+            "interval_unit": "week",
+            "interval_count": 2,
+            "anchor_date": "2026-09-01",
+        },
+    )
+    assert res.status_code == 201
+    body = res.json()["data"]
+    assert body["interval_unit"] == "week"
+    assert body["interval_count"] == 2
+    assert body["anchor_date"] == "2026-09-01"
+
+
+async def test_create_recurring_rule_interval_count_over_99_returns_422(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "recur-3@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "測試",
+            "amount": "100.00",
+            "transaction_type": "expense",
+            "payment_method": "現金",
+            "interval_count": 100,
+            "anchor_date": "2026-09-01",
+        },
+    )
+    assert res.status_code == 422
+
+
+async def test_create_recurring_rule_interval_count_zero_returns_422(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-4@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "測試",
+            "amount": "100.00",
+            "transaction_type": "expense",
+            "payment_method": "現金",
+            "interval_count": 0,
+            "anchor_date": "2026-09-01",
+        },
+    )
+    assert res.status_code == 422
+
+
+async def test_update_recurring_rule_interval_fields(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-5@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    created = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "訂閱",
+            "amount": "199.00",
+            "transaction_type": "expense",
+            "payment_method": "信用卡",
+            "anchor_date": "2026-01-10",
+        },
+    )
+    recurring_rule_uid = created.json()["data"]["recurring_rule_uid"]
+
+    res = await client.patch(
+        f"/api/v1/recurring-rules/{recurring_rule_uid}",
+        json={"interval_unit": "year", "interval_count": 2, "anchor_date": "2026-03-01"},
+    )
+    assert res.status_code == 200
+    body = res.json()["data"]
+    assert body["interval_unit"] == "year"
+    assert body["interval_count"] == 2
+    assert body["anchor_date"] == "2026-03-01"
+
+
+async def test_list_recurring_rules_reflects_interval_fields(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-6@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "水電費",
+            "amount": "1200.00",
+            "transaction_type": "expense",
+            "payment_method": "轉帳",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "anchor_date": str(date(2026, 5, 31)),
+        },
+    )
+
+    res = await client.get("/api/v1/recurring-rules")
+    assert res.status_code == 200
+    items = res.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["interval_unit"] == "month"
+    assert items[0]["interval_count"] == 1
+    assert items[0]["anchor_date"] == "2026-05-31"

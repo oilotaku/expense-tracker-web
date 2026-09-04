@@ -57,7 +57,9 @@ def _to_response(rule: RecurringRule) -> RecurringRuleResponse:
         amount=rule.amount,
         transaction_type=rule.transaction_type,
         payment_method=rule.payment_method,
-        day_of_month=rule.day_of_month,
+        interval_unit=rule.interval_unit,
+        interval_count=rule.interval_count,
+        anchor_date=rule.anchor_date,
         last_generated_year_month=rule.last_generated_year_month,
     )
 
@@ -81,7 +83,9 @@ async def create_recurring_rule(
         amount=payload.amount,
         transaction_type=payload.transaction_type,
         payment_method=payload.payment_method,
-        day_of_month=payload.day_of_month,
+        interval_unit=payload.interval_unit,
+        interval_count=payload.interval_count,
+        anchor_date=payload.anchor_date,
         created_by=current_user.user_uid,
     )
     return success(data=_to_response(rule), response_code=201)
@@ -143,7 +147,9 @@ async def update_recurring_rule(
         amount=payload.amount,
         transaction_type=payload.transaction_type,
         payment_method=payload.payment_method,
-        day_of_month=payload.day_of_month,
+        interval_unit=payload.interval_unit,
+        interval_count=payload.interval_count,
+        anchor_date=payload.anchor_date,
         updated_by=current_user.user_uid,
     )
     return success(data=_to_response(rule))

@@ -1,19 +1,28 @@
-"""週期性交易規則：每月固定收支，到期時（→ `app.services.recurring_service`）依 `day_of_month`
-產生當月一筆 `Transaction`。
+"""週期性交易規則：到期時（→ `app.services.recurring_service`）依 `anchor_date` + `interval_unit` +
+`interval_count` 產生一筆 `Transaction`（design-spec §12.3）。
 
-`day_of_month` 超過當月天數時夾到當月最後一天（propose 決議，見 task-007）。
-`last_generated_year_month`（`YYYY-MM`）記錄最近一次成功產生交易的年月，供服務層冪等判斷：
-同一規則同一月份重複觸發（服務啟動 / 每日排程重疊）不會產生兩筆交易。
+`day_of_month` 為 v1.0.0 舊欄位，**保留但放寬為 nullable**（不刪欄位，→ DB-033），服務層改讀
+`anchor_date` 的日部分；`month` 單位超過當月天數時夾到當月最後一天（propose 決議，見 task-007，
+語意不變）。`last_generated_year_month`（`YYYY-MM`）記錄最近一次成功產生交易的年月，供服務層冪等
+判斷：同一規則同一月份重複觸發（服務啟動 / 每日排程重疊）不會產生兩筆交易。
 """
 
+from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel, public_uid
 from app.models.transaction import TransactionType
+
+
+class RecurringIntervalUnit(StrEnum):
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"
 
 
 class RecurringRule(BaseModel):
@@ -43,11 +52,28 @@ class RecurringRule(BaseModel):
         nullable=False,
     )
     payment_method: Mapped[str] = mapped_column(String(50), nullable=False)
-    day_of_month: Mapped[int] = mapped_column(nullable=False)
+    # v1.0.0 舊欄位，保留但放寬為 nullable（→ DB-033）；服務層不再讀取，改用 anchor_date
+    day_of_month: Mapped[int | None] = mapped_column(nullable=True)
+    interval_unit: Mapped[RecurringIntervalUnit] = mapped_column(
+        Enum(
+            RecurringIntervalUnit,
+            name="recurring_interval_unit",
+            native_enum=False,
+            validate_strings=True,
+            length=10,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        server_default=RecurringIntervalUnit.MONTH.value,
+    )
+    interval_count: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
+    # 下一次執行日由服務層依此日起，每 interval_count 個 interval_unit 累加一次算出（→ §7.2）
+    anchor_date: Mapped[date] = mapped_column(Date, nullable=False)
     # None = 尚未產生過任何交易；產生成功後寫入該次的 "YYYY-MM"（冪等判斷用，見 RecurringService）
     last_generated_year_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
 
     __table_args__ = (
         # 短標籤：naming_convention 會自組 ck_recurring_rules_day_of_month_range（見 task 操作備註）
         CheckConstraint("day_of_month BETWEEN 1 AND 31", name="day_of_month_range"),
+        CheckConstraint("interval_count BETWEEN 1 AND 99", name="interval_count_range"),
     )
