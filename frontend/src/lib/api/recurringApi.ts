@@ -6,6 +6,12 @@ import type { TransactionType } from './transactionsApi'
 // 尚未接上該 pipeline（見 transactionsApi.ts / authApi.ts 頂部同一備註）。這裡手寫對齊
 // backend/app/schemas/recurring_rule.py 的最小型別；codegen 接上後改成
 // `components['schemas']['RecurringRuleResponse']` 等型別。
+//
+// task-003（後端）已將週期描述由單一 `day_of_month` 改為 `interval_unit` +
+// `interval_count` + `anchor_date`（design-spec §12.3）；`day_of_month` 欄位雖在 DB
+// 保留（`→ DB-033`，nullable），但 `RecurringRuleResponse` 已不再回傳該欄位，故此處移除。
+export type RecurringIntervalUnit = 'week' | 'month' | 'year'
+
 export interface RecurringRuleResponse {
   recurring_rule_uid: string
   account_uid: string
@@ -15,8 +21,12 @@ export interface RecurringRuleResponse {
   amount: string
   transaction_type: TransactionType
   payment_method: string
-  // 每月第幾天，1–31（backend/app/schemas/recurring_rule.py：Field(ge=1, le=31)）
-  day_of_month: number
+  // 週期單位：週/月/年（backend/app/schemas/recurring_rule.py）
+  interval_unit: RecurringIntervalUnit
+  // 每幾個 interval_unit 觸發一次，1–99（Field(ge=1, le=99)）
+  interval_count: number
+  // 錨點日期（YYYY-MM-DD），下一次執行日由此起算（design-spec §7.2）
+  anchor_date: string
   last_generated_year_month: string | null
 }
 
@@ -27,7 +37,9 @@ export interface RecurringRuleCreateRequest {
   amount: string
   transaction_type: TransactionType
   payment_method: string
-  day_of_month: number
+  interval_unit: RecurringIntervalUnit
+  interval_count: number
+  anchor_date: string
 }
 
 export interface RecurringRuleListResponse {

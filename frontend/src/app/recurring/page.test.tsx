@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RecurringRulesPage from './page'
 
-// 同 TransactionForm.test.tsx / AuthGuard.test.tsx：msw 尚未成為 devDependency，直接 mock RTK
-// Query hook 的回傳值來驗證表單 / 清單邏輯，而非起假 HTTP server。
+// 同 TransactionForm.test.tsx / AuthGuard.test.tsx / budgets/page.test.tsx（task-023）：msw 尚未成為
+// devDependency，直接 mock RTK Query hook 的回傳值來驗證表單 / 清單邏輯，而非起假 HTTP server。
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }))
@@ -28,6 +28,22 @@ vi.mock('@/lib/api/transactionsApi', () => ({
   useListCategoryOptionsQuery: () => useListCategoryOptionsQuery(),
 }))
 
+// 既有月規則資料（task-003 回填策略，design-spec §12.3）：interval_unit=month、interval_count=1，
+// 維持升級前「每月第 N 天」語意（task-022 Acceptance）。
+const MONTHLY_RULE = {
+  recurring_rule_uid: 'r1',
+  account_uid: 'a1',
+  category_uid: 'c1',
+  description: '房租',
+  amount: '15000.00',
+  transaction_type: 'expense',
+  payment_method: '轉帳',
+  interval_unit: 'month',
+  interval_count: 1,
+  anchor_date: '2026-08-05',
+  last_generated_year_month: null,
+}
+
 describe('RecurringRulesPage', () => {
   beforeEach(() => {
     useGetMeQuery.mockReturnValue({ isLoading: false, isError: false })
@@ -40,22 +56,7 @@ describe('RecurringRulesPage', () => {
       { isLoading: false, error: undefined },
     ])
     useListRecurringRulesQuery.mockReturnValue({
-      data: {
-        items: [
-          {
-            recurring_rule_uid: 'r1',
-            account_uid: 'a1',
-            category_uid: 'c1',
-            description: '房租',
-            amount: '15000.00',
-            transaction_type: 'expense',
-            payment_method: '轉帳',
-            day_of_month: 5,
-            last_generated_year_month: null,
-          },
-        ],
-        total: 1,
-      },
+      data: { items: [MONTHLY_RULE], total: 1 },
       isLoading: false,
       error: undefined,
     })
@@ -73,15 +74,61 @@ describe('RecurringRulesPage', () => {
     fireEvent.change(screen.getByLabelText('說明'), { target: { value: '房租' } })
     fireEvent.change(screen.getByLabelText('金額'), { target: { value: '15000' } })
     fireEvent.change(screen.getByLabelText('支付方式'), { target: { value: '轉帳' } })
+    fireEvent.change(screen.getByLabelText('起算日'), { target: { value: '2026-09-05' } })
   }
 
-  it('render 週期性交易規則清單，含帳戶 / 分類名稱', () => {
+  it('render 週期性交易規則清單，含帳戶 / 分類名稱，既有月規則顯示「每月第 N 天」語意（升級前一致）', () => {
     render(<RecurringRulesPage />)
-    const row = screen.getByText('房租').closest('tr')
-    expect(row).not.toBeNull()
-    expect(row).toHaveTextContent('銀行帳戶')
-    expect(row).toHaveTextContent('居住')
-    expect(row).toHaveTextContent('5')
+    // 「房租」在卡片內層的 flex row（與 badge 並排），實際卡片容器是其父層
+    const card = screen.getByText('房租').closest('div')?.parentElement
+    expect(card).not.toBeNull()
+    expect(card).toHaveTextContent('銀行帳戶')
+    expect(card).toHaveTextContent('居住')
+    expect(screen.getByText('每月第 5 天')).toBeInTheDocument()
+  })
+
+  it('interval_unit=week 且 interval_count 為 2 時顯示「每 2 週」', () => {
+    useListRecurringRulesQuery.mockReturnValue({
+      data: {
+        items: [
+          {
+            ...MONTHLY_RULE,
+            recurring_rule_uid: 'r2',
+            description: '健身房',
+            interval_unit: 'week',
+            interval_count: 2,
+            anchor_date: '2026-09-01',
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<RecurringRulesPage />)
+    expect(screen.getByText('每 2 週')).toBeInTheDocument()
+  })
+
+  it('interval_unit=year 且 interval_count 為 1 時顯示「每年」', () => {
+    useListRecurringRulesQuery.mockReturnValue({
+      data: {
+        items: [
+          {
+            ...MONTHLY_RULE,
+            recurring_rule_uid: 'r3',
+            description: '保險',
+            interval_unit: 'year',
+            interval_count: 1,
+            anchor_date: '2026-01-10',
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<RecurringRulesPage />)
+    expect(screen.getByText('每年')).toBeInTheDocument()
   })
 
   it('清單為空時顯示提示文字', () => {
@@ -94,10 +141,11 @@ describe('RecurringRulesPage', () => {
     expect(screen.getByText('尚未設定任何週期性交易規則')).toBeInTheDocument()
   })
 
-  it('送出合法表單觸發 createRecurringRule mutation，day_of_month 轉為數字', async () => {
+  it('送出合法表單觸發 createRecurringRule mutation，interval_unit/interval_count/anchor_date 一併送出', async () => {
     render(<RecurringRulesPage />)
     fillValidForm()
-    fireEvent.change(screen.getByLabelText('每月第幾天（1–31）'), { target: { value: '15' } })
+    fireEvent.change(screen.getByLabelText('週期單位'), { target: { value: 'week' } })
+    fireEvent.change(screen.getByLabelText(/每幾個週執行一次/), { target: { value: '3' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '新增規則' }))
@@ -111,34 +159,52 @@ describe('RecurringRulesPage', () => {
       amount: '15000',
       transaction_type: 'expense',
       payment_method: '轉帳',
-      day_of_month: 15,
+      interval_unit: 'week',
+      interval_count: 3,
+      anchor_date: '2026-09-05',
     })
   })
 
-  it('每月第幾天為 0 時拒絕送出並顯示錯誤訊息', async () => {
+  it('間隔數為 0 時拒絕送出並顯示錯誤訊息', async () => {
     render(<RecurringRulesPage />)
     fillValidForm()
-    fireEvent.change(screen.getByLabelText('每月第幾天（1–31）'), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText(/每幾個月執行一次/), { target: { value: '0' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '新增規則' }))
     })
 
     expect(createRecurringRule).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert')).toHaveTextContent('每月第幾天必須介於 1 到 31 之間')
+    expect(screen.getByRole('alert')).toHaveTextContent('間隔數必須介於 1 到 99 之間')
   })
 
-  it('每月第幾天大於 31 時拒絕送出並顯示錯誤訊息', async () => {
+  it('間隔數大於 99 時拒絕送出並顯示錯誤訊息', async () => {
     render(<RecurringRulesPage />)
     fillValidForm()
-    fireEvent.change(screen.getByLabelText('每月第幾天（1–31）'), { target: { value: '32' } })
+    fireEvent.change(screen.getByLabelText(/每幾個月執行一次/), { target: { value: '100' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '新增規則' }))
     })
 
     expect(createRecurringRule).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert')).toHaveTextContent('每月第幾天必須介於 1 到 31 之間')
+    expect(screen.getByRole('alert')).toHaveTextContent('間隔數必須介於 1 到 99 之間')
+  })
+
+  it('未填起算日時拒絕送出並顯示錯誤訊息', async () => {
+    render(<RecurringRulesPage />)
+    fireEvent.change(screen.getByLabelText('分類'), { target: { value: 'c1' } })
+    fireEvent.change(screen.getByLabelText('帳戶'), { target: { value: 'a1' } })
+    fireEvent.change(screen.getByLabelText('說明'), { target: { value: '房租' } })
+    fireEvent.change(screen.getByLabelText('金額'), { target: { value: '15000' } })
+    fireEvent.change(screen.getByLabelText('支付方式'), { target: { value: '轉帳' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '新增規則' }))
+    })
+
+    expect(createRecurringRule).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('請選擇起算日')
   })
 
   it('mutation 回錯誤時顯示錯誤訊息', () => {
