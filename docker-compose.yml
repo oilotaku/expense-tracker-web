@@ -7,13 +7,13 @@ services:
       dockerfile: docker/frontend/Dockerfile
       args:
         NODE_VERSION: ${NODE_VERSION}
-        NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:
       PORT: "3000"
       # browser 端（打到宿主機對外 port）
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       # server-side（RSC / route handler，走 compose 內網）
       API_INTERNAL_URL: http://backend:8000/api/v1
     depends_on:
