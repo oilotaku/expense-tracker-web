@@ -1,7 +1,7 @@
 ---
 id: task-010
 title: 預算前端頁（設定 + 進度顯示）
-status: pending
+status: done
 parallel: false
 depends_on: [task-009]
 affected_files:
