@@ -3,7 +3,27 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { cva } from 'class-variance-authority'
+import { CurvedCard } from '@/components/common/CurvedCard'
+import { WaveDivider } from '@/components/common/WaveDivider'
 import { getAuthErrorMessage, useRegisterMutation } from '@/lib/api/authApi'
+
+// FE-052：條件樣式禁 inline 三元串接重複；同 AssetsPage/BudgetsPage 的 submitButtonClassName 寫法。
+const submitButtonClassName = cva(
+  'min-h-11 rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600',
+  {
+    variants: {
+      isLoading: {
+        true: 'opacity-50 pointer-events-none',
+        false: '',
+      },
+    },
+    defaultVariants: { isLoading: false },
+  },
+)
+
+const inputClassName =
+  'min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
 
 export default function RegisterPage(): ReactNode {
   const router = useRouter()
@@ -24,50 +44,51 @@ export default function RegisterPage(): ReactNode {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-6">
-      <h1 className="text-2xl font-bold">註冊</h1>
-      <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4" noValidate>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">Email</span>
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="min-h-11 rounded border px-3"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">密碼</span>
-          <input
-            type="password"
-            required
-            minLength={8}
-            maxLength={72}
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="min-h-11 rounded border px-3"
-          />
-        </label>
-        <p className="text-xs text-gray-500">密碼至少 8 個字元</p>
-        {error && (
-          <p role="alert" className="text-sm text-red-600">
-            {getAuthErrorMessage(error)}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="min-h-11 rounded border px-4 disabled:opacity-50"
-        >
-          {isLoading ? '註冊中…' : '註冊'}
-        </button>
-      </form>
-      <Link href="/login" className="text-sm underline">
-        已經有帳號？登入
-      </Link>
+    <main className="relative flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden bg-bg p-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 md:h-36">
+        <WaveDivider />
+      </div>
+      <CurvedCard padding="md" className="relative z-10 flex w-full max-w-sm flex-col gap-6">
+        <h1 className="text-2xl font-bold text-text-primary">註冊</h1>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">Email</span>
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={inputClassName}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">密碼</span>
+            <input
+              type="password"
+              required
+              minLength={8}
+              maxLength={72}
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className={inputClassName}
+            />
+          </label>
+          <p className="text-xs text-text-muted">密碼至少 8 個字元</p>
+          {error && (
+            <p role="alert" className="text-sm text-danger-700">
+              {getAuthErrorMessage(error)}
+            </p>
+          )}
+          <button type="submit" disabled={isLoading} className={submitButtonClassName({ isLoading })}>
+            {isLoading ? '註冊中…' : '註冊'}
+          </button>
+        </form>
+        <Link href="/login" className="text-center text-sm text-primary-600 underline">
+          已經有帳號？登入
+        </Link>
+      </CurvedCard>
     </main>
   )
 }
