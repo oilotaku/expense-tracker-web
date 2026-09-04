@@ -18,3 +18,9 @@ class Account(BaseModel):
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     # 本版單幣別（新台幣），欄位仍獨立存放（DB-039），不塞進金額欄位或欄名
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, server_default="TWD")
+    # hex 色碼含 #（design-spec §12.4）；後端只驗證格式 ^#[0-9A-Fa-f]{6}$，不做語意檢查。
+    # server_default 只在繞過 schema 直接呼叫 repository（如既有服務層測試 fixture）未帶色值
+    # 時兜底，一般建立流程一律由 AccountCreateRequest 要求明確帶入（做法與 Category 對稱）。
+    color: Mapped[str] = mapped_column(String(7), nullable=False, server_default="#9C96AF")
+    # 圖示 key；只驗證非空/長度上限，不做 enum 檢查（合法清單由前端圖示選擇器維護，→ A9）
+    icon: Mapped[str] = mapped_column(String(50), nullable=False, server_default="other")

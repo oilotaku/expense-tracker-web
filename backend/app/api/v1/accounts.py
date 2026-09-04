@@ -37,6 +37,8 @@ async def create_account(
         name=payload.name,
         balance=payload.balance,
         created_by=current_user.user_uid,
+        color=payload.color,
+        icon=payload.icon,
     )
     return success(data=AccountResponse.model_validate(account), response_code=201)
 
@@ -87,6 +89,8 @@ async def update_account(
         account,
         name=payload.name,
         balance=payload.balance,
+        color=payload.color,
+        icon=payload.icon,
         updated_by=current_user.user_uid,
     )
     return success(data=AccountResponse.model_validate(account))

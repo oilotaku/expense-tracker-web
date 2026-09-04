@@ -15,8 +15,16 @@ class AccountRepository:
         self.db = db
 
     async def create(
-        self, user_uid: UUID, name: str, balance: Decimal, created_by: UUID
+        self,
+        user_uid: UUID,
+        name: str,
+        balance: Decimal,
+        created_by: UUID,
+        color: str | None = None,
+        icon: str | None = None,
     ) -> Account:
+        # color/icon 為 None 時不寫入該欄位，交由 DB server_default 兜底（→ Account model 註解）；
+        # 一般建立流程經 AccountCreateRequest 一律帶入明確值。
         account = Account(
             user_uid=user_uid,
             name=name,
@@ -24,6 +32,10 @@ class AccountRepository:
             created_by=created_by,
             updated_by=created_by,
         )
+        if color is not None:
+            account.color = color
+        if icon is not None:
+            account.icon = icon
         self.db.add(account)
         await self.db.flush()
         return account
@@ -51,12 +63,18 @@ class AccountRepository:
         *,
         name: str | None,
         balance: Decimal | None,
+        color: str | None,
+        icon: str | None,
         updated_by: UUID,
     ) -> Account:
         if name is not None:
             account.name = name
         if balance is not None:
             account.balance = balance
+        if color is not None:
+            account.color = color
+        if icon is not None:
+            account.icon = icon
         account.updated_by = updated_by
         await self.db.flush()
         return account
