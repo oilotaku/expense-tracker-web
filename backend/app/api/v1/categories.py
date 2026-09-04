@@ -40,7 +40,9 @@ async def create_category(
 ) -> ApiResponse[CategoryResponse]:
     repo = CategoryRepository(db)
     try:
-        category = await repo.create(current_user.user_uid, payload.name)
+        category = await repo.create(
+            current_user.user_uid, payload.name, payload.color, payload.icon
+        )
     except IntegrityError as e:
         raise ConflictError(_DUPLICATE_NAME_DETAIL) from e
     return success(CategoryResponse.model_validate(category), response_code=201)
@@ -68,7 +70,7 @@ async def list_categories(
 @router.patch(
     "/{category_uid}",
     response_model=ApiResponse[CategoryResponse],
-    summary="重新命名分類",
+    summary="更新分類（重新命名 / 改色 / 改圖示）",
 )
 async def update_category(
     category_uid: UUID,
@@ -81,7 +83,9 @@ async def update_category(
     if category is None:
         raise NotFoundError(_NOT_FOUND_DETAIL)
     try:
-        category = await repo.update_name(category, payload.name)
+        category = await repo.update_fields(
+            category, name=payload.name, color=payload.color, icon=payload.icon
+        )
     except IntegrityError as e:
         raise ConflictError(_DUPLICATE_NAME_DETAIL) from e
     return success(CategoryResponse.model_validate(category))

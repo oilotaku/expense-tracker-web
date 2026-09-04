@@ -33,14 +33,34 @@ class CategoryRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def create(self, user_uid: UUID, name: str) -> Category:
+    async def create(
+        self, user_uid: UUID, name: str, color: str | None = None, icon: str | None = None
+    ) -> Category:
+        # color/icon 為 None 時不寫入該欄位，交由 DB server_default 兜底（→ Category model 註解）；
+        # 一般建立流程經 CategoryCreateRequest 一律帶入明確值。
         category = Category(user_uid=user_uid, name=name)
+        if color is not None:
+            category.color = color
+        if icon is not None:
+            category.icon = icon
         self.db.add(category)
         await self.db.flush()
         return category
 
-    async def update_name(self, category: Category, name: str) -> Category:
-        category.name = name
+    async def update_fields(
+        self,
+        category: Category,
+        *,
+        name: str | None,
+        color: str | None,
+        icon: str | None,
+    ) -> Category:
+        if name is not None:
+            category.name = name
+        if color is not None:
+            category.color = color
+        if icon is not None:
+            category.icon = icon
         await self.db.flush()
         return category
 
