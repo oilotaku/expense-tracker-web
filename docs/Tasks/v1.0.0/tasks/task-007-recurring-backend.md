@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: 週期性交易（後端，含月底夾日）
-status: pending
+status: done
 parallel: false
 depends_on: [task-004]
 affected_files:
