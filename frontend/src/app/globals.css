@@ -1,1 +1,228 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+
+/*
+ * 設計系統 tokens（design-spec.md §2）。
+ * 命名策略：token 名稱在 Light / Dark 間不變，元件一律讀 var(--color-*)，
+ * 不寫 dark: 條件 class（→ §2.2.1）。:root 先定義 Light 預設值，
+ * @media (prefers-color-scheme: dark) 內用 :root:not([data-theme="light"]) 覆寫，
+ * 最後 :root[data-theme="dark"] 再覆寫一次確保手動切換永遠優先（→ §2.7 三層寫法）。
+ */
+:root {
+  /* 中性色（背景 / 文字 / 邊框，→ §2.2） */
+  --color-bg: #faf8fc;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f2effa;
+  --color-border: #e7e2f3;
+  --color-text-primary: #2b2740;
+  --color-text-secondary: #6b6480;
+  --color-text-muted: #9c96af;
+  --color-text-inverse: #ffffff;
+
+  /* 品牌主色（薰衣草紫，→ §2.2） */
+  --color-primary-100: #ede6fb;
+  --color-primary-300: #c3aaf2;
+  --color-primary-500: #9b72e8;
+  --color-primary-600: #8257d6;
+  --color-primary-700: #6a42b3;
+
+  /* 次要色（薄荷綠，裝飾/次要強調用，→ §2.2） */
+  --color-secondary-100: #dff7ef;
+  --color-secondary-500: #5fc9a4;
+  --color-secondary-700: #2e9575;
+
+  /* 語意色（→ §2.2） */
+  --color-income-100: #e1f7e6;
+  --color-income-500: #4fae6d;
+  --color-income-700: #2f7d49;
+  --color-expense-100: #fde7e7;
+  --color-expense-500: #e8746b;
+  --color-expense-700: #c14b42;
+  --color-warning-100: #fff3dc;
+  --color-warning-600: #c97a1e;
+  --color-danger-500: #e24c4c;
+  --color-danger-700: #b23636;
+
+  /* 圖表 categorical 固定順序 8 色 + 其他（→ §2.3） */
+  --color-chart-1: #8b6ed6;
+  --color-chart-2: #e8834b;
+  --color-chart-3: #2fa98a;
+  --color-chart-4: #d9a428;
+  --color-chart-5: #3e8fd0;
+  --color-chart-6: #d65fa0;
+  --color-chart-7: #8aae3c;
+  --color-chart-8: #5a4fa0;
+  --color-chart-other: #9c96af;
+
+  /* 圓角（→ §2.4） */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-full: 9999px;
+
+  /* 陰影（→ §2.4，品牌紫調陰影，非純黑） */
+  --shadow-sm: 0 1px 2px rgba(43, 39, 64, 0.04);
+  --shadow-card: 0 4px 16px rgba(139, 110, 214, 0.12);
+  --shadow-float: 0 8px 28px rgba(139, 110, 214, 0.18);
+
+  --font-sans: var(--font-manrope), system-ui, sans-serif;
+}
+
+/*
+ * system（預設）：不主動覆寫 OS 偏好，OS 為 dark 時套用 Dark tokens，
+ * 但使用者手動選了 light（data-theme="light"）時仍要維持 Light（→ §2.7）。
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-bg: #1c1826;
+    --color-surface: #241f30;
+    --color-surface-sunken: #2c2638;
+    --color-border: #3a3448;
+    --color-text-primary: #f0edf7;
+    --color-text-secondary: #b4acc9;
+    --color-text-muted: #8b84a0;
+
+    --color-primary-100: #332950;
+    --color-primary-300: #9f87e3;
+    --color-primary-500: #a98cf0;
+    --color-primary-600: #8b6ed6;
+    --color-primary-700: #c3b2f5;
+
+    --color-secondary-100: #1e3a30;
+    --color-secondary-700: #7eddbb;
+
+    --color-income-100: #1d3324;
+    --color-income-500: #5fc17f;
+    --color-income-700: #7bde9b;
+    --color-expense-100: #3b2224;
+    --color-expense-500: #e8897f;
+    --color-expense-700: #f2a79d;
+    --color-warning-100: #3d2e14;
+    --color-warning-600: #eac066;
+    --color-danger-500: #e2645f;
+    --color-danger-700: #f0958f;
+
+    --color-chart-1: #a78bea;
+    --color-chart-2: #f0985f;
+    --color-chart-3: #45c6a5;
+    --color-chart-4: #e8bb4a;
+    --color-chart-5: #5ca8e8;
+    --color-chart-6: #e687ba;
+    --color-chart-7: #a3c65c;
+    --color-chart-8: #7a6fc0;
+    --color-chart-other: #6e667f;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* 手動切換永遠優先於 OS 偏好（→ §2.7），值與上方 media block 相同 */
+:root[data-theme='dark'] {
+  --color-bg: #1c1826;
+  --color-surface: #241f30;
+  --color-surface-sunken: #2c2638;
+  --color-border: #3a3448;
+  --color-text-primary: #f0edf7;
+  --color-text-secondary: #b4acc9;
+  --color-text-muted: #8b84a0;
+
+  --color-primary-100: #332950;
+  --color-primary-300: #9f87e3;
+  --color-primary-500: #a98cf0;
+  --color-primary-600: #8b6ed6;
+  --color-primary-700: #c3b2f5;
+
+  --color-secondary-100: #1e3a30;
+  --color-secondary-700: #7eddbb;
+
+  --color-income-100: #1d3324;
+  --color-income-500: #5fc17f;
+  --color-income-700: #7bde9b;
+  --color-expense-100: #3b2224;
+  --color-expense-500: #e8897f;
+  --color-expense-700: #f2a79d;
+  --color-warning-100: #3d2e14;
+  --color-warning-600: #eac066;
+  --color-danger-500: #e2645f;
+  --color-danger-700: #f0958f;
+
+  --color-chart-1: #a78bea;
+  --color-chart-2: #f0985f;
+  --color-chart-3: #45c6a5;
+  --color-chart-4: #e8bb4a;
+  --color-chart-5: #5ca8e8;
+  --color-chart-6: #e687ba;
+  --color-chart-7: #a3c65c;
+  --color-chart-8: #7a6fc0;
+  --color-chart-other: #6e667f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/*
+ * Tailwind v4 @theme 對映（→ §2.2）：用 `inline` + 同名 var() 參照上方 :root 的真實 CSS 變數，
+ * 讓 utility class（如 bg-bg / text-income-700 / rounded-lg / shadow-card）在 runtime 讀取
+ * 當前主題值，而不是把 Light 的值烤進 class 本身。
+ */
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-sunken: var(--color-surface-sunken);
+  --color-border: var(--color-border);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-inverse: var(--color-text-inverse);
+
+  --color-primary-100: var(--color-primary-100);
+  --color-primary-300: var(--color-primary-300);
+  --color-primary-500: var(--color-primary-500);
+  --color-primary-600: var(--color-primary-600);
+  --color-primary-700: var(--color-primary-700);
+
+  --color-secondary-100: var(--color-secondary-100);
+  --color-secondary-500: var(--color-secondary-500);
+  --color-secondary-700: var(--color-secondary-700);
+
+  --color-income-100: var(--color-income-100);
+  --color-income-500: var(--color-income-500);
+  --color-income-700: var(--color-income-700);
+  --color-expense-100: var(--color-expense-100);
+  --color-expense-500: var(--color-expense-500);
+  --color-expense-700: var(--color-expense-700);
+  --color-warning-100: var(--color-warning-100);
+  --color-warning-600: var(--color-warning-600);
+  --color-danger-500: var(--color-danger-500);
+  --color-danger-700: var(--color-danger-700);
+
+  --color-chart-1: var(--color-chart-1);
+  --color-chart-2: var(--color-chart-2);
+  --color-chart-3: var(--color-chart-3);
+  --color-chart-4: var(--color-chart-4);
+  --color-chart-5: var(--color-chart-5);
+  --color-chart-6: var(--color-chart-6);
+  --color-chart-7: var(--color-chart-7);
+  --color-chart-8: var(--color-chart-8);
+  --color-chart-other: var(--color-chart-other);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-card: var(--shadow-card);
+  --shadow-float: var(--shadow-float);
+
+  --font-sans: var(--font-sans);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+}
