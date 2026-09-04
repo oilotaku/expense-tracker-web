@@ -27,3 +27,11 @@ class UserCredential(BaseModel):
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     password_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # PIN 快速登入（design-spec §12.2）：pin_hash None = 未設定；沿用 app.core.security.pwd_context
+    # 同一套 bcrypt，不另建 hash 機制。鎖定機制（連續 5 次失敗鎖 15 分鐘）→ AuthService。
+    pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pin_failed_attempts: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    pin_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -37,3 +37,29 @@ class UserRepository:
         self.db.add(credential)
         await self.db.flush()
         return user
+
+    async def set_pin(self, credential: UserCredential, pin_hash: str, now: datetime) -> None:
+        credential.pin_hash = pin_hash
+        credential.pin_updated_at = now
+        credential.pin_failed_attempts = 0
+        credential.pin_locked_until = None
+        await self.db.flush()
+
+    async def clear_pin(self, credential: UserCredential) -> None:
+        credential.pin_hash = None
+        credential.pin_updated_at = None
+        credential.pin_failed_attempts = 0
+        credential.pin_locked_until = None
+        await self.db.flush()
+
+    async def record_pin_failure(
+        self, credential: UserCredential, attempts: int, locked_until: datetime | None
+    ) -> None:
+        credential.pin_failed_attempts = attempts
+        credential.pin_locked_until = locked_until
+        await self.db.flush()
+
+    async def reset_pin_failures(self, credential: UserCredential) -> None:
+        credential.pin_failed_attempts = 0
+        credential.pin_locked_until = None
+        await self.db.flush()

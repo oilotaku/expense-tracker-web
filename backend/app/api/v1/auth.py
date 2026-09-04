@@ -7,7 +7,15 @@ from app.api.deps import get_current_user, get_db
 from app.core.cookies import set_jwt_cookie
 from app.core.response import success
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, UserResponse
+from app.schemas.auth import (
+    ChangePinRequest,
+    DisablePinRequest,
+    LoginRequest,
+    PinLoginRequest,
+    RegisterRequest,
+    SetPinRequest,
+    UserResponse,
+)
 from app.schemas.response import ApiResponse
 from app.services.auth_service import AuthService
 
@@ -48,3 +56,53 @@ async def login(
 )
 async def me(current_user: CurrentUser) -> ApiResponse[UserResponse]:
     return success(data=UserResponse.model_validate(current_user))
+
+
+@router.post(
+    "/pin",
+    response_model=ApiResponse[None],
+    status_code=201,
+    summary="首次設定 PIN",
+)
+async def set_pin(
+    payload: SetPinRequest, db: DbSession, current_user: CurrentUser
+) -> ApiResponse[None]:
+    await AuthService(db).set_pin(current_user.user_uid, payload.pin, payload.password)
+    return success(data=None, response_code=201)
+
+
+@router.patch(
+    "/pin",
+    response_model=ApiResponse[None],
+    summary="變更 PIN",
+)
+async def change_pin(
+    payload: ChangePinRequest, db: DbSession, current_user: CurrentUser
+) -> ApiResponse[None]:
+    await AuthService(db).change_pin(current_user.user_uid, payload.current_pin, payload.new_pin)
+    return success(data=None)
+
+
+@router.delete(
+    "/pin",
+    response_model=ApiResponse[None],
+    summary="停用 PIN 快速登入",
+)
+async def delete_pin(
+    payload: DisablePinRequest, db: DbSession, current_user: CurrentUser
+) -> ApiResponse[None]:
+    await AuthService(db).disable_pin(current_user.user_uid, payload.password)
+    return success(data=None)
+
+
+@router.post(
+    "/login/pin",
+    response_model=ApiResponse[UserResponse],
+    summary="PIN 快速登入",
+)
+async def login_pin(
+    payload: PinLoginRequest, db: DbSession, response: Response
+) -> ApiResponse[UserResponse]:
+    user, token = await AuthService(db).login_with_pin(payload.user_uid, payload.pin)
+    set_jwt_cookie(response, token)
+    return success(data=user)
