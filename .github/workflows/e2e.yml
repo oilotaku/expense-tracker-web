@@ -16,6 +16,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # task-018：真 e2e 對象是完整 stack（真實瀏覽器 + 真實 backend + 真實 DB + 真實外部報價
+      # 來源，→ AGENTS.md § Testing），不是只跑前端。.env 用 `.env.development.example` 當唯一
+      # 非機密設定來源（跟本機 scaffold 產出的 .env 同一份範本），機密現場產生、不落版控、不經
+      # AskUserQuestion（→ CORE-033）；CI runner 用完即銷毀，無需長期保存。
+      - name: 產生 .env（compose 用；機密現場產生）
+        run: |
+          cp .env.development.example .env
+          POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+          JWT_SECRET_KEY="$(openssl rand -hex 32)"
+          sed -i \
+            -e "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=${POSTGRES_PASSWORD}#" \
+            -e "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://expense_tracker_web:${POSTGRES_PASSWORD}@db:5432/expense_tracker_web#" \
+            -e "s#^JWT_SECRET_KEY=.*#JWT_SECRET_KEY=${JWT_SECRET_KEY}#" \
+            .env
+
+      - name: 啟動完整 stack（frontend / backend / db / redis）
+        run: docker compose up -d --build --wait --wait-timeout 180
+
+      - name: DB migration（唯一的 schema 套用方式，→ DB-054）
+        run: docker compose exec -T backend alembic upgrade head
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: frontend/package.json
@@ -26,9 +48,19 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           npm run e2e
+
+      - name: stack 服務 log（失敗時協助排查）
+        if: failure()
+        run: docker compose logs --tail 200
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+      # 停容器不刪 volume（CI runner 本就是用完即銷毀的一次性環境，禁 `-v` 見 AGENTS.md 毀滅性操作禁止）
+      - name: 停止 stack
+        if: always()
+        run: docker compose stop

@@ -7,7 +7,8 @@
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test"
   },
   "comment:allowScripts": "npm ≥ 11 要求逐一核可依賴的 install script（CORE-145）。未列出的套件其 postinstall 不會執行，npm ci 會留下 warning。這裡是明確的核可紀錄，不是預設放行。",
   "allowScripts": {
@@ -36,6 +37,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "jsdom": "30.0.1",
     "@testing-library/react": "16.3.3",
-    "@testing-library/jest-dom": "7.0.1"
+    "@testing-library/jest-dom": "7.0.1",
+    "@playwright/test": "1.62.1"
   }
 }

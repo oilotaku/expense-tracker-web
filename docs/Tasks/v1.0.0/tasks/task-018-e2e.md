@@ -1,7 +1,7 @@
 ---
 id: task-018
 title: e2e：資產反映市值 + 雙帳號隔離
-status: pending
+status: done
 parallel: false
 depends_on: [task-005, task-006, task-017]
 affected_files:
