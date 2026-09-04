@@ -24,9 +24,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
             raise
 
 
-async def get_current_user(
-    request: Request, db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
+async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User:
     token = request.cookies.get(JWT_COOKIE_NAME)
     if not token:
         raise AppError("未登入", status_code=401, response_code=401)

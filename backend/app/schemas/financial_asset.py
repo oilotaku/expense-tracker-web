@@ -25,9 +25,7 @@ def validate_unit_for_asset_type(asset_type: AssetType, unit: str) -> None:
     """確認 `unit` 是 `asset_type` 允許的輸入單位；供 create 的 schema 驗證與 update 端點重用。"""
     allowed = _VALID_UNITS_BY_TYPE[asset_type]
     if unit not in allowed:
-        raise ValueError(
-            f"{asset_type} 的單位必須為 {sorted(allowed)} 其中之一，收到 {unit!r}"
-        )
+        raise ValueError(f"{asset_type} 的單位必須為 {sorted(allowed)} 其中之一，收到 {unit!r}")
 
 
 class FinancialAssetCreateRequest(ApiInput):
