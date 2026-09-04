@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: 週期性交易前端設定頁
-status: pending
+status: done
 parallel: false
 depends_on: [task-007]
 affected_files:
