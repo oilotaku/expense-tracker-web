@@ -8,6 +8,7 @@ from . import (
     financial_assets,
     health,
     liabilities,
+    net_worth,
     recurring_rules,
     transactions,
 )
@@ -22,3 +23,4 @@ router.include_router(transactions.router, tags=["transactions"])
 router.include_router(financial_assets.router, tags=["financial-assets"])
 router.include_router(recurring_rules.router, tags=["recurring-rules"])
 router.include_router(budgets.router, tags=["budgets"])
+router.include_router(net_worth.router, tags=["net-worth"])

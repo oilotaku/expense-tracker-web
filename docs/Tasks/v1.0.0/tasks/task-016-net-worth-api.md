@@ -1,7 +1,7 @@
 ---
 id: task-016
 title: 總資產 / 總負債彙總 API
-status: pending
+status: done
 parallel: false
 depends_on: [task-002, task-013, task-014, task-015]
 affected_files:
