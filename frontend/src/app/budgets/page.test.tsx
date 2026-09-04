@@ -96,7 +96,7 @@ describe('BudgetsPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('此分類已存在同期間類型的預算')
   })
 
-  it('尚未超支時進度條顯示一般樣式，不顯示已超支文字', () => {
+  it('正常狀態（<80%）：進度條套用 primary 色系並同時渲染 icon 與「已使用 N%」文字', () => {
     useGetBudgetSummaryQuery.mockReturnValue({
       data: {
         budget_uid: 'b1',
@@ -114,14 +114,49 @@ describe('BudgetsPage', () => {
 
     // '餐飲' 同時出現在分類下拉選項與進度卡片，故用 getAllByText 確認至少有卡片顯示
     expect(screen.getAllByText('餐飲').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('已花費 1200.00 / 上限 3000.00')).toBeInTheDocument()
-    expect(screen.getByText('剩餘 1800.00')).toBeInTheDocument()
+    expect(screen.getByText('1200.00')).toBeInTheDocument()
+
+    const bar = screen.getByTestId('budget-progress-bar')
+    expect(bar).toHaveClass('bg-primary-600')
+    expect(bar).not.toHaveClass('bg-warning-600')
+    expect(bar).not.toHaveClass('bg-danger-700')
+
+    const meterText = screen.getByText(/已使用 40%/)
+    expect(meterText).toBeInTheDocument()
+    expect(meterText).toHaveTextContent('✓')
+    expect(meterText).not.toHaveAttribute('role', 'alert')
     expect(screen.queryByText(/已超支/)).not.toBeInTheDocument()
-    expect(screen.getByTestId('budget-progress-bar')).toHaveClass('bg-blue-600')
-    expect(screen.getByTestId('budget-progress-bar')).not.toHaveClass('bg-red-600')
   })
 
-  it('超支時進度條顯示警示樣式並標示已超支', () => {
+  it('接近上限狀態（80–99%）：進度條套用 warning 色系並同時渲染 ⚠ icon 與「已使用 85%」文字', () => {
+    useGetBudgetSummaryQuery.mockReturnValue({
+      data: {
+        budget_uid: 'b1',
+        category_uid: 'c1',
+        period_type: 'monthly',
+        limit_amount: '3000.00',
+        spent_amount: '2550.00',
+        remaining_amount: '450.00',
+        is_over_budget: false,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<BudgetsPage />)
+
+    const bar = screen.getByTestId('budget-progress-bar')
+    expect(bar).toHaveClass('bg-warning-600')
+    expect(bar).not.toHaveClass('bg-primary-600')
+    expect(bar).not.toHaveClass('bg-danger-700')
+
+    const meterText = screen.getByText(/已使用 85%/)
+    expect(meterText).toBeInTheDocument()
+    expect(meterText).toHaveTextContent('⚠')
+    expect(meterText).not.toHaveAttribute('role', 'alert')
+    expect(screen.queryByText(/已超支/)).not.toBeInTheDocument()
+  })
+
+  it('超支狀態（≥100%）：進度條套用 danger 色系並同時渲染 🔴 icon 與「已超支 NT$」文字', () => {
     useGetBudgetSummaryQuery.mockReturnValue({
       data: {
         budget_uid: 'b1',
@@ -138,11 +173,14 @@ describe('BudgetsPage', () => {
     render(<BudgetsPage />)
 
     const bar = screen.getByTestId('budget-progress-bar')
-    expect(bar).toHaveClass('bg-red-600')
-    expect(bar).not.toHaveClass('bg-blue-600')
-    const overBudgetText = screen.getByText('已超支 -500.00')
-    expect(overBudgetText).toBeInTheDocument()
-    expect(overBudgetText).toHaveAttribute('role', 'alert')
+    expect(bar).toHaveClass('bg-danger-700')
+    expect(bar).not.toHaveClass('bg-primary-600')
+    expect(bar).not.toHaveClass('bg-warning-600')
+
+    const meterText = screen.getByText(/已超支 NT\$500\.00/)
+    expect(meterText).toBeInTheDocument()
+    expect(meterText).toHaveTextContent('🔴')
+    expect(meterText).toHaveAttribute('role', 'alert')
   })
 
   it('尚未設定預算時顯示提示文字', () => {
