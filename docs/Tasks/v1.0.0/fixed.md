@@ -63,6 +63,12 @@
 - **rule**: NONE
 - **後續**: 待後續某個 task 需要動 `conftest.py`（例如新增測試 fixture）時一併排查修正；若持續影響 CI 穩定性，應獨立開一個小 task 處理（`estimated_hours: 2` 等級），而非放著不管。
 
+**追加（2026-09-04，orchestrator 嘗試修正失敗記錄）**：隨著測試數增加（task-007/009/014 陸續加入後），這個 flake 已經惡化到**單獨跑 `pytest tests/services/test_recurring_service.py` 這一個檔案自己內部**就會出現 3 個 `ERROR at setup`（`AsyncAdaptedQueuePool` terminating connection 失敗），不再只是跨檔案才出現。逐一單獨跑每個失敗的 test case 100% 通過（含 propose 的關鍵驗收案例「31 號規則在 2 月正確產生在 28/29 號」），確認**不是邏輯錯誤，只有 setup 階段的連線池問題**。
+
+**已嘗試但失敗的修法**：在 `backend/pyproject.toml` 加 `asyncio_default_fixture_loop_scope = "session"`，理論上讓所有測試共用同一個 event loop、避免 pool 內連線綁到已關閉的舊 loop。**結果造成嚴重回歸**：全套件從「76 passed, 4 errors」惡化成「48 failed, 32 passed, 8 errors」，`test_health.py` 直接回 503，`test_security_headers.py` 全部出錯——判斷是 session-scoped loop 與 `client` fixture 每個測試呼叫 `app.router.lifespan_context(app)`（per-test 生命週期）互相衝突。**已立即 revert**，確認回到「76 passed, 4 errors」的原始基準。
+
+**現況**：問題本質很可能是 module-level `engine`（`app.core.db`）的連線池跨測試共用，配合 function-scope event loop 時，pool 在高測試量下偶發連線終止競態；正確修法可能是測試專用 engine 改用 `NullPool`（而非調整 event loop scope），但尚未嘗試、風險未知，不在本次 orchestrator 巡場範圍內貿然再試第二次。**這已經是需要獨立開一個小 task 認真處理的問題，不要再讓其他 task 的 worker 各自花時間重新調查同一件事。**
+
 ## §5 — CheckConstraint 顯式命名被 naming_convention 雙重前綴（DB naming convention 陷阱）
 
 - **time**: 2026-09-04T06:35:00+08:00
