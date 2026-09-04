@@ -1,11 +1,11 @@
 # Tasks v1.0.0 — expense-tracker-web
 
-> 狀態：進行中（已完成 17/18）　盲點掃描：propose 拆解前已用 AskUserQuestion 解決三個缺口（負債輸入方式、分類/標籤結構、週期性交易月底夾日規則），已回寫 `propose-v1.0.0.md`。報價資料源仍未定案 → task-011 / task-012 為調查 spike，其結論會影響 task-013 / task-014 的實作細節（非阻塞拆解，可先拆）。
+> 狀態：全部完成（18/18）　盲點掃描：propose 拆解前已用 AskUserQuestion 解決三個缺口（負債輸入方式、分類/標籤結構、週期性交易月底夾日規則），已回寫 `propose-v1.0.0.md`。task-011 / task-012 的報價來源 spike 結論已由 task-013 / task-014 落地實作並通過 e2e（task-018）驗證。已知非阻塞性技術債：`fixed.md` §4 記錄的 pytest-asyncio 連線池 teardown flake（全套件跑動偶發，各任務單獨驗證皆綠，非邏輯錯誤，留待後續獨立處理）。
 > 格式定義：`HARNESS_HOME/rules/00-core/10-propose-tasks-fixed.md`。
 
-- **狀態**：進行中（17 / 18）
+- **狀態**：全部完成（18 / 18）
 - **來源**：`propose-v1.0.0.md`
-- **更新**：2026-09-03
+- **更新**：2026-09-04
 
 ## 任務清單
 
@@ -28,4 +28,4 @@
 | 015 | 負債 Liability（後端） | done | ✓ | task-001 | `backend/app/models/liability.py`、`backend/app/schemas/liability.py`、`backend/app/api/v1/liabilities.py`、`backend/alembic/versions/{rev}_add_liabilities.py`、`backend/tests/api/test_liabilities.py` | sub-agent |
 | 016 | 總資產 / 總負債彙總 API | done |  | task-002, task-013, task-014, task-015 | `backend/app/services/net_worth_service.py`、`backend/app/api/v1/net_worth.py`、`backend/app/schemas/net_worth.py`、`backend/tests/api/test_net_worth.py` | sub-agent |
 | 017 | 資產 / 負債前端頁（含總覽 dashboard） | done |  | task-016 | `frontend/src/lib/api/assetsApi.ts`、`frontend/src/app/assets/page.tsx`、`frontend/src/app/dashboard/page.tsx` | sub-agent |
-| 018 | e2e：資產反映市值 + 雙帳號隔離 | in_progress |  | task-005, task-006, task-017 | `frontend/e2e/net-worth.spec.ts`、`frontend/e2e/multi-user-isolation.spec.ts`、`.github/workflows/e2e.yml` | sub-agent |
+| 018 | e2e：資產反映市值 + 雙帳號隔離 | done |  | task-005, task-006, task-017 | `frontend/e2e/net-worth.spec.ts`、`frontend/e2e/multi-user-isolation.spec.ts`、`.github/workflows/e2e.yml` | sub-agent |
