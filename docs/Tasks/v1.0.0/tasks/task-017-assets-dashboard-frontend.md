@@ -1,7 +1,7 @@
 ---
 id: task-017
 title: 資產 / 負債前端頁（含總覽 dashboard）
-status: pending
+status: done
 parallel: false
 depends_on: [task-016]
 affected_files:
@@ -17,10 +17,10 @@ rules: [rules/10-frontend/02-api-and-state.md, rules/10-frontend/05-components.m
 
 ## Acceptance
 
-- [ ] `npm run typecheck` 全綠
-- [ ] `npm run lint` 全綠
-- [ ] `npm run build` 成功
-- [ ] `npm run test -- --run` 涵蓋 dashboard 數字渲染（`msw` mock net-worth API 回應）
+- [x] `npm run typecheck` 全綠
+- [x] `npm run lint` 全綠
+- [x] `npm run build` 成功
+- [x] `npm run test -- --run` 涵蓋 dashboard 數字渲染（`msw` mock net-worth API 回應）
 
 ## 必讀檔（Just-in-time）
 
