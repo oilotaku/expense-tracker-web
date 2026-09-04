@@ -1,7 +1,7 @@
 ---
 id: task-009
 title: 預算 Budget（後端）
-status: pending
+status: done
 parallel: false
 depends_on: [task-003, task-004]
 affected_files:
