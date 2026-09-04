@@ -12,5 +12,5 @@ export default defineConfig([
     },
   },
   // schema.d.ts 由 openapi-typescript 產生（FE-066），不 lint、仍由 tsc 檢查
-  globalIgnores(['.next/**', 'out/**', 'coverage/**', 'next-env.d.ts', 'src/lib/api/schema.d.ts']),
+  globalIgnores(['.next/**', 'out/**', 'coverage/**', 'playwright-report/**', 'next-env.d.ts', 'src/lib/api/schema.d.ts']),
 ])
