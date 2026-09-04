@@ -79,3 +79,14 @@
 - **修正**: 1. 把四個 `CheckConstraint` 的 `name=` 從完整字串改成短標籤（如 `"asset_type"`）。2. 因為表已經在本機 dev DB 建立過（帶壞名字），用 `ALTER TABLE financial_assets RENAME CONSTRAINT <壞名字> TO <正確名字>`（純改名，非 DROP，不違反毀滅性操作禁令）手動同步 dev DB，讓它跟修正後的 migration 原始碼一致。3. 重建 image、`ruff`/`mypy`/`pytest` 全部重跑確認無回歸。
 - **rule**: NONE（屬於 SQLAlchemy 使用方式問題，非 harness 規則層級；`rules/30-database/00-overview.md` 的命名規則本身沒錯，是實作時對 `%(constraint_name)s` 語意理解錯誤）
 - **後續**: 之後任何 task 若在 migration 裡寫 `sa.CheckConstraint(...)`，`name=` 一律只給短標籤（不含 `ck_<table>_` 前綴），讓 naming_convention 自己組出完整名稱；`pk`/`uq`/`fk`/`ix` 則維持傳完整名稱的現有寫法（兩者规则不同，不要混用同一套心智模型）。建議之後開一個小任務（或併入某個既有 backend task）在 CI 加一條檢查：`SELECT conname FROM pg_constraint WHERE conname LIKE 'ck_%_ck_%'`，抓到就代表又犯了同樣的錯。
+
+## §6 — `NEXT_PUBLIC_API_URL` 寫死 `localhost`，導致同區網其他裝置連不上前端
+
+- **time**: 2026-09-04T12:45:00+08:00
+- **commit**: `a8edfd0`
+- **files**: `docker-compose.yml`、`.env.development.example`、`.env.staging.example`、`.env.production.example`
+- **問題**: 使用者從區網另一台裝置以 Pi 的區網 IP（`http://192.168.17.148:3000`）開啟 `/login`，登入功能失敗。
+- **根因**: `docker-compose.yml` 的 `frontend` service 把 `NEXT_PUBLIC_API_URL` 寫死成 `http://localhost:8000/api/v1`（build ARG 與 environment 兩處都是），違反本檔案自己開頭註解宣告的原則「dev / prod 同一份；差異只在 `.env`」。Next.js 的 `NEXT_PUBLIC_*` 變數在 build time 內嵌進前端 JS bundle，瀏覽器執行時的 `localhost` 永遠指向「打開網頁的那台裝置本身」，不是伺服器；從非本機裝置連線時，前端呼叫後端 API 的請求會打到使用者自己電腦不存在的 8000 port。同時 `CORS_ORIGINS` 只允許 `http://localhost:3000`，即使 API URL 修對了，後端也會擋掉區網來源的 CORS 請求。
+- **修正**: 1. `docker-compose.yml` 的 `NEXT_PUBLIC_API_URL`（build args + environment 兩處）改讀 `${NEXT_PUBLIC_API_URL}`。2. `.env`（本機，gitignored）設成 Pi 的區網 IP：`http://192.168.17.148:8000/api/v1`；`CORS_ORIGINS` 加入對應的 `http://192.168.17.148:3000`。3. 三份 `.env.*.example` 補上 `NEXT_PUBLIC_API_URL` 的文件與範例值（維持 `localhost` / 網域範例，不寫入任何機器專屬 IP）。4. 重建前端 image，實測 CSP header 的 `connect-src` 與 CORS preflight 的 `access-control-allow-origin` 都正確帶出區網 IP，並實際打 `/auth/register`、`/auth/login` 兩個 endpoint 確認成功。
+- **rule**: NONE（屬於部署設定問題；`docker-compose.yml` 開頭已有「差異只在 .env」的自我宣告，這次修正是讓程式碼符合自己講的原則）
+- **後續**: 換裝置 / 換網路環境時，只需要改本機 `.env` 的 `NEXT_PUBLIC_API_URL` 與 `CORS_ORIGINS`，不必再改 `docker-compose.yml`。若之後要長期支援多裝置存取（不只是臨時測試），可以考慮改用 Next.js rewrites 讓前端走同源相對路徑代理到後端，徹底不用管使用者從哪個 host 連進來——但這是架構層級的改動，超出這次修正範圍，先記錄起來。
