@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     JWT_SECRET_KEY: str = Field(default=JWT_SECRET_KEY_DEVELOPMENT_DEFAULT, min_length=32)
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # 報價快取（→ rules/40-cache）；純加速型快取，未設定時 app 仍可啟動（→ CACHE-006）
+    REDIS_URL: str | None = None
     # API 邊界（request / response）時區；內部層一律 UTC（harness rules/00-core/03-timezone.md）
     API_TZ: str = "Asia/Taipei"
     # 後端只回 JSON，CSP 基線鎖到 default-src 'none'（CORE-128）。
@@ -39,6 +41,9 @@ class Settings(BaseSettings):
         # 非 development 一律拒絕 development 預設值
         if not self.is_development and self.JWT_SECRET_KEY == JWT_SECRET_KEY_DEVELOPMENT_DEFAULT:
             raise ValueError(f"APP_ENV={self.APP_ENV} 但 JWT_SECRET_KEY 仍為 development 預設值")
+        # use_redis=true 專案在 production 必設 REDIS_URL（→ CACHE-006）
+        if self.APP_ENV == "production" and not self.REDIS_URL:
+            raise ValueError("APP_ENV=production 但 REDIS_URL 未設定")
         return self
 
 

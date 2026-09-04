@@ -1,7 +1,7 @@
 ---
 id: task-014
 title: 報價 client + Redis 快取層
-status: pending
+status: done
 parallel: false
 depends_on: [task-011, task-012, task-013]
 affected_files:
