@@ -1,12 +1,17 @@
 """PIN 登入（design-spec §12.2）：首次設定 / 變更 / 停用 / PIN 快速登入 + 鎖定機制。"""
 
+from collections.abc import AsyncIterator
 from uuid import UUID
 
-from httpx import AsyncClient
-from sqlalchemy import select
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import UserCredential
+from app.core.db import AsyncSessionLocal
+from app.main import app
+from app.models.category import Category
+from app.models.user import User, UserCredential
 
 _PASSWORD = "correct horse battery"
 _PIN = "123456"
@@ -197,3 +202,112 @@ async def test_set_pin_invalid_format_returns_422(client: AsyncClient) -> None:
     await _register_and_login(client, "pin-10@example.com")
     res = await client.post("/api/v1/auth/pin", json={"pin": "12ab56", "password": _PASSWORD})
     assert res.status_code == 422
+
+
+async def _cleanup_real_user(user_uid: UUID) -> None:
+    """這組測試不走 conftest 的 db fixture（那個外層 transaction 最後會 rollback），
+    改用真實 get_db，會真的 commit 進 DB，所以要自己清乾淨。
+
+    註冊會觸發 DB trigger（`trg_users_seed_default_categories`，見
+    `backend/alembic/versions/2026_09_04_0900-add_categories.py`）自動種預設分類，
+    須先刪 categories 才能刪 users（FK）。
+    """
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(Category).where(Category.user_uid == user_uid))
+        await session.execute(delete(UserCredential).where(UserCredential.user_uid == user_uid))
+        await session.execute(delete(User).where(User.user_uid == user_uid))
+        await session.commit()
+
+
+@pytest.fixture
+async def real_client() -> AsyncIterator[AsyncClient]:
+    """task-030：**不** override `get_db`，走正式的 commit/rollback 生命週期。
+
+    `conftest.py` 的 `client` fixture 把 `get_db` override 成直接 yield 測試用的
+    `db`（外層 transaction + 最後 rollback），完全繞過正式 `get_db` 的
+    try/commit/except/rollback，這正是先前 PIN 鎖定計數假綠燈的根源。這裡對照
+    既有 `client` fixture 的 lifespan 管理方式，唯一差異是不做 dependency override。
+    """
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+
+
+async def test_login_pin_lockout_persists_across_independent_requests_via_real_get_db(
+    real_client: AsyncClient,
+) -> None:
+    """task-030：用真實 app + 真實 get_db（見 `real_client` fixture），
+    並用另一條全新的 session（獨立連線）讀回資料，驗證鎖定計數是「真的持久化到
+    DB」而不是同一個 session 內的物件狀態錯覺。"""
+    email = "pin-lockout-real-get-db@example.com"
+    user_uid: UUID | None = None
+    try:
+        user_uid = await _register_and_login(real_client, email)
+        set_res = await real_client.post(
+            "/api/v1/auth/pin", json={"pin": _PIN, "password": _PASSWORD}
+        )
+        assert set_res.status_code == 201
+
+        for _ in range(5):
+            res = await real_client.post(
+                "/api/v1/auth/login/pin",
+                json={"user_uid": str(user_uid), "pin": "000000"},
+            )
+            assert res.status_code == 401
+
+        sixth = await real_client.post(
+            "/api/v1/auth/login/pin",
+            json={"user_uid": str(user_uid), "pin": "000000"},
+        )
+        assert sixth.status_code == 429
+
+        # 鎖定期間內，正確 PIN 也回 429（不再比對 PIN 本身）
+        correct_during_lock = await real_client.post(
+            "/api/v1/auth/login/pin",
+            json={"user_uid": str(user_uid), "pin": _PIN},
+        )
+        assert correct_during_lock.status_code == 429
+
+        # 每次請求都經過真實 get_db；這裡再開一條全新連線 / session 讀回，
+        # 若先前的 commit 沒有真的落地，這裡會讀到 pin_failed_attempts == 0。
+        async with AsyncSessionLocal() as fresh_session:
+            credential = await _credential_for(fresh_session, user_uid)
+            assert credential.pin_failed_attempts >= 5
+            assert credential.pin_locked_until is not None
+    finally:
+        if user_uid is not None:
+            await _cleanup_real_user(user_uid)
+
+
+async def test_login_pin_reset_on_success_persists_across_independent_requests_via_real_get_db(
+    real_client: AsyncClient,
+) -> None:
+    """task-030：成功登入後 pin_failed_attempts 歸零，同樣要用真實 get_db 驗證
+    跨連線可見，而不是只驗同一個 session 內的物件狀態。"""
+    email = "pin-reset-real-get-db@example.com"
+    user_uid: UUID | None = None
+    try:
+        user_uid = await _register_and_login(real_client, email)
+        await real_client.post("/api/v1/auth/pin", json={"pin": _PIN, "password": _PASSWORD})
+
+        for _ in range(2):
+            res = await real_client.post(
+                "/api/v1/auth/login/pin",
+                json={"user_uid": str(user_uid), "pin": "000000"},
+            )
+            assert res.status_code == 401
+
+        ok = await real_client.post(
+            "/api/v1/auth/login/pin",
+            json={"user_uid": str(user_uid), "pin": _PIN},
+        )
+        assert ok.status_code == 200
+
+        async with AsyncSessionLocal() as fresh_session:
+            credential = await _credential_for(fresh_session, user_uid)
+            assert credential.pin_failed_attempts == 0
+            assert credential.pin_locked_until is None
+    finally:
+        if user_uid is not None:
+            await _cleanup_real_user(user_uid)

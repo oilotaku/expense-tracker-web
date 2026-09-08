@@ -99,5 +99,9 @@ class AuthService:
                 else None
             )
             await self.repo.record_pin_failure(credential, attempts, locked_until)
+            # 這裡刻意先 commit 再拋業務錯誤：get_db 對「未預期例外」一律 rollback，
+            # 若不在此先落地，剛才記錄的失敗次數會被那個通用 rollback 一併回捲，
+            # 導致鎖定機制從未真正持久化（task-030）。
+            await self.db.commit()
             raise AppError(_PIN_FAILED_DETAIL, response_code=401, status_code=401)
         await self.repo.reset_pin_failures(credential)
