@@ -91,9 +91,7 @@ class AuthService:
         now = datetime.now(UTC)
         if credential.pin_locked_until is not None and credential.pin_locked_until > now:
             raise AppError(_PIN_LOCKED_DETAIL, response_code=429, status_code=429)
-        if credential.pin_hash is None or not await verify_password_async(
-            pin, credential.pin_hash
-        ):
+        if credential.pin_hash is None or not await verify_password_async(pin, credential.pin_hash):
             attempts = credential.pin_failed_attempts + 1
             locked_until = (
                 now + timedelta(minutes=_PIN_LOCK_MINUTES)

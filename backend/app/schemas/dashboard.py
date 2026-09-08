@@ -35,7 +35,7 @@ class DashboardSummaryResponse(ApiSchema):
     expense: Decimal
     balance: Decimal
     # period != "month" 時一律 null（對齊 Budget.period_type=monthly 的限制，→ A7）；
-    # period == "month" 且使用者未設定任何月度預算時為 0.00（非 null，用兩者區分「不適用」與「有查、目前是 0」）
+    # period == "month" 且未設定任何月度預算時為 0.00（非 null，區分「不適用」與「有查、目前是 0」）
     budget_remaining: Decimal | None
 
     @field_serializer("income", "expense", "balance", when_used="json")

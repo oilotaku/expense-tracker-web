@@ -81,7 +81,8 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     await _register_and_login(client, "networth-mixed@example.com")
 
     account_res = await client.post(
-        "/api/v1/accounts", json={"name": "現金", "balance": "10000.00"}
+        "/api/v1/accounts",
+        json={"name": "現金", "balance": "10000.00", "color": "#8B6ED6", "icon": "wallet"},
     )
     assert account_res.status_code == 201
 

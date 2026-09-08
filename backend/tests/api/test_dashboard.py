@@ -15,7 +15,10 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
 
 
 async def _create_account(client: AsyncClient, name: str = "現金") -> str:
-    res = await client.post("/api/v1/accounts", json={"name": name, "balance": "1000.00"})
+    res = await client.post(
+        "/api/v1/accounts",
+        json={"name": name, "balance": "1000.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
     account_uid: str = res.json()["data"]["account_uid"]
     return account_uid
 
@@ -111,17 +114,29 @@ async def test_dashboard_summary_month_period_income_expense_balance(
 
     # 期間內的收入與支出
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
-        "45000.00", "income",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
+        "45000.00",
+        "income",
     )
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-01-16T12:00:00+08:00"),
-        "28000.00", "expense",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-16T12:00:00+08:00"),
+        "28000.00",
+        "expense",
     )
     # 期間外（2 月）的交易不應計入
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-02-01T12:00:00+08:00"),
-        "9999.00", "expense",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-02-01T12:00:00+08:00"),
+        "9999.00",
+        "expense",
     )
 
     body = await _get_summary(
@@ -142,17 +157,29 @@ async def test_dashboard_summary_year_and_custom_period_scoped_to_range(
     food_uid = categories["餐飲"]
 
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-03-10T12:00:00+08:00"),
-        "1000.00", "income",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-03-10T12:00:00+08:00"),
+        "1000.00",
+        "income",
     )
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-07-10T12:00:00+08:00"),
-        "300.00", "expense",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-07-10T12:00:00+08:00"),
+        "300.00",
+        "expense",
     )
     # 隔年的交易不應計入「年」彙總
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2027-01-01T12:00:00+08:00"),
-        "9999.00", "income",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2027-01-01T12:00:00+08:00"),
+        "9999.00",
+        "income",
     )
 
     year_body = await _get_summary(
@@ -213,17 +240,29 @@ async def test_dashboard_summary_budget_remaining_sums_all_monthly_budgets(
     await _create_budget(client, categories["娛樂"], "daily", "100.00")
 
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
-        "300.00", "expense",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
+        "300.00",
+        "expense",
     )
     await _create_transaction(
-        client, account_uid, transport_uid, datetime.fromisoformat("2026-01-16T12:00:00+08:00"),
-        "50.00", "expense",
+        client,
+        account_uid,
+        transport_uid,
+        datetime.fromisoformat("2026-01-16T12:00:00+08:00"),
+        "50.00",
+        "expense",
     )
     # 期間外的支出不應計入 budget_remaining
     await _create_transaction(
-        client, account_uid, food_uid, datetime.fromisoformat("2026-02-01T12:00:00+08:00"),
-        "9999.00", "expense",
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-02-01T12:00:00+08:00"),
+        "9999.00",
+        "expense",
     )
 
     body = await _get_summary(

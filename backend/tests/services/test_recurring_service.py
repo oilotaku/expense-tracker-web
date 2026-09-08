@@ -36,7 +36,9 @@ async def _make_account(db: AsyncSession, user_uid: UUID) -> UUID:
 
 
 async def _make_category(db: AsyncSession, user_uid: UUID) -> UUID:
-    category = await CategoryRepository(db).create(user_uid=user_uid, name="訂閱")
+    # 名稱刻意避開系統預設種子清單（含「訂閱」，→ design-spec §8），避免與使用者建立時
+    # 由 trg_users_seed_default_categories 自動種好的同名分類撞 unique constraint。
+    category = await CategoryRepository(db).create(user_uid=user_uid, name="測試訂閱服務")
     return category.category_uid
 
 

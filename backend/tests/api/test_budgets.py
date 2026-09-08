@@ -15,7 +15,10 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
 
 
 async def _create_account(client: AsyncClient, name: str = "現金") -> str:
-    res = await client.post("/api/v1/accounts", json={"name": name, "balance": "1000.00"})
+    res = await client.post(
+        "/api/v1/accounts",
+        json={"name": name, "balance": "1000.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
     account_uid: str = res.json()["data"]["account_uid"]
     return account_uid
 

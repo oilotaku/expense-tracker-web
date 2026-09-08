@@ -15,8 +15,14 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
 
 
 async def _make_account_and_category(client: AsyncClient) -> tuple[str, str]:
-    account_res = await client.post("/api/v1/accounts", json={"name": "現金", "balance": "0.00"})
-    category_res = await client.post("/api/v1/categories", json={"name": "訂閱服務"})
+    account_res = await client.post(
+        "/api/v1/accounts",
+        json={"name": "現金", "balance": "0.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
+    category_res = await client.post(
+        "/api/v1/categories",
+        json={"name": "訂閱服務", "color": "#E8834B", "icon": "bell"},
+    )
     return account_res.json()["data"]["account_uid"], category_res.json()["data"]["category_uid"]
 
 
