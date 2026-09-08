@@ -34,10 +34,10 @@ class TransactionCreateRequest(ApiInput):
     account_uid: UUID
     category_uid: UUID
     transaction_date: datetime
-    description: str = Field(min_length=1, max_length=255)
+    description: str = Field(max_length=255)
     amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
     transaction_type: TransactionType
-    payment_method: str = Field(min_length=1, max_length=50)
+    payment_method: str = Field(max_length=50)
     tags: TagNameList = Field(default_factory=list)
 
 
@@ -45,10 +45,10 @@ class TransactionUpdateRequest(ApiInput):
     account_uid: UUID | None = None
     category_uid: UUID | None = None
     transaction_date: datetime | None = None
-    description: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=255)
     amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
     transaction_type: TransactionType | None = None
-    payment_method: str | None = Field(default=None, min_length=1, max_length=50)
+    payment_method: str | None = Field(default=None, max_length=50)
     # None = 標籤維持不變；提供的清單（含空清單）會整批取代既有標籤
     tags: TagNameList | None = None
 

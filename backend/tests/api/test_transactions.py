@@ -11,7 +11,10 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
 
 
 async def _create_account(client: AsyncClient, name: str = "現金") -> str:
-    res = await client.post("/api/v1/accounts", json={"name": name, "balance": "1000.00"})
+    res = await client.post(
+        "/api/v1/accounts",
+        json={"name": name, "balance": "1000.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
     account_uid: str = res.json()["data"]["account_uid"]
     return account_uid
 
@@ -50,6 +53,32 @@ async def test_create_transaction_with_two_tags(client: AsyncClient) -> None:
     assert data["transaction_type"] == "expense"
     assert data["payment_method"] == "現金"
     assert {t["name"] for t in data["tags"]} == {"外食", "同事聚餐"}
+
+
+async def test_create_transaction_with_blank_description_and_payment_method(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "tx-user-blank@example.com")
+    account_uid = await _create_account(client)
+    categories = await _list_category_uids(client)
+    category_uid = categories["其他"]
+
+    res = await client.post(
+        "/api/v1/transactions",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "transaction_date": "2026-09-01T12:00:00+08:00",
+            "description": "",
+            "amount": "100.00",
+            "transaction_type": "expense",
+            "payment_method": "",
+        },
+    )
+    assert res.status_code == 201
+    data = res.json()["data"]
+    assert data["description"] == ""
+    assert data["payment_method"] == ""
 
 
 async def test_list_transactions_without_cookie_returns_401(client: AsyncClient) -> None:
