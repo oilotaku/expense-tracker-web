@@ -1,12 +1,45 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { cva } from 'class-variance-authority'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useDispatch } from 'react-redux'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
+import { CurvedCard } from '@/components/common/CurvedCard'
+import { CategoryBarChart } from '@/components/dashboard/CategoryBarChart'
+import { CategoryPieChart, type CategorySlice } from '@/components/dashboard/CategoryPieChart'
+import { ChartTypeSwitcher, type ChartType } from '@/components/dashboard/ChartTypeSwitcher'
+import { NetWorthCard } from '@/components/dashboard/NetWorthCard'
+import {
+  PeriodSelector,
+  defaultPeriodSelection,
+  toPeriodRange,
+  type PeriodSelection,
+} from '@/components/dashboard/PeriodSelector'
+import { StatTile, formatAmount } from '@/components/dashboard/StatTile'
+import { TrendLineChart, type TrendPoint } from '@/components/dashboard/TrendLineChart'
+import {
+  TransactionFormDialog,
+  type TransactionFormValues,
+} from '@/components/transactions/TransactionFormDialog'
+import { useListAccountsQuery } from '@/lib/api/accountsApi'
 import { useGetNetWorthQuery } from '@/lib/api/assetsApi'
+import { baseApi } from '@/lib/api/baseApi'
+import { useGetDashboardSummaryQuery } from '@/lib/api/dashboardApi'
+import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
+import {
+  useCreateTransactionMutation,
+  useListCategoryOptionsQuery,
+  useListTransactionsQuery,
+  type TransactionResponse,
+} from '@/lib/api/transactionsApi'
+import type { AppDispatch } from '@/store/store'
 
-// 同 AssetsPage / BudgetsPage（FE-029）：錯誤處理必用型別收窄，禁 `error as any`。
+// 同 AccountsPage / BudgetsPage（FE-029）：錯誤處理必用型別收窄，禁 `error as any`。
 function getErrorMessage(error: FetchBaseQueryError | SerializedError | undefined): string {
   if (!error) return ''
   if ('status' in error) {
@@ -24,64 +57,279 @@ function getErrorMessage(error: FetchBaseQueryError | SerializedError | undefine
   return error.message ?? '發生錯誤，請稍後再試'
 }
 
-// GET /api/v1/net-worth 在上游報價來源（TWSE MIS / gold-api）暫時不可用時回 424（非 5xx，
-// → backend/app/services/net_worth_service.py NetWorthPricingUnavailableError）。這裡不視為
-// 一般錯誤崩潰，而是顯示可重試的提示，讓使用者知道問題出在外部報價來源，而非本頁故障。
-function isPricingUnavailable(error: FetchBaseQueryError | SerializedError | undefined): boolean {
-  return error !== undefined && 'status' in error && error.status === 424
+// 四張卡片與期間切換吃 `GET /dashboard/summary`（→ design-spec §9.2 資料源決議 / A14），但圖表
+// 區的「分類佔比」與「收支趨勢」目前沒有對應的後端彙總 endpoint，只能沿用既有
+// `GET /transactions`（`TransactionListFilter.limit` 上限 100，backend/app/schemas/transaction.py）
+// 在期間內抓一頁交易後於前端加總。期間交易超過 100 筆時圖表僅涵蓋最新 100 筆 —— 已知限制，
+// 需後端補一支分類/趨勢彙總 API 才能根治（不在 task-016 的 affected_files 範圍）。
+const CHART_TRANSACTION_LIMIT = 100
+const RECENT_TRANSACTION_LIMIT = 5
+
+function toCategorySlices(
+  transactions: readonly TransactionResponse[],
+  categoryNames: ReadonlyMap<string, string>,
+): CategorySlice[] {
+  const totals = new Map<string, number>()
+  for (const transaction of transactions) {
+    if (transaction.transaction_type !== 'expense') continue
+    const amount = Number(transaction.amount)
+    if (!Number.isFinite(amount)) continue
+    totals.set(transaction.category_uid, (totals.get(transaction.category_uid) ?? 0) + amount)
+  }
+  return [...totals].map(([categoryUid, amount]) => ({
+    id: categoryUid,
+    label: categoryNames.get(categoryUid) ?? '未分類',
+    amount,
+  }))
 }
 
-interface NetWorthCardProps {
-  label: string
-  value: string
+function toTrendPoints(transactions: readonly TransactionResponse[]): TrendPoint[] {
+  const points = new Map<string, TrendPoint>()
+  for (const transaction of transactions) {
+    const date = transaction.transaction_date.slice(0, 10)
+    const amount = Number(transaction.amount)
+    if (!Number.isFinite(amount)) continue
+    const point = points.get(date) ?? { date, income: 0, expense: 0 }
+    if (transaction.transaction_type === 'income') {
+      point.income += amount
+    } else {
+      point.expense += amount
+    }
+    points.set(date, point)
+  }
+  return [...points.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-function NetWorthCard({ label, value }: NetWorthCardProps): ReactNode {
-  return (
-    <div className="rounded border p-4">
-      <p className="text-sm text-gray-600">{label}</p>
-      <p className="text-2xl font-bold">{value}</p>
-    </div>
-  )
+// transaction_date 為帶 offset 的 ISO 8601（後端已序列化為 API_TZ，→ CORE-041），前端不再轉換，
+// 直接取字串的月/日呈現（design-spec §9.2 wireframe 的 `09/03`）。
+function toDisplayDate(isoDate: string): string {
+  return isoDate.slice(5, 10).replace('-', '/')
+}
+
+const CHART_FORMAT_VALUE = (amount: number): string => formatAmount(String(amount))
+
+// FE-052：條件樣式改走 cva variant，不在 JSX 內串三元 class。
+const transactionAmountClassName = cva('shrink-0 text-sm font-semibold tabular-nums md:text-base', {
+  variants: {
+    transactionType: { income: 'text-income-700', expense: 'text-expense-700' },
+  },
+  defaultVariants: { transactionType: 'expense' },
+})
+
+// 支出在清單一律顯示負號、收入顯示正號（design-spec §9.2 wireframe `-NT$120` / `+NT$45,000`）。
+function signedTransactionAmount(transaction: TransactionResponse): string {
+  return transaction.transaction_type === 'income'
+    ? formatAmount(transaction.amount, true)
+    : formatAmount(`-${transaction.amount}`)
 }
 
 export default function DashboardPage(): ReactNode {
-  const { data, isLoading, error, refetch } = useGetNetWorthQuery()
+  const router = useRouter()
+  const dispatch = useDispatch<AppDispatch>()
+
+  const [selection, setSelection] = useState<PeriodSelection>(defaultPeriodSelection)
+  const [isFormOpen, setIsFormOpen] = useState(false)
+
+  const range = useMemo(() => toPeriodRange(selection), [selection])
+
+  const {
+    data: summary,
+    isLoading: isSummaryLoading,
+    error: summaryError,
+  } = useGetDashboardSummaryQuery({
+    period: selection.period,
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+  })
+
+  const { data: periodTransactions } = useListTransactionsQuery({
+    date_from: range.dateFrom,
+    date_to: range.dateTo,
+    limit: CHART_TRANSACTION_LIMIT,
+  })
+  const { data: recentTransactions } = useListTransactionsQuery({ limit: RECENT_TRANSACTION_LIMIT })
+  const { data: categories } = useListCategoryOptionsQuery()
+  const { data: accountList } = useListAccountsQuery()
+  const {
+    data: netWorth,
+    isLoading: isNetWorthLoading,
+    error: netWorthError,
+    refetch: refetchNetWorth,
+  } = useGetNetWorthQuery()
+
+  const [createTransaction] = useCreateTransactionMutation()
+  const [createRecurringRule] = useCreateRecurringRuleMutation()
+
+  const accounts = useMemo(() => accountList?.items ?? [], [accountList])
+  const categoryNames = useMemo(
+    () => new Map((categories ?? []).map((category) => [category.category_uid, category.name])),
+    [categories],
+  )
+  const accountNames = useMemo(
+    () => new Map(accounts.map((account) => [account.account_uid, account.name])),
+    [accounts],
+  )
+  const categorySlices = useMemo(
+    () => toCategorySlices(periodTransactions?.items ?? [], categoryNames),
+    [periodTransactions, categoryNames],
+  )
+  const trendPoints = useMemo(() => toTrendPoints(periodTransactions?.items ?? []), [periodTransactions])
+
+  // 期間 = 年 / 自訂範圍時後端一律回 `budget_remaining: null`（→ A7），卡片改顯示灰階簡化狀態。
+  const isBudgetAvailable =
+    selection.period === 'month' && summary?.budget_remaining !== null && summary?.budget_remaining !== undefined
+
+  const openForm = useCallback((): void => setIsFormOpen(true), [])
+
+  function handleLogout(): void {
+    // 已知後端缺口（同 settings/page.tsx 註解）：backend 尚無 POST /auth/logout，httpOnly cookie
+    // 無法在前端清除；這裡只清空 RTK Query 快取並導回登入頁，需後端補 endpoint 才能完整解決。
+    dispatch(baseApi.util.resetApiState())
+    router.push('/login')
+  }
+
+  async function handleSubmitTransaction(values: TransactionFormValues): Promise<void> {
+    const { recurring, ...payload } = values
+    await createTransaction(payload).unwrap()
+    // 「固定收支」勾選 = 呼叫既有 recurring_rules 建立 API 的另一個入口（→ A13）。
+    if (recurring) {
+      await createRecurringRule({
+        account_uid: payload.account_uid,
+        category_uid: payload.category_uid,
+        description: payload.description,
+        amount: payload.amount,
+        transaction_type: payload.transaction_type,
+        payment_method: payload.payment_method,
+        interval_unit: recurring.interval_unit,
+        interval_count: recurring.interval_count,
+        anchor_date: recurring.anchor_date,
+      }).unwrap()
+    }
+  }
+
+  function renderChart(chartType: ChartType): ReactNode {
+    if (chartType === 'line') {
+      return <TrendLineChart data={trendPoints} formatValue={CHART_FORMAT_VALUE} />
+    }
+    if (chartType === 'bar') {
+      return <CategoryBarChart data={categorySlices} formatValue={CHART_FORMAT_VALUE} />
+    }
+    return <CategoryPieChart data={categorySlices} formatValue={CHART_FORMAT_VALUE} />
+  }
 
   return (
     <AuthGuard>
-      <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-6">
-        <h1 className="text-2xl font-bold">總覽</h1>
-        {isLoading && <p>載入中…</p>}
-        {error && isPricingUnavailable(error) && (
-          <div role="alert" className="flex flex-col gap-2 rounded border border-red-600 bg-red-50 p-4">
-            <p className="text-sm text-red-600">
-              報價服務暫時無法使用，總資產 / 淨資產暫時無法計算，請稍後再試。
+      <AppShell onAddClick={openForm} onLogout={handleLogout}>
+        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 md:gap-8 md:px-6 lg:px-8">
+          <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h1 className="text-2xl font-bold text-text-primary md:text-3xl">總覽</h1>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <PeriodSelector value={selection} onChange={setSelection} />
+              {/* 行動端的新增入口是 <BottomNav> 中央 FAB（AppShell 的 onAddClick），
+                  桌機另備 Header 按鈕（design-spec §9.2 `[＋新增]`）。 */}
+              <button
+                type="button"
+                onClick={openForm}
+                className="hidden min-h-9 items-center rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 md:inline-flex focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              >
+                ＋ 新增交易
+              </button>
+            </div>
+          </header>
+
+          {summaryError && (
+            <p role="alert" className="text-sm text-danger-700">
+              {getErrorMessage(summaryError)}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                void refetch()
+          )}
+
+          {isSummaryLoading && <p className="text-text-secondary">載入中…</p>}
+
+          {!isSummaryLoading && !summaryError && (
+            // 行動端垂直堆疊、結餘拉大成 Hero 並置頂（order-first）；桌機 grid-cols-4 四張並排
+            // （design-spec §9.2 RWD 對應）。切版全部走 Tailwind class，無 JS 判斷（→ FE-063）。
+            <section aria-label="期間彙總" className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
+              <StatTile label="收入" value={summary?.income ?? '0'} tone="income" />
+              <StatTile label="支出" value={summary?.expense ?? '0'} tone="expense" />
+              <StatTile
+                label="結餘"
+                value={summary?.balance ?? '0'}
+                tone="neutral"
+                signed
+                hero
+                className="order-first col-span-2 md:order-none md:col-span-1"
+              />
+              <StatTile
+                label="預算結餘"
+                value={summary?.budget_remaining ?? '0'}
+                tone="warning"
+                unavailable={!isBudgetAvailable}
+                hint={isBudgetAvailable ? undefined : '預算僅支援月度檢視'}
+                className="col-span-2 md:col-span-1"
+              />
+            </section>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
+            <CurvedCard className="flex flex-col gap-4 lg:col-span-2">
+              <h2 className="text-xl font-semibold text-text-primary md:text-2xl">支出分類</h2>
+              <ChartTypeSwitcher renderChart={renderChart} />
+            </CurvedCard>
+
+            <NetWorthCard
+              accounts={accounts}
+              netWorth={netWorth}
+              isLoading={isNetWorthLoading}
+              error={netWorthError}
+              onRetry={() => {
+                void refetchNetWorth()
               }}
-              className="min-h-11 self-start rounded border px-4"
-            >
-              重試
-            </button>
+            />
           </div>
-        )}
-        {error && !isPricingUnavailable(error) && (
-          <p role="alert" className="text-sm text-red-600">
-            {getErrorMessage(error)}
-          </p>
-        )}
-        {!isLoading && !error && data && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <NetWorthCard label="總資產" value={data.total_assets} />
-            <NetWorthCard label="總負債" value={data.total_liabilities} />
-            <NetWorthCard label="淨資產" value={data.net_worth} />
-          </div>
-        )}
-      </main>
+
+          <CurvedCard className="flex flex-col gap-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-xl font-semibold text-text-primary md:text-2xl">最近交易</h2>
+              <Link
+                href="/transactions"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 md:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              >
+                查看全部 →
+              </Link>
+            </div>
+            {(recentTransactions?.items ?? []).length === 0 ? (
+              <p className="text-sm text-text-secondary md:text-base">尚無交易紀錄</p>
+            ) : (
+              <ul className="flex flex-col gap-3" role="list">
+                {(recentTransactions?.items ?? []).map((transaction) => (
+                  <li key={transaction.transaction_uid} className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm text-text-primary md:text-base">
+                        {toDisplayDate(transaction.transaction_date)}{' '}
+                        {categoryNames.get(transaction.category_uid) ?? '未分類'}
+                      </span>
+                      <span className="truncate text-xs text-text-muted">
+                        {[transaction.description, accountNames.get(transaction.account_uid)]
+                          .filter((part) => part !== undefined && part.length > 0)
+                          .join(' · ')}
+                      </span>
+                    </span>
+                    <span
+                      className={transactionAmountClassName({
+                        transactionType: transaction.transaction_type,
+                      })}
+                    >
+                      {signedTransactionAmount(transaction)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CurvedCard>
+        </div>
+
+        <TransactionFormDialog open={isFormOpen} onOpenChange={setIsFormOpen} onSubmit={handleSubmitTransaction} />
+      </AppShell>
     </AuthGuard>
   )
 }
