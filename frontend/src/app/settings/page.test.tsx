@@ -145,6 +145,26 @@ describe('SettingsPage', () => {
       expect(window.localStorage.getItem(`pin-status:${ME.user_uid}`)).toBe('set')
     })
 
+    it('設定 PIN 成功後呼叫 rememberAccount，device-accounts 記住該帳號（task-031）', async () => {
+      setPin.mockReturnValue({ unwrap: () => Promise.resolve(undefined) })
+      render(<SettingsPage />)
+
+      fireEvent.click(screen.getByRole('button', { name: '設定 PIN' }))
+      fireEvent.change(screen.getByLabelText('請先輸入目前密碼以驗證身份'), {
+        target: { value: 'my-password' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+
+      await typePin('123456')
+      await typePin('123456')
+
+      await screen.findByRole('button', { name: '變更 PIN' })
+      const raw = window.localStorage.getItem('device-accounts')
+      expect(raw).not.toBeNull()
+      const stored = JSON.parse(raw ?? '[]') as Array<{ user_uid: string; maskedEmail: string }>
+      expect(stored).toEqual([expect.objectContaining({ user_uid: ME.user_uid, maskedEmail: 'j***8@gmail.com' })])
+    })
+
     it('兩次輸入的 PIN 不一致時顯示錯誤，不呼叫 setPin', async () => {
       render(<SettingsPage />)
       fireEvent.click(screen.getByRole('button', { name: '設定 PIN' }))

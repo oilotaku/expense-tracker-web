@@ -414,6 +414,7 @@ function SettingsPageContent(): ReactNode {
   const { data: accountsData } = useListAccountsQuery()
   const accounts = useMemo(() => accountsData?.items ?? [], [accountsData])
   const [defaultAccountUid, setDefaultAccountUid] = useState<string>(() => readDefaultAccountUid())
+  const { rememberAccount } = useDeviceAccounts()
 
   const [isSetPinOpen, setIsSetPinOpen] = useState(false)
   const [isChangePinOpen, setIsChangePinOpen] = useState(false)
@@ -428,6 +429,9 @@ function SettingsPageContent(): ReactNode {
   function handleSetPinSuccess(): void {
     setHasPin(true)
     if (userUid) writeHasPin(userUid, true)
+    // task-031：設定 PIN 成功（含 409 自我修正，見 PinSetupDialog.handleConfirmComplete）後
+    // 記住本裝置的帳號，否則 /login 的 PIN 快速登入入口（→ useDeviceAccounts().accounts）永遠不會出現。
+    if (userUid && me?.email) rememberAccount({ user_uid: userUid, email: me.email })
   }
 
   function handleDisablePinSuccess(): void {
