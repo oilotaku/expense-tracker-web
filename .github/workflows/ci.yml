@@ -115,6 +115,12 @@ jobs:
 
   secret-scan:
     runs-on: ubuntu-latest
+    # gitleaks-action 在 pull_request 事件會呼叫 GitHub API 取得 PR commits 範圍再掃描，
+    # 頂層 `permissions: contents: read` 不含這個權限，須在 job 層級額外授予（least-privilege，
+    # 不提升到 workflow 全域）。
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
