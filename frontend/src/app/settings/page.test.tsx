@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from './page'
 
@@ -9,6 +9,7 @@ const push = vi.fn()
 const replace = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace }),
+  usePathname: () => '/settings',
 }))
 
 const dispatch = vi.fn()
@@ -237,7 +238,10 @@ describe('SettingsPage', () => {
   it('外觀切換寫回 localStorage', () => {
     render(<SettingsPage />)
     expect(window.localStorage.getItem('theme-preference')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /外觀：/ }))
+    // <Sidebar> 也有自己的 <ThemeToggle>（→ 登出按鈕同一批 AppShell 補丁），限定在本頁自己的
+    // <main> 內找，避免撞到 Sidebar 那顆。
+    const settingsMain = screen.getByRole('heading', { name: '設定' }).closest('main') as HTMLElement
+    fireEvent.click(within(settingsMain).getByRole('button', { name: /外觀：/ }))
     expect(window.localStorage.getItem('theme-preference')).toBe('light')
   })
 
@@ -249,7 +253,11 @@ describe('SettingsPage', () => {
 
   it('點擊登出導向 /login 並清空 RTK Query 快取', () => {
     render(<SettingsPage />)
-    fireEvent.click(screen.getByRole('button', { name: '登出' }))
+    // 補上 <AppShell> 後 <Sidebar>/<BottomNav> 也各自有一顆「登出」，全站可從任何頁面登出
+    // （→ 部分頁面返回按鈕修復）；本頁自己那顆是設定頁內容區域裡唯一一顆，用 h1 找到
+    // SettingsPageContent 自己的 <main> 再限定查詢範圍，不受 Sidebar 的「登出」影響。
+    const settingsMain = screen.getByRole('heading', { name: '設定' }).closest('main') as HTMLElement
+    fireEvent.click(within(settingsMain).getByRole('button', { name: '登出' }))
     expect(push).toHaveBeenCalledExactlyOnceWith('/login')
     expect(dispatch).toHaveBeenCalledOnce()
   })

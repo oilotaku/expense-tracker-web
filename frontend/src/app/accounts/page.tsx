@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
 import { Dialog } from '@/components/common/Dialog'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CHART_SWATCH_COLORS, ColorSwatchPicker } from '@/components/common/ColorSwatchPicker'
@@ -178,65 +179,67 @@ export default function AccountsPage(): ReactNode {
 
   return (
     <AuthGuard>
-      <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-bg p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-text-primary md:text-3xl">帳戶管理</h1>
+      <AppShell>
+        <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-bg p-6">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-text-primary md:text-3xl">帳戶管理</h1>
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
+              className="hidden min-h-11 items-center rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 md:inline-flex md:min-h-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+            >
+              ＋ 新增帳戶
+            </button>
+          </div>
+
+          {isLoading && <p className="text-text-secondary">載入中…</p>}
+          {error && (
+            <p role="alert" className="text-sm text-danger-700">
+              {getErrorMessage(error)}
+            </p>
+          )}
+          {!isLoading && !error && accounts.length === 0 && (
+            <p className="text-text-secondary">尚未建立任何帳戶</p>
+          )}
+          {!isLoading && !error && accounts.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {accounts.map((account) => (
+                <AccountCard
+                  key={account.account_uid}
+                  account={account}
+                  isOnlyAccount={isOnlyAccount}
+                  onNameChange={handleNameChange}
+                  onColorChange={handleColorChange}
+                  onIconChange={handleIconChange}
+                  onRequestDelete={setPendingDelete}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* design-spec §9.6：行動端底部常駐「＋新增帳戶」全寬按鈕，跟隨頁面內容捲動
+              （非 fixed，→ FE-057 主版型禁 fixed，overlay 由 <Dialog> 本身負責定位） */}
           <button
             type="button"
             onClick={() => setIsCreateOpen(true)}
-            className="hidden min-h-11 items-center rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 md:inline-flex md:min-h-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+            className="min-h-11 w-full rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 md:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
           >
             ＋ 新增帳戶
           </button>
-        </div>
 
-        {isLoading && <p className="text-text-secondary">載入中…</p>}
-        {error && (
-          <p role="alert" className="text-sm text-danger-700">
-            {getErrorMessage(error)}
-          </p>
-        )}
-        {!isLoading && !error && accounts.length === 0 && (
-          <p className="text-text-secondary">尚未建立任何帳戶</p>
-        )}
-        {!isLoading && !error && accounts.length > 0 && (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((account) => (
-              <AccountCard
-                key={account.account_uid}
-                account={account}
-                isOnlyAccount={isOnlyAccount}
-                onNameChange={handleNameChange}
-                onColorChange={handleColorChange}
-                onIconChange={handleIconChange}
-                onRequestDelete={setPendingDelete}
-              />
-            ))}
-          </div>
-        )}
+          <AccountCreateDialog open={isCreateOpen} defaultColor={defaultColor} onOpenChange={setIsCreateOpen} />
 
-        {/* design-spec §9.6：行動端底部常駐「＋新增帳戶」全寬按鈕，跟隨頁面內容捲動
-            （非 fixed，→ FE-057 主版型禁 fixed，overlay 由 <Dialog> 本身負責定位） */}
-        <button
-          type="button"
-          onClick={() => setIsCreateOpen(true)}
-          className="min-h-11 w-full rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 md:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-        >
-          ＋ 新增帳戶
-        </button>
-
-        <AccountCreateDialog open={isCreateOpen} defaultColor={defaultColor} onOpenChange={setIsCreateOpen} />
-
-        <ConfirmDialog
-          open={pendingDelete !== null}
-          title={`刪除「${pendingDelete?.name ?? ''}」？`}
-          description="此帳戶若有交易紀錄，需先轉移或保留歷史紀錄後再刪除，實際轉移邏輯由後端規則決定"
-          confirmLabel={isDeleting ? '刪除中…' : '刪除'}
-          destructive
-          onConfirm={handleConfirmDelete}
-          onCancel={() => setPendingDelete(null)}
-        />
-      </main>
+          <ConfirmDialog
+            open={pendingDelete !== null}
+            title={`刪除「${pendingDelete?.name ?? ''}」？`}
+            description="此帳戶若有交易紀錄，需先轉移或保留歷史紀錄後再刪除，實際轉移邏輯由後端規則決定"
+            confirmLabel={isDeleting ? '刪除中…' : '刪除'}
+            destructive
+            onConfirm={handleConfirmDelete}
+            onCancel={() => setPendingDelete(null)}
+          />
+        </main>
+      </AppShell>
     </AuthGuard>
   )
 }

@@ -6,6 +6,7 @@ import AccountsPage from './page'
 // 回傳值來驗證表單 / 清單邏輯（真實 HTTP mock 走 lib/api/accountsApi.test.ts，→ FE-012）。
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/accounts',
 }))
 
 // 本頁的新增/刪除流程走 <Dialog>/<ConfirmDialog>，內部經 <Dialog> 呼叫 useReducedMotion()，

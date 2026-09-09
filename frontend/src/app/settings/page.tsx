@@ -6,6 +6,7 @@ import type { SerializedError } from '@reduxjs/toolkit'
 import { useRouter } from 'next/navigation'
 import { useDispatch } from 'react-redux'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
 import { Dialog } from '@/components/common/Dialog'
 import { NumericKeypad } from '@/components/common/NumericKeypad'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
@@ -450,70 +451,72 @@ function SettingsPageContent(): ReactNode {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 bg-bg p-6">
-      <h1 className="text-2xl font-bold text-text-primary md:text-3xl">設定</h1>
+    <AppShell onLogout={handleLogout}>
+      <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 bg-bg p-6">
+        <h1 className="text-2xl font-bold text-text-primary md:text-3xl">設定</h1>
 
-      <section className={SECTION_CLASS}>
-        <h2 className="text-lg font-semibold text-text-primary">個人資料</h2>
-        <div className="flex flex-col gap-1">
-          <span className="text-sm text-text-secondary">Email</span>
-          <span className="text-text-primary">{me?.email ?? ''}</span>
-        </div>
-      </section>
-
-      <section className={SECTION_CLASS}>
-        <h2 className="text-lg font-semibold text-text-primary">PIN 快速登入</h2>
-        {!hasPin && (
-          <button type="button" onClick={() => setIsSetPinOpen(true)} className={PRIMARY_BUTTON_CLASS}>
-            設定 PIN
-          </button>
-        )}
-        {hasPin && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => setIsChangePinOpen(true)} className={SECONDARY_BUTTON_CLASS}>
-              變更 PIN
-            </button>
-            <button type="button" onClick={() => setIsDisablePinOpen(true)} className={DANGER_BUTTON_CLASS}>
-              停用 PIN 快速登入
-            </button>
+        <section className={SECTION_CLASS}>
+          <h2 className="text-lg font-semibold text-text-primary">個人資料</h2>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">Email</span>
+            <span className="text-text-primary">{me?.email ?? ''}</span>
           </div>
-        )}
-      </section>
+        </section>
 
-      <section className={`${SECTION_CLASS} flex-row items-center justify-between`}>
-        <h2 className="text-lg font-semibold text-text-primary">外觀</h2>
-        <ThemeToggle />
-      </section>
+        <section className={SECTION_CLASS}>
+          <h2 className="text-lg font-semibold text-text-primary">PIN 快速登入</h2>
+          {!hasPin && (
+            <button type="button" onClick={() => setIsSetPinOpen(true)} className={PRIMARY_BUTTON_CLASS}>
+              設定 PIN
+            </button>
+          )}
+          {hasPin && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={() => setIsChangePinOpen(true)} className={SECONDARY_BUTTON_CLASS}>
+                變更 PIN
+              </button>
+              <button type="button" onClick={() => setIsDisablePinOpen(true)} className={DANGER_BUTTON_CLASS}>
+                停用 PIN 快速登入
+              </button>
+            </div>
+          )}
+        </section>
 
-      <section className={SECTION_CLASS}>
-        <h2 className="text-lg font-semibold text-text-primary">預設記帳帳戶</h2>
-        <select value={defaultAccountUid} onChange={handleDefaultAccountChange} className={INPUT_CLASS}>
-          <option value="">未設定（每次新增交易需手動選擇）</option>
-          {accounts.map((account) => (
-            <option key={account.account_uid} value={account.account_uid}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-      </section>
+        <section className={`${SECTION_CLASS} flex-row items-center justify-between`}>
+          <h2 className="text-lg font-semibold text-text-primary">外觀</h2>
+          <ThemeToggle />
+        </section>
 
-      <button
-        type="button"
-        onClick={handleLogout}
-        className="flex min-h-11 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-sunken hover:text-danger-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-      >
-        登出
-      </button>
+        <section className={SECTION_CLASS}>
+          <h2 className="text-lg font-semibold text-text-primary">預設記帳帳戶</h2>
+          <select value={defaultAccountUid} onChange={handleDefaultAccountChange} className={INPUT_CLASS}>
+            <option value="">未設定（每次新增交易需手動選擇）</option>
+            {accounts.map((account) => (
+              <option key={account.account_uid} value={account.account_uid}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </section>
 
-      <PinSetupDialog open={isSetPinOpen} onOpenChange={setIsSetPinOpen} onSuccess={handleSetPinSuccess} />
-      <PinChangeDialog open={isChangePinOpen} onOpenChange={setIsChangePinOpen} />
-      <PinDisableDialog
-        open={isDisablePinOpen}
-        onOpenChange={setIsDisablePinOpen}
-        userUid={userUid}
-        onSuccess={handleDisablePinSuccess}
-      />
-    </main>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex min-h-11 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-sunken hover:text-danger-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+        >
+          登出
+        </button>
+
+        <PinSetupDialog open={isSetPinOpen} onOpenChange={setIsSetPinOpen} onSuccess={handleSetPinSuccess} />
+        <PinChangeDialog open={isChangePinOpen} onOpenChange={setIsChangePinOpen} />
+        <PinDisableDialog
+          open={isDisablePinOpen}
+          onOpenChange={setIsDisablePinOpen}
+          userUid={userUid}
+          onSuccess={handleDisablePinSuccess}
+        />
+      </main>
+    </AppShell>
   )
 }
 

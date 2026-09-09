@@ -5,6 +5,7 @@ import { cva } from 'class-variance-authority'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import {
   useCreateRecurringRuleMutation,
@@ -368,11 +369,13 @@ function RecurringRuleList(): ReactNode {
 export default function RecurringRulesPage(): ReactNode {
   return (
     <AuthGuard>
-      <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
-        <h1 className="text-2xl font-bold text-text-primary md:text-3xl">週期性交易</h1>
-        <RecurringRuleForm />
-        <RecurringRuleList />
-      </main>
+      <AppShell>
+        <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
+          <h1 className="text-2xl font-bold text-text-primary md:text-3xl">週期性交易</h1>
+          <RecurringRuleForm />
+          <RecurringRuleList />
+        </main>
+      </AppShell>
     </AuthGuard>
   )
 }

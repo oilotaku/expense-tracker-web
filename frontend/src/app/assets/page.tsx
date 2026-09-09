@@ -5,6 +5,7 @@ import { cva } from 'class-variance-authority'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { usePriceColorPreference } from '@/hooks/usePriceColorPreference'
@@ -796,15 +797,17 @@ function LiabilityList(): ReactNode {
 export default function AssetsPage(): ReactNode {
   return (
     <AuthGuard>
-      <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
-        <h1 className="text-2xl font-bold text-text-primary md:text-3xl">資產 / 負債</h1>
-        <StockAssetForm />
-        <UsStockAssetForm />
-        <MetalAssetForm />
-        <LiabilityForm />
-        <FinancialAssetList />
-        <LiabilityList />
-      </main>
+      <AppShell>
+        <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
+          <h1 className="text-2xl font-bold text-text-primary md:text-3xl">資產 / 負債</h1>
+          <StockAssetForm />
+          <UsStockAssetForm />
+          <MetalAssetForm />
+          <LiabilityForm />
+          <FinancialAssetList />
+          <LiabilityList />
+        </main>
+      </AppShell>
     </AuthGuard>
   )
 }

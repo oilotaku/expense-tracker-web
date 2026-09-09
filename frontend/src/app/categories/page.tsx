@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { CHART_SWATCH_COLORS, ColorSwatchPicker } from '@/components/common/ColorSwatchPicker'
@@ -194,11 +195,13 @@ export default function CategoriesPage(): ReactNode {
 
   return (
     <AuthGuard>
-      <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-10 bg-bg p-6">
-        <h1 className="text-2xl font-bold text-text-primary md:text-3xl">分類管理</h1>
-        <CategoryCreateForm existingNames={existingNames} />
-        <CategoryGrid categories={categories} isLoading={isLoading} error={error} />
-      </main>
+      <AppShell>
+        <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-10 bg-bg p-6">
+          <h1 className="text-2xl font-bold text-text-primary md:text-3xl">分類管理</h1>
+          <CategoryCreateForm existingNames={existingNames} />
+          <CategoryGrid categories={categories} isLoading={isLoading} error={error} />
+        </main>
+      </AppShell>
     </AuthGuard>
   )
 }

@@ -6,6 +6,7 @@ import CategoriesPage from './page'
 // 回傳值來驗證表單 / 清單邏輯（真實 HTTP mock 走 lib/api/categoriesApi.test.ts，→ FE-012）。
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/categories',
 }))
 
 // 本頁的刪除流程走 <ConfirmDialog>，內部經 <Dialog> 呼叫 useReducedMotion()，jsdom 預設沒有

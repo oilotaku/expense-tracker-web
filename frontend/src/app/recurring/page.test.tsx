@@ -6,7 +6,22 @@ import RecurringRulesPage from './page'
 // devDependency，直接 mock RTK Query hook 的回傳值來驗證表單 / 清單邏輯，而非起假 HTTP server。
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/recurring',
 }))
+
+// <AppShell> 內的 <BottomNav>「更多」<Dialog> 依賴 useReducedMotion()，jsdom 預設沒有
+// matchMedia（同 accounts/page.test.tsx / categories/page.test.tsx 的作法）。
+function stubMatchMedia(): void {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((media: string) => ({
+      matches: false,
+      media,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })),
+  )
+}
 
 const useGetMeQuery = vi.fn()
 vi.mock('@/lib/api/authApi', () => ({
@@ -46,6 +61,7 @@ const MONTHLY_RULE = {
 
 describe('RecurringRulesPage', () => {
   beforeEach(() => {
+    stubMatchMedia()
     useGetMeQuery.mockReturnValue({ isLoading: false, isError: false })
 
     createRecurringRule.mockReset().mockReturnValue({
