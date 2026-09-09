@@ -77,12 +77,15 @@ test('新增股票資產後，dashboard 總資產反映抓到的市價', async (
   const totalAssetsBefore = await pollTotalAssets(page, () => true)
   expect(totalAssetsBefore).toBe(0)
 
-  // 新增一筆股票資產（10 股 2330）
+  // 新增一筆股票資產（10 股 2330）。「本金」是後來加的必填欄位（→ FinancialAssetCreateRequest
+  // principal_amount，gt=0），沒填會被後端 Pydantic 擋成 422「輸入驗證失敗」，此處數值本身
+  // 不影響本測試要驗的「市值反映抓到的市價」，隨意給一個合法正數即可。
   await page.goto('/assets')
   const stockForm = page.locator('form').filter({ hasText: '新增股票持股' })
   await stockForm.getByLabel('股票代號 / 名稱').fill(STOCK_TICKER)
   await stockForm.getByLabel('數量').fill('10')
   await stockForm.getByLabel('單位').selectOption('股')
+  await stockForm.getByLabel('本金').fill('500000')
   await stockForm.getByRole('button', { name: '新增股票' }).click()
 
   // task-018（資產清單 table → 卡片化，→ FinancialAssetRow）之後頁面上不再有 <table>/<td>，
