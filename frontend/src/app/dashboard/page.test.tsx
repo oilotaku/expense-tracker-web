@@ -8,9 +8,11 @@ import type { DashboardSummaryResponse } from '@/lib/api/dashboardApi'
 // 值來驗證頁面組裝邏輯（真實 HTTP mock 走各自 lib/api/*.test.ts，→ FE-012）。
 const push = vi.fn()
 const replace = vi.fn()
+let searchParams = new URLSearchParams()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace }),
   usePathname: () => '/dashboard',
+  useSearchParams: () => searchParams,
 }))
 
 const dispatch = vi.fn()
@@ -127,8 +129,14 @@ describe('DashboardPage', () => {
     push.mockClear()
     replace.mockClear()
     refetchNetWorth.mockClear()
+    searchParams = new URLSearchParams()
+    window.localStorage.clear()
 
-    useGetMeQuery.mockReset().mockReturnValue({ isLoading: false, isError: false })
+    useGetMeQuery.mockReset().mockReturnValue({
+      data: { user_uid: 'u1', email: 'a@b.com', has_pin: false },
+      isLoading: false,
+      isError: false,
+    })
     useGetDashboardSummaryQuery.mockReset()
     mockSummary()
     useGetNetWorthQuery.mockReset().mockReturnValue({
@@ -260,6 +268,57 @@ describe('DashboardPage', () => {
     expect(screen.getByText('09/03 餐飲')).toBeInTheDocument()
     expect(screen.getByText('-NT$120')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查看全部 →' })).toHaveAttribute('href', '/transactions')
+  })
+
+  describe('PIN 快速登入提醒', () => {
+    const REMINDER_TITLE = '要設定 PIN 快速登入嗎？'
+    const REMINDER_STORAGE_KEY = 'pin-reminder-shown:u1'
+
+    it('註冊後首次登入（?justRegistered=1）顯示提醒、記下旗標並清掉 query param', () => {
+      searchParams = new URLSearchParams('justRegistered=1')
+      render(<DashboardPage />)
+
+      expect(screen.getByText(REMINDER_TITLE)).toBeInTheDocument()
+      // 顯示的當下就記錄，使用者直接離開也不會再跳
+      expect(window.localStorage.getItem(REMINDER_STORAGE_KEY)).toBe('shown')
+      expect(replace).toHaveBeenCalledWith('/dashboard')
+    })
+
+    it('沒有 justRegistered 時不顯示提醒（不騷擾刻意不設 PIN 的既有使用者）', () => {
+      render(<DashboardPage />)
+
+      expect(screen.queryByText(REMINDER_TITLE)).not.toBeInTheDocument()
+      expect(window.localStorage.getItem(REMINDER_STORAGE_KEY)).toBeNull()
+    })
+
+    it('同一裝置已提醒過就不再顯示，即使又帶 justRegistered', () => {
+      window.localStorage.setItem(REMINDER_STORAGE_KEY, 'shown')
+      searchParams = new URLSearchParams('justRegistered=1')
+      render(<DashboardPage />)
+
+      expect(screen.queryByText(REMINDER_TITLE)).not.toBeInTheDocument()
+    })
+
+    it('「立即設定」導向設定頁（§9.7 既有 PIN 設定流程）', () => {
+      searchParams = new URLSearchParams('justRegistered=1')
+      render(<DashboardPage />)
+
+      fireEvent.click(screen.getByRole('button', { name: '立即設定' }))
+
+      expect(push).toHaveBeenCalledWith('/settings')
+    })
+
+    it('「稍後再說」不導頁，且重新進入頁面也不再出現', () => {
+      searchParams = new URLSearchParams('justRegistered=1')
+      const { unmount } = render(<DashboardPage />)
+
+      fireEvent.click(screen.getByRole('button', { name: '稍後再說' }))
+      expect(push).not.toHaveBeenCalled()
+
+      unmount()
+      render(<DashboardPage />)
+      expect(screen.queryByText(REMINDER_TITLE)).not.toBeInTheDocument()
+    })
   })
 
   it('prefers-reduced-motion 時圖表切換仍可用（動畫降級不停用功能，→ §6）', () => {

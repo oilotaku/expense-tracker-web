@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssetsPage from './page'
 
 // tsconfig `strict`（noUncheckedIndexedAccess）讓 `getAllByLabelText(...)[n]` 型別為
@@ -9,6 +9,20 @@ function getFormByHeading(headingText: string): HTMLElement {
   const form = heading.closest('form')
   if (form === null) throw new Error(`找不到標題「${headingText}」所屬的 form`)
   return form
+}
+
+// 負債刪除走 <ConfirmDialog>，內部經 <Dialog> 呼叫 useReducedMotion()，jsdom 預設沒有
+// matchMedia，需手動 stub（同 accounts/page.test.tsx / categories/page.test.tsx 的作法）。
+function stubMatchMedia(): void {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((media: string) => ({
+      matches: false,
+      media,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })),
+  )
 }
 
 // 同 BudgetsPage.test.tsx：msw 尚未成為 devDependency，直接 mock RTK Query hook 的回傳值，而非
@@ -25,14 +39,23 @@ vi.mock('@/lib/api/authApi', () => ({
 
 const createFinancialAsset = vi.fn()
 const useCreateFinancialAssetMutation = vi.fn()
+const updateFinancialAsset = vi.fn()
+const useUpdateFinancialAssetMutation = vi.fn()
 const useListFinancialAssetsQuery = vi.fn()
 const createLiability = vi.fn()
 const useCreateLiabilityMutation = vi.fn()
+const updateLiability = vi.fn()
+const useUpdateLiabilityMutation = vi.fn()
+const deleteLiability = vi.fn()
+const useDeleteLiabilityMutation = vi.fn()
 const useListLiabilitiesQuery = vi.fn()
 vi.mock('@/lib/api/assetsApi', () => ({
   useCreateFinancialAssetMutation: () => useCreateFinancialAssetMutation(),
+  useUpdateFinancialAssetMutation: () => useUpdateFinancialAssetMutation(),
   useListFinancialAssetsQuery: () => useListFinancialAssetsQuery(),
   useCreateLiabilityMutation: () => useCreateLiabilityMutation(),
+  useUpdateLiabilityMutation: () => useUpdateLiabilityMutation(),
+  useDeleteLiabilityMutation: () => useDeleteLiabilityMutation(),
   useListLiabilitiesQuery: () => useListLiabilitiesQuery(),
 }))
 
@@ -43,7 +66,7 @@ const STOCK_ASSET = {
   input_quantity: '2.0000',
   input_unit: '張',
   base_quantity: '2000.0000',
-  principal_amount: '120000.00',
+  principal_amount: '400000.00',
 }
 
 const METAL_ASSET = {
@@ -65,6 +88,7 @@ const LIABILITY = {
 
 describe('AssetsPage', () => {
   beforeEach(() => {
+    stubMatchMedia()
     replace.mockClear()
     useGetMeQuery.mockReset().mockReturnValue({ isLoading: false, isError: false })
 
@@ -73,6 +97,13 @@ describe('AssetsPage', () => {
     })
     useCreateFinancialAssetMutation.mockReset().mockReturnValue([
       createFinancialAsset,
+      { isLoading: false, error: undefined },
+    ])
+    updateFinancialAsset.mockReset().mockReturnValue({
+      unwrap: () => Promise.resolve({ ...STOCK_ASSET }),
+    })
+    useUpdateFinancialAssetMutation.mockReset().mockReturnValue([
+      updateFinancialAsset,
       { isLoading: false, error: undefined },
     ])
     useListFinancialAssetsQuery.mockReset().mockReturnValue({
@@ -86,6 +117,20 @@ describe('AssetsPage', () => {
     })
     useCreateLiabilityMutation.mockReset().mockReturnValue([
       createLiability,
+      { isLoading: false, error: undefined },
+    ])
+    updateLiability.mockReset().mockReturnValue({
+      unwrap: () => Promise.resolve({ ...LIABILITY, amount: '1900000.00' }),
+    })
+    useUpdateLiabilityMutation.mockReset().mockReturnValue([
+      updateLiability,
+      { isLoading: false, error: undefined },
+    ])
+    deleteLiability.mockReset().mockReturnValue({
+      unwrap: () => Promise.resolve(undefined),
+    })
+    useDeleteLiabilityMutation.mockReset().mockReturnValue([
+      deleteLiability,
       { isLoading: false, error: undefined },
     ])
     useListLiabilitiesQuery.mockReset().mockReturnValue({
@@ -103,7 +148,7 @@ describe('AssetsPage', () => {
     })
     const stockForm = getFormByHeading('新增股票持股')
     fireEvent.change(within(stockForm).getByLabelText('數量'), { target: { value: '2' } })
-    fireEvent.change(within(stockForm).getByLabelText('本金'), { target: { value: '120000' } })
+    fireEvent.change(within(stockForm).getByLabelText('本金'), { target: { value: '400000' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '新增股票' }))
@@ -114,7 +159,7 @@ describe('AssetsPage', () => {
       name: '台積電',
       input_quantity: '2',
       input_unit: '張',
-      principal_amount: '120000',
+      principal_amount: '400000',
     })
   })
 
@@ -168,7 +213,7 @@ describe('AssetsPage', () => {
 
   it('金融資產清單顯示本金，null 時顯示 em dash', () => {
     render(<AssetsPage />)
-    expect(screen.getByText('120000.00')).toBeInTheDocument()
+    expect(screen.getByText('400000.00')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
@@ -193,5 +238,96 @@ describe('AssetsPage', () => {
     render(<AssetsPage />)
     expect(screen.getByText('尚未新增任何金融資產')).toBeInTheDocument()
     expect(screen.getByText('尚未新增任何負債')).toBeInTheDocument()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('編輯金融資產：修改數量與本金後儲存，呼叫 updateFinancialAsset 帶正確 payload', async () => {
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByLabelText('編輯 台積電'))
+    fireEvent.change(screen.getByLabelText('台積電 數量'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('台積電 本金'), { target: { value: '600000' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('儲存 台積電'))
+    })
+
+    expect(updateFinancialAsset).toHaveBeenCalledExactlyOnceWith({
+      financial_asset_uid: 'a1',
+      name: '台積電',
+      input_quantity: '3',
+      input_unit: '張',
+      principal_amount: '600000',
+    })
+  })
+
+  it('取消編輯金融資產不呼叫 updateFinancialAsset', () => {
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByLabelText('編輯 台積電'))
+    fireEvent.change(screen.getByLabelText('台積電 數量'), { target: { value: '3' } })
+    fireEvent.click(screen.getByLabelText('取消編輯 台積電'))
+
+    expect(updateFinancialAsset).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('台積電 數量')).not.toBeInTheDocument()
+  })
+
+  it('負債還款：輸入小於目前金額的還款金額，呼叫 updateLiability 帶扣減後金額', async () => {
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByLabelText('還款 房貸'))
+    fireEvent.change(screen.getByLabelText('房貸 還款金額'), { target: { value: '100000' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '確認還款' }))
+    })
+
+    expect(updateLiability).toHaveBeenCalledExactlyOnceWith({
+      liability_uid: 'l1',
+      amount: '1900000.00',
+    })
+  })
+
+  it('負債還款金額大於等於目前金額時，前端擋下不送出並顯示提示改用刪除', () => {
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByLabelText('還款 房貸'))
+    fireEvent.change(screen.getByLabelText('房貸 還款金額'), { target: { value: '2000000' } })
+
+    expect(screen.getByRole('button', { name: '確認還款' })).toBeDisabled()
+    expect(
+      screen.getByText('還款金額須大於 0 且小於目前金額；全部還清請改用「刪除」'),
+    ).toBeInTheDocument()
+    expect(updateLiability).not.toHaveBeenCalled()
+  })
+
+  it('刪除負債走 ConfirmDialog：點刪除按鈕開對話框，確認後才呼叫 deleteLiability', async () => {
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByLabelText('刪除 房貸'))
+
+    await waitFor(() =>
+      expect(screen.getByText('刪除後將無法復原，如尚未還清請改用「還款」逐步扣減金額')).toBeInTheDocument(),
+    )
+    expect(deleteLiability).not.toHaveBeenCalled()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '刪除' }))
+    })
+
+    expect(deleteLiability).toHaveBeenCalledExactlyOnceWith('l1')
+  })
+
+  it('取消刪除負債對話框不呼叫 deleteLiability', async () => {
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByLabelText('刪除 房貸'))
+    await waitFor(() => expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(deleteLiability).not.toHaveBeenCalled()
   })
 })

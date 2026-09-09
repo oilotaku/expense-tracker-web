@@ -34,6 +34,9 @@ class LoginRequest(_EmailInput):
 class UserResponse(ApiSchema):
     user_uid: UUID
     email: str
+    # PIN 快速登入是否已設定（UserCredential.pin_hash 非 null）。前端據此決定設定/變更 PIN 的
+    # 入口與提醒，不必再用 localStorage 猜（換瀏覽器 / 換裝置時那份近似值會錯）。
+    has_pin: bool = Field(description="是否已設定 PIN 快速登入")
 
 
 _PIN_RE = re.compile(r"^\d{6}$")

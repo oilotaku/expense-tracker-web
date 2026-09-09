@@ -26,7 +26,7 @@ describe('RegisterPage', () => {
     useRegisterMutation.mockReturnValue([register, { isLoading: false, error: undefined }])
   })
 
-  it('送出表單觸發 register mutation，成功後導向 /login', async () => {
+  it('送出表單觸發 register mutation，成功後導向 /login 並帶 justRegistered 訊號', async () => {
     render(<RegisterPage />)
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } })
     fireEvent.change(screen.getByLabelText('密碼'), { target: { value: 'password123' } })
@@ -35,7 +35,7 @@ describe('RegisterPage', () => {
     })
 
     expect(register).toHaveBeenCalledWith({ email: 'a@b.com', password: 'password123' })
-    expect(push).toHaveBeenCalledWith('/login')
+    expect(push).toHaveBeenCalledWith('/login?justRegistered=1')
   })
 
   it('mutation 回錯誤時顯示錯誤訊息，不導向', () => {

@@ -54,8 +54,8 @@ async def login(
     response_model=ApiResponse[UserResponse],
     summary="取得目前登入使用者",
 )
-async def me(current_user: CurrentUser) -> ApiResponse[UserResponse]:
-    return success(data=UserResponse.model_validate(current_user))
+async def me(current_user: CurrentUser, db: DbSession) -> ApiResponse[UserResponse]:
+    return success(data=await AuthService(db).get_me(current_user))
 
 
 @router.post(

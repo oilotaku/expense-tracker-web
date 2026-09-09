@@ -36,7 +36,9 @@ async function registerAndLogin(page: Page, email: string, password: string): Pr
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('密碼').fill(password)
   await page.getByRole('button', { name: '註冊' }).click()
-  await expect(page).toHaveURL(/\/login$/)
+  // 註冊成功導向登入頁時會帶「註冊後首次登入」訊號（→ register/page.tsx），
+  // 登入成功後由該訊號在 /dashboard 觸發一次性的 PIN 快速登入提醒
+  await expect(page).toHaveURL(/\/login\?justRegistered=1$/)
 
   const loginResponsePromise = page.waitForResponse(
     (response) => response.url().endsWith('/auth/login') && response.request().method() === 'POST',
