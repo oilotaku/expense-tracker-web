@@ -19,6 +19,8 @@ export interface FinancialAssetResponse {
   input_quantity: string
   input_unit: string
   base_quantity: string
+  // 本金（原始購入成本），nullable：舊資產列可能沒有
+  principal_amount: string | null
 }
 
 export interface FinancialAssetListResponse {
@@ -31,6 +33,7 @@ export interface FinancialAssetCreateRequest {
   name: string
   input_quantity: string
   input_unit: StockUnit | MetalUnit
+  principal_amount: string
 }
 
 export interface LiabilityResponse {

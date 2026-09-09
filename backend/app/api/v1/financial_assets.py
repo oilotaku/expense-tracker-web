@@ -55,6 +55,7 @@ async def create_financial_asset(
         input_quantity=payload.input_quantity,
         input_unit=payload.input_unit,
         base_quantity=base_quantity,
+        principal_amount=payload.principal_amount,
         created_by=current_user.user_uid,
     )
     return success(data=FinancialAssetResponse.model_validate(asset), response_code=201)
@@ -127,6 +128,7 @@ async def update_financial_asset(
         input_quantity=payload.input_quantity,
         input_unit=payload.input_unit,
         base_quantity=base_quantity,
+        principal_amount=payload.principal_amount,
         updated_by=current_user.user_uid,
     )
     return success(data=FinancialAssetResponse.model_validate(asset))

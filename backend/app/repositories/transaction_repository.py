@@ -3,11 +3,17 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.tag import Tag
 from app.models.transaction import Transaction, TransactionType, transaction_tags
+
+
+def _signed_delta(amount: Decimal, transaction_type: TransactionType) -> Decimal:
+    """交易對帳戶餘額的影響：收入為正、支出為負。"""
+    return amount if transaction_type is TransactionType.INCOME else -amount
 
 
 class TransactionRepository:
@@ -42,6 +48,7 @@ class TransactionRepository:
         )
         self.db.add(transaction)
         await self.db.flush()
+        await self._adjust_account_balance(account_uid, _signed_delta(amount, transaction_type))
         tags = await self._get_or_create_tags(user_uid, tag_names, created_by)
         await self._replace_tags(transaction.transaction_uid, tags)
         return transaction, tags
@@ -113,6 +120,11 @@ class TransactionRepository:
         tag_names: list[str] | None,
         updated_by: UUID,
     ) -> tuple[Transaction, Sequence[Tag]]:
+        # 欄位改寫前先鎖定舊值：改寫後才算新 delta，兩者相減即可同時涵蓋金額變動、
+        # 收支類型互轉與換帳戶（含三者同時發生），不需個別特判。
+        old_account_uid = transaction.account_uid
+        old_delta = _signed_delta(transaction.amount, transaction.transaction_type)
+
         if account_uid is not None:
             transaction.account_uid = account_uid
         if category_uid is not None:
@@ -129,6 +141,14 @@ class TransactionRepository:
             transaction.payment_method = payment_method
         transaction.updated_by = updated_by
 
+        new_account_uid = transaction.account_uid
+        new_delta = _signed_delta(transaction.amount, transaction.transaction_type)
+        if new_account_uid == old_account_uid:
+            await self._adjust_account_balance(old_account_uid, new_delta - old_delta)
+        else:
+            await self._adjust_account_balance(old_account_uid, -old_delta)
+            await self._adjust_account_balance(new_account_uid, new_delta)
+
         if tag_names is not None:
             new_tags = await self._get_or_create_tags(transaction.user_uid, tag_names, updated_by)
             await self._replace_tags(transaction.transaction_uid, new_tags)
@@ -141,6 +161,21 @@ class TransactionRepository:
         transaction.is_deleted = True
         transaction.updated_by = deleted_by
         await self.db.flush()
+        await self._adjust_account_balance(
+            transaction.account_uid,
+            -_signed_delta(transaction.amount, transaction.transaction_type),
+        )
+
+    async def _adjust_account_balance(self, account_uid: UUID, delta: Decimal) -> None:
+        # 原子加減（UPDATE ... SET balance = balance + :delta），不做 load-and-mutate，
+        # 天然避免併發 race，不需額外 SELECT ... FOR UPDATE。
+        if delta == 0:
+            return
+        await self.db.execute(
+            update(Account)
+            .where(Account.account_uid == account_uid)
+            .values(balance=Account.balance + delta)
+        )
 
     async def _get_or_create_tags(
         self, user_uid: UUID, names: list[str], created_by: UUID

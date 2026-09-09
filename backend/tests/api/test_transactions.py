@@ -24,6 +24,12 @@ async def _list_category_uids(client: AsyncClient) -> dict[str, str]:
     return {item["name"]: item["category_uid"] for item in res.json()["data"]["items"]}
 
 
+async def _account_balance(client: AsyncClient, account_uid: str) -> str:
+    res = await client.get(f"/api/v1/accounts/{account_uid}")
+    balance: str = res.json()["data"]["balance"]
+    return balance
+
+
 async def test_create_transaction_with_two_tags(client: AsyncClient) -> None:
     await _register_and_login(client, "tx-user-1@example.com")
     account_uid = await _create_account(client)
@@ -79,6 +85,110 @@ async def test_create_transaction_with_blank_description_and_payment_method(
     data = res.json()["data"]
     assert data["description"] == ""
     assert data["payment_method"] == ""
+
+
+async def test_create_transaction_syncs_account_balance(client: AsyncClient) -> None:
+    """帳戶餘額隨交易即時同步：收入加、支出減（帳戶原始餘額 1000.00）。"""
+    await _register_and_login(client, "tx-balance-create@example.com")
+    account_uid = await _create_account(client)
+    categories = await _list_category_uids(client)
+
+    income_res = await client.post(
+        "/api/v1/transactions",
+        json={
+            "account_uid": account_uid,
+            "category_uid": categories["薪資"],
+            "transaction_date": "2026-09-01T09:00:00+08:00",
+            "description": "薪水",
+            "amount": "5000.00",
+            "transaction_type": "income",
+            "payment_method": "轉帳",
+        },
+    )
+    assert income_res.status_code == 201
+    assert await _account_balance(client, account_uid) == "6000.00"
+
+    expense_res = await client.post(
+        "/api/v1/transactions",
+        json={
+            "account_uid": account_uid,
+            "category_uid": categories["餐飲"],
+            "transaction_date": "2026-09-01T12:00:00+08:00",
+            "description": "午餐",
+            "amount": "200.00",
+            "transaction_type": "expense",
+            "payment_method": "現金",
+        },
+    )
+    assert expense_res.status_code == 201
+    assert await _account_balance(client, account_uid) == "5800.00"
+
+
+async def test_update_transaction_syncs_account_balance(client: AsyncClient) -> None:
+    """改金額、收支類型互轉、換帳戶三種情境的餘額都要對齊。"""
+    await _register_and_login(client, "tx-balance-update@example.com")
+    account_uid = await _create_account(client)
+    other_account_uid = await _create_account(client, "銀行帳戶")
+    categories = await _list_category_uids(client)
+
+    created = await client.post(
+        "/api/v1/transactions",
+        json={
+            "account_uid": account_uid,
+            "category_uid": categories["其他"],
+            "transaction_date": "2026-09-01T00:00:00+08:00",
+            "description": "原始交易",
+            "amount": "100.00",
+            "transaction_type": "expense",
+            "payment_method": "現金",
+        },
+    )
+    transaction_uid = created.json()["data"]["transaction_uid"]
+    assert await _account_balance(client, account_uid) == "900.00"
+
+    amount_res = await client.patch(
+        f"/api/v1/transactions/{transaction_uid}", json={"amount": "250.00"}
+    )
+    assert amount_res.status_code == 200
+    assert await _account_balance(client, account_uid) == "750.00"
+
+    type_res = await client.patch(
+        f"/api/v1/transactions/{transaction_uid}", json={"transaction_type": "income"}
+    )
+    assert type_res.status_code == 200
+    assert await _account_balance(client, account_uid) == "1250.00"
+
+    move_res = await client.patch(
+        f"/api/v1/transactions/{transaction_uid}", json={"account_uid": other_account_uid}
+    )
+    assert move_res.status_code == 200
+    assert await _account_balance(client, account_uid) == "1000.00"
+    assert await _account_balance(client, other_account_uid) == "1250.00"
+
+
+async def test_delete_transaction_reverts_account_balance(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-balance-delete@example.com")
+    account_uid = await _create_account(client)
+    categories = await _list_category_uids(client)
+
+    created = await client.post(
+        "/api/v1/transactions",
+        json={
+            "account_uid": account_uid,
+            "category_uid": categories["其他"],
+            "transaction_date": "2026-09-01T00:00:00+08:00",
+            "description": "待刪除",
+            "amount": "300.00",
+            "transaction_type": "expense",
+            "payment_method": "現金",
+        },
+    )
+    transaction_uid = created.json()["data"]["transaction_uid"]
+    assert await _account_balance(client, account_uid) == "700.00"
+
+    del_res = await client.delete(f"/api/v1/transactions/{transaction_uid}")
+    assert del_res.status_code == 200
+    assert await _account_balance(client, account_uid) == "1000.00"
 
 
 async def test_list_transactions_without_cookie_returns_401(client: AsyncClient) -> None:

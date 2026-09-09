@@ -5,9 +5,25 @@ import BudgetsPage from './page'
 // 同 TransactionForm.test.tsx / AuthGuard.test.tsx：msw 尚未成為 devDependency，直接 mock
 // RTK Query hook 的回傳值，而非起假 HTTP server。
 const replace = vi.fn()
+// 需要 next/navigation（→ AppShell.test.tsx 同一 mock）。
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
+  usePathname: () => '/budgets',
 }))
+
+// <AppShell> 內的 <BottomNav>「更多」<Dialog> 依賴 useReducedMotion()，jsdom 預設沒有
+// matchMedia（→ dashboard/page.test.tsx / AppShell.test.tsx 同一 stub）。
+function stubMatchMedia(): void {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((media: string) => ({
+      matches: false,
+      media,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })),
+  )
+}
 
 const useGetMeQuery = vi.fn()
 vi.mock('@/lib/api/authApi', () => ({
@@ -40,6 +56,7 @@ const BUDGET_MONTHLY = {
 
 describe('BudgetsPage', () => {
   beforeEach(() => {
+    stubMatchMedia()
     replace.mockClear()
     useGetMeQuery.mockReset().mockReturnValue({ isLoading: false, isError: false })
     useListCategoryOptionsQuery.mockReset().mockReturnValue({ data: [CATEGORY] })

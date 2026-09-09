@@ -88,14 +88,26 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
 
     stock_res = await client.post(
         "/api/v1/financial-assets",
-        json={"asset_type": "stock", "name": "2330", "input_quantity": "2", "input_unit": "張"},
+        json={
+            "asset_type": "stock",
+            "name": "2330",
+            "input_quantity": "2",
+            "input_unit": "張",
+            "principal_amount": "60000.00",
+        },
     )
     assert stock_res.status_code == 201
     assert Decimal(stock_res.json()["data"]["base_quantity"]) == Decimal("2000")  # 1 張=1000 股
 
     metal_res = await client.post(
         "/api/v1/financial-assets",
-        json={"asset_type": "metal", "name": "黃金", "input_quantity": "5", "input_unit": "錢"},
+        json={
+            "asset_type": "metal",
+            "name": "黃金",
+            "input_quantity": "5",
+            "input_unit": "錢",
+            "principal_amount": "30000.00",
+        },
     )
     assert metal_res.status_code == 201
     assert Decimal(metal_res.json()["data"]["base_quantity"]) == Decimal("5")
@@ -130,7 +142,13 @@ async def test_net_worth_unsupported_metal_name_returns_422(client: AsyncClient)
     await _register_and_login(client, "networth-unsupported-metal@example.com")
     create_res = await client.post(
         "/api/v1/financial-assets",
-        json={"asset_type": "metal", "name": "白金", "input_quantity": "1", "input_unit": "錢"},
+        json={
+            "asset_type": "metal",
+            "name": "白金",
+            "input_quantity": "1",
+            "input_unit": "錢",
+            "principal_amount": "1000.00",
+        },
     )
     assert create_res.status_code == 201
     _override_pricing(lambda: _FakePricingService())
@@ -149,7 +167,13 @@ async def test_net_worth_pricing_timeout_returns_clear_non_5xx_error(
     unit = "股" if asset_type == "stock" else "錢"
     create_res = await client.post(
         "/api/v1/financial-assets",
-        json={"asset_type": asset_type, "name": name, "input_quantity": "1", "input_unit": unit},
+        json={
+            "asset_type": asset_type,
+            "name": name,
+            "input_quantity": "1",
+            "input_unit": unit,
+            "principal_amount": "1000.00",
+        },
     )
     assert create_res.status_code == 201
 

@@ -72,7 +72,7 @@ export interface TransactionUpdateRequest {
 }
 
 const transactionMutationsApi = baseApi
-  .enhanceEndpoints({ addTagTypes: ['Transaction'] })
+  .enhanceEndpoints({ addTagTypes: ['Transaction', 'Account', 'DashboardSummary'] })
   .injectEndpoints({
     endpoints: (build) => ({
       updateTransaction: build.mutation<TransactionResponse, TransactionUpdateRequest>({
@@ -87,6 +87,8 @@ const transactionMutationsApi = baseApi
         invalidatesTags: (_result, _error, { transactionUid }) => [
           { type: 'Transaction' as const, id: transactionUid },
           { type: 'Transaction' as const, id: 'LIST' },
+          { type: 'Account' as const, id: 'LIST' },
+          { type: 'DashboardSummary' as const, id: 'SUMMARY' },
         ],
       }),
       deleteTransaction: build.mutation<void, string>({
@@ -97,6 +99,8 @@ const transactionMutationsApi = baseApi
         invalidatesTags: (_result, _error, transactionUid) => [
           { type: 'Transaction' as const, id: transactionUid },
           { type: 'Transaction' as const, id: 'LIST' },
+          { type: 'Account' as const, id: 'LIST' },
+          { type: 'DashboardSummary' as const, id: 'SUMMARY' },
         ],
       }),
     }),
