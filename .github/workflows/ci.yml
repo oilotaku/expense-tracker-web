@@ -56,9 +56,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # PricingService 快取測試需要真的 Redis（→ CACHE-006），先前這裡漏掉這個 service，
+      # 導致 redis:6379 在 CI runner 上無法解析，pricing/recurring 測試連鎖失敗。
+      redis:
+        image: redis:8.10.1-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://ci:ci-only-not-a-secret@localhost:5432/ci_test
+      REDIS_URL: redis://localhost:6379/0
       JWT_SECRET_KEY: ci-only-jwt-secret-not-for-production-0000
     steps:
       - uses: actions/checkout@v4
