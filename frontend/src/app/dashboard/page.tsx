@@ -35,6 +35,7 @@ import { useGetDashboardSummaryQuery } from '@/lib/api/dashboardApi'
 import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
 import {
   useCreateTransactionMutation,
+  useCreateTransferMutation,
   useListCategoryOptionsQuery,
   useListTransactionsQuery,
   type TransactionResponse,
@@ -101,10 +102,13 @@ function toCategorySlices(
 ): CategorySlice[] {
   const totals = new Map<string, number>()
   for (const transaction of transactions) {
-    if (transaction.transaction_type !== 'expense') continue
+    // transaction_type !== 'expense' 已排除轉帳列（transfer 沒有分類，category_uid 恆為
+    // null），但 TS 無法從 !== 'expense' 反推出 category_uid 非 null，仍需顯式收窄。
+    if (transaction.transaction_type !== 'expense' || transaction.category_uid === null) continue
     const amount = Number(transaction.amount)
     if (!Number.isFinite(amount)) continue
-    totals.set(transaction.category_uid, (totals.get(transaction.category_uid) ?? 0) + amount)
+    const categoryUid = transaction.category_uid
+    totals.set(categoryUid, (totals.get(categoryUid) ?? 0) + amount)
   }
   return [...totals].map(([categoryUid, amount]) => ({
     id: categoryUid,
@@ -138,16 +142,23 @@ function toDisplayDate(isoDate: string): string {
 
 const CHART_FORMAT_VALUE = (amount: number): string => formatAmount(String(amount))
 
-// FE-052：條件樣式改走 cva variant，不在 JSX 內串三元 class。
+// FE-052：條件樣式改走 cva variant，不在 JSX 內串三元 class。轉帳不是收入也不是支出，
+// 用中性色（同 TransactionList.tsx 轉帳列的既有配色決定）。
 const transactionAmountClassName = cva('shrink-0 text-sm font-semibold tabular-nums md:text-base', {
   variants: {
-    transactionType: { income: 'text-income-700', expense: 'text-expense-700' },
+    transactionType: {
+      income: 'text-income-700',
+      expense: 'text-expense-700',
+      transfer: 'text-text-primary',
+    },
   },
   defaultVariants: { transactionType: 'expense' },
 })
 
-// 支出在清單一律顯示負號、收入顯示正號（design-spec §9.2 wireframe `-NT$120` / `+NT$45,000`）。
+// 支出在清單一律顯示負號、收入顯示正號（design-spec §9.2 wireframe `-NT$120` / `+NT$45,000`）；
+// 轉帳兩邊帳戶互相抵銷、不是真正的增減，不加正負號。
 function signedTransactionAmount(transaction: TransactionResponse): string {
+  if (transaction.transaction_type === 'transfer') return formatAmount(transaction.amount)
   return transaction.transaction_type === 'income'
     ? formatAmount(transaction.amount, true)
     : formatAmount(`-${transaction.amount}`)
@@ -244,6 +255,7 @@ function DashboardContent(): ReactNode {
   } = useGetNetWorthQuery()
 
   const [createTransaction] = useCreateTransactionMutation()
+  const [createTransfer] = useCreateTransferMutation()
   const [createRecurringRule] = useCreateRecurringRuleMutation()
 
   const accounts = useMemo(() => accountList?.items ?? [], [accountList])
@@ -275,6 +287,17 @@ function DashboardContent(): ReactNode {
   }
 
   async function handleSubmitTransaction(values: TransactionFormValues): Promise<void> {
+    if (values.transaction_type === 'transfer') {
+      await createTransfer({
+        from_account_uid: values.from_account_uid,
+        to_account_uid: values.to_account_uid,
+        transaction_date: values.transaction_date,
+        description: values.description,
+        amount: values.amount,
+        payment_method: values.payment_method,
+      }).unwrap()
+      return
+    }
     const { recurring, ...payload } = values
     await createTransaction(payload).unwrap()
     // 「固定收支」勾選 = 呼叫既有 recurring_rules 建立 API 的另一個入口（→ A13）。
@@ -392,7 +415,12 @@ function DashboardContent(): ReactNode {
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate text-sm text-text-primary md:text-base">
                         {toDisplayDate(transaction.transaction_date)}{' '}
-                        {categoryNames.get(transaction.category_uid) ?? '未分類'}
+                        {transaction.transaction_type === 'transfer'
+                          ? `轉帳 → ${
+                              accountNames.get(transaction.transfer_counterpart_account_uid ?? '') ??
+                              '未知帳戶'
+                            }`
+                          : (categoryNames.get(transaction.category_uid ?? '') ?? '未分類')}
                       </span>
                       <span className="truncate text-xs text-text-muted">
                         {[transaction.description, accountNames.get(transaction.account_uid)]

@@ -16,7 +16,7 @@ import {
 import {
   useListAccountOptionsQuery,
   useListCategoryOptionsQuery,
-  type TransactionType,
+  type NonTransferType,
 } from '@/lib/api/transactionsApi'
 
 const MIN_INTERVAL_COUNT = 1
@@ -99,12 +99,12 @@ const submitButtonClassName = cva(
 )
 
 // design-spec §2.3：金額語意色（收入 income-700 / 支出 expense-700），badge 底色用 100 階。
-const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = { income: '收入', expense: '支出' }
-const TRANSACTION_TYPE_BADGE_CLASSNAME: Record<TransactionType, string> = {
+const TRANSACTION_TYPE_LABEL: Record<NonTransferType, string> = { income: '收入', expense: '支出' }
+const TRANSACTION_TYPE_BADGE_CLASSNAME: Record<NonTransferType, string> = {
   income: 'bg-income-100 text-income-700',
   expense: 'bg-expense-100 text-expense-700',
 }
-const TRANSACTION_TYPE_AMOUNT_CLASSNAME: Record<TransactionType, string> = {
+const TRANSACTION_TYPE_AMOUNT_CLASSNAME: Record<NonTransferType, string> = {
   income: 'text-income-700',
   expense: 'text-expense-700',
 }
@@ -118,7 +118,7 @@ function RecurringRuleForm(): ReactNode {
   const [categoryUid, setCategoryUid] = useState('')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
-  const [transactionType, setTransactionType] = useState<TransactionType>('expense')
+  const [transactionType, setTransactionType] = useState<NonTransferType>('expense')
   const [paymentMethod, setPaymentMethod] = useState('')
   const [intervalUnit, setIntervalUnit] = useState<RecurringIntervalUnit>('month')
   const [intervalCount, setIntervalCount] = useState('1')
@@ -171,7 +171,7 @@ function RecurringRuleForm(): ReactNode {
           <span className="text-sm text-text-secondary">收支類型</span>
           <select
             value={transactionType}
-            onChange={(event) => setTransactionType(event.target.value as TransactionType)}
+            onChange={(event) => setTransactionType(event.target.value as NonTransferType)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
           >
             <option value="expense">支出</option>

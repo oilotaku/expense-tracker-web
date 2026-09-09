@@ -1,18 +1,25 @@
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.tag import Tag
-from app.models.transaction import Transaction, TransactionType, transaction_tags
+from app.models.transaction import Transaction, TransactionType, TransferDirection, transaction_tags
 
 
-def _signed_delta(amount: Decimal, transaction_type: TransactionType) -> Decimal:
-    """交易對帳戶餘額的影響：收入為正、支出為負。"""
+def _signed_delta(
+    amount: Decimal,
+    transaction_type: TransactionType,
+    transfer_direction: TransferDirection | None = None,
+) -> Decimal:
+    """交易對帳戶餘額的影響：收入為正、支出為負；轉帳依 transfer_direction（轉入為正、
+    轉出為負）——一般收支交易的 transfer_direction 恆為 None，不影響既有行為。"""
+    if transaction_type is TransactionType.TRANSFER:
+        return amount if transfer_direction is TransferDirection.IN else -amount
     return amount if transaction_type is TransactionType.INCOME else -amount
 
 
@@ -48,7 +55,9 @@ class TransactionRepository:
         )
         self.db.add(transaction)
         await self.db.flush()
-        await self._adjust_account_balance(account_uid, _signed_delta(amount, transaction_type))
+        await self._adjust_account_balance(
+            account_uid, _signed_delta(amount, transaction_type, transaction.transfer_direction)
+        )
         tags = await self._get_or_create_tags(user_uid, tag_names, created_by)
         await self._replace_tags(transaction.transaction_uid, tags)
         return transaction, tags
@@ -123,7 +132,9 @@ class TransactionRepository:
         # 欄位改寫前先鎖定舊值：改寫後才算新 delta，兩者相減即可同時涵蓋金額變動、
         # 收支類型互轉與換帳戶（含三者同時發生），不需個別特判。
         old_account_uid = transaction.account_uid
-        old_delta = _signed_delta(transaction.amount, transaction.transaction_type)
+        old_delta = _signed_delta(
+            transaction.amount, transaction.transaction_type, transaction.transfer_direction
+        )
 
         if account_uid is not None:
             transaction.account_uid = account_uid
@@ -142,7 +153,9 @@ class TransactionRepository:
         transaction.updated_by = updated_by
 
         new_account_uid = transaction.account_uid
-        new_delta = _signed_delta(transaction.amount, transaction.transaction_type)
+        new_delta = _signed_delta(
+            transaction.amount, transaction.transaction_type, transaction.transfer_direction
+        )
         if new_account_uid == old_account_uid:
             await self._adjust_account_balance(old_account_uid, new_delta - old_delta)
         else:
@@ -163,8 +176,135 @@ class TransactionRepository:
         await self.db.flush()
         await self._adjust_account_balance(
             transaction.account_uid,
-            -_signed_delta(transaction.amount, transaction.transaction_type),
+            -_signed_delta(
+                transaction.amount, transaction.transaction_type, transaction.transfer_direction
+            ),
         )
+
+    async def create_transfer(
+        self,
+        *,
+        user_uid: UUID,
+        from_account_uid: UUID,
+        to_account_uid: UUID,
+        transaction_date: datetime,
+        description: str,
+        amount: Decimal,
+        payment_method: str,
+        created_by: UUID,
+    ) -> tuple[Transaction, Transaction]:
+        """雙分錄轉帳：來源帳戶一列 OUT、目標帳戶一列 IN，用共同的 transfer_group_uid 串起來
+        （不是彼此的 FK，避免插入順序的雞生蛋問題，→ Transaction model 註解）。轉帳沒有分類、
+        不支援標籤（本次範圍刻意排除）。"""
+        group_uid = uuid4()
+        outbound = Transaction(
+            user_uid=user_uid,
+            account_uid=from_account_uid,
+            category_uid=None,
+            transaction_date=transaction_date,
+            description=description,
+            amount=amount,
+            transaction_type=TransactionType.TRANSFER,
+            transfer_group_uid=group_uid,
+            transfer_direction=TransferDirection.OUT,
+            payment_method=payment_method,
+            created_by=created_by,
+            updated_by=created_by,
+        )
+        inbound = Transaction(
+            user_uid=user_uid,
+            account_uid=to_account_uid,
+            category_uid=None,
+            transaction_date=transaction_date,
+            description=description,
+            amount=amount,
+            transaction_type=TransactionType.TRANSFER,
+            transfer_group_uid=group_uid,
+            transfer_direction=TransferDirection.IN,
+            payment_method=payment_method,
+            created_by=created_by,
+            updated_by=created_by,
+        )
+        self.db.add_all([outbound, inbound])
+        await self.db.flush()
+        await self._adjust_account_balance(from_account_uid, -amount)
+        await self._adjust_account_balance(to_account_uid, amount)
+        return outbound, inbound
+
+    async def find_transfer_by_group_uid(
+        self, transfer_group_uid: UUID, user_uid: UUID
+    ) -> tuple[Transaction, Transaction] | None:
+        stmt = select(Transaction).where(
+            Transaction.transfer_group_uid == transfer_group_uid,
+            Transaction.user_uid == user_uid,
+            Transaction.is_deleted.is_(False),
+        )
+        rows = list((await self.db.execute(stmt)).scalars().all())
+        if len(rows) != 2:
+            return None
+        outbound = next((r for r in rows if r.transfer_direction is TransferDirection.OUT), None)
+        inbound = next((r for r in rows if r.transfer_direction is TransferDirection.IN), None)
+        if outbound is None or inbound is None:
+            return None
+        return outbound, inbound
+
+    async def update_transfer(
+        self,
+        outbound: Transaction,
+        inbound: Transaction,
+        *,
+        from_account_uid: UUID | None,
+        to_account_uid: UUID | None,
+        transaction_date: datetime | None,
+        description: str | None,
+        amount: Decimal | None,
+        payment_method: str | None,
+        updated_by: UUID,
+    ) -> tuple[Transaction, Transaction]:
+        """不像 `update_fields` 特判「帳戶沒變就用差額」：轉帳要同時處理兩個帳戶、且各自都可能
+        換帳戶，統一「全退回舊 delta、全套用新 delta」邏輯簡單很多、不容易漏 case
+        （`_adjust_account_balance` 對 delta=0 是 no-op，多送幾次不影響正確性）。"""
+        old_from_account_uid = outbound.account_uid
+        old_to_account_uid = inbound.account_uid
+        old_amount = outbound.amount
+
+        if from_account_uid is not None:
+            outbound.account_uid = from_account_uid
+        if to_account_uid is not None:
+            inbound.account_uid = to_account_uid
+        for leg in (outbound, inbound):
+            if transaction_date is not None:
+                leg.transaction_date = transaction_date
+            if description is not None:
+                leg.description = description
+            if amount is not None:
+                leg.amount = amount
+            if payment_method is not None:
+                leg.payment_method = payment_method
+            leg.updated_by = updated_by
+
+        new_from_account_uid = outbound.account_uid
+        new_to_account_uid = inbound.account_uid
+        new_amount = outbound.amount
+
+        await self._adjust_account_balance(old_from_account_uid, old_amount)
+        await self._adjust_account_balance(old_to_account_uid, -old_amount)
+        await self._adjust_account_balance(new_from_account_uid, -new_amount)
+        await self._adjust_account_balance(new_to_account_uid, new_amount)
+
+        await self.db.flush()
+        return outbound, inbound
+
+    async def soft_delete_transfer(
+        self, outbound: Transaction, inbound: Transaction, deleted_by: UUID
+    ) -> None:
+        outbound.is_deleted = True
+        inbound.is_deleted = True
+        outbound.updated_by = deleted_by
+        inbound.updated_by = deleted_by
+        await self.db.flush()
+        await self._adjust_account_balance(outbound.account_uid, outbound.amount)
+        await self._adjust_account_balance(inbound.account_uid, -inbound.amount)
 
     async def _adjust_account_balance(self, account_uid: UUID, delta: Decimal) -> None:
         # 原子加減（UPDATE ... SET balance = balance + :delta），不做 load-and-mutate，

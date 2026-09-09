@@ -1,6 +1,6 @@
 import { baseApi } from './baseApi'
 import { unwrapData, type ApiResponse } from './types'
-import type { TransactionType } from './transactionsApi'
+import type { NonTransferType } from './transactionsApi'
 
 // FE-066：型別本應由 openapi-typescript 對 backend /api/openapi.json codegen 產生，但本 repo
 // 尚未接上該 pipeline（見 transactionsApi.ts / authApi.ts 頂部同一備註）。這裡手寫對齊
@@ -19,7 +19,7 @@ export interface RecurringRuleResponse {
   description: string
   // Decimal 由後端 field_serializer 轉字串（DB-038），前端不解析成 number 以免精度誤差
   amount: string
-  transaction_type: TransactionType
+  transaction_type: NonTransferType
   payment_method: string
   // 週期單位：週/月/年（backend/app/schemas/recurring_rule.py）
   interval_unit: RecurringIntervalUnit
@@ -35,7 +35,7 @@ export interface RecurringRuleCreateRequest {
   category_uid: string
   description: string
   amount: string
-  transaction_type: TransactionType
+  transaction_type: NonTransferType
   payment_method: string
   interval_unit: RecurringIntervalUnit
   interval_count: number

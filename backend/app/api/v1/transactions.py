@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.response import success
 from app.models.tag import Tag
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionType
 from app.models.user import User
 from app.repositories.account_repository import AccountRepository
 from app.repositories.category_repository import CategoryRepository
@@ -23,6 +23,9 @@ from app.schemas.transaction import (
     TransactionListResponse,
     TransactionResponse,
     TransactionUpdateRequest,
+    TransferCreateRequest,
+    TransferResponse,
+    TransferUpdateRequest,
 )
 
 router = APIRouter(prefix="/transactions")
@@ -33,6 +36,9 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 _NOT_FOUND_DETAIL = "交易不存在"
 _ACCOUNT_NOT_FOUND_DETAIL = "帳戶不存在"
 _CATEGORY_NOT_FOUND_DETAIL = "分類不存在"
+_TRANSFER_NOT_FOUND_DETAIL = "轉帳交易不存在"
+_USE_TRANSFER_ENDPOINT_DETAIL = "轉帳交易請改用 /transactions/transfer/{transfer_group_uid}"
+_ACCOUNTS_SAME_DETAIL = "轉出與轉入帳戶不可相同"
 
 
 async def _ensure_account_owned(db: AsyncSession, account_uid: UUID, user_uid: UUID) -> None:
@@ -47,7 +53,9 @@ async def _ensure_category_owned(db: AsyncSession, category_uid: UUID, user_uid:
         raise NotFoundError(_CATEGORY_NOT_FOUND_DETAIL)
 
 
-def _to_response(transaction: Transaction, tags: list[Tag]) -> TransactionResponse:
+def _to_response(
+    transaction: Transaction, tags: list[Tag], *, counterpart_account_uid: UUID | None = None
+) -> TransactionResponse:
     return TransactionResponse(
         transaction_uid=transaction.transaction_uid,
         account_uid=transaction.account_uid,
@@ -58,6 +66,16 @@ def _to_response(transaction: Transaction, tags: list[Tag]) -> TransactionRespon
         transaction_type=transaction.transaction_type,
         payment_method=transaction.payment_method,
         tags=[TagResponse(tag_uid=t.tag_uid, name=t.name) for t in tags],
+        transfer_group_uid=transaction.transfer_group_uid,
+        transfer_direction=transaction.transfer_direction,
+        transfer_counterpart_account_uid=counterpart_account_uid,
+    )
+
+
+def _to_transfer_response(outbound: Transaction, inbound: Transaction) -> TransferResponse:
+    return TransferResponse(
+        outbound=_to_response(outbound, [], counterpart_account_uid=inbound.account_uid),
+        inbound=_to_response(inbound, [], counterpart_account_uid=outbound.account_uid),
     )
 
 
@@ -144,6 +162,8 @@ async def update_transaction(
     transaction = await repo.find_by_transaction_uid(transaction_uid, current_user.user_uid)
     if transaction is None:
         raise NotFoundError(_NOT_FOUND_DETAIL)
+    if transaction.transaction_type == TransactionType.TRANSFER:
+        raise ConflictError(_USE_TRANSFER_ENDPOINT_DETAIL)
     if payload.account_uid is not None:
         await _ensure_account_owned(db, payload.account_uid, current_user.user_uid)
     if payload.category_uid is not None:
@@ -175,5 +195,89 @@ async def delete_transaction(
     transaction = await repo.find_by_transaction_uid(transaction_uid, current_user.user_uid)
     if transaction is None:
         raise NotFoundError(_NOT_FOUND_DETAIL)
+    if transaction.transaction_type == TransactionType.TRANSFER:
+        raise ConflictError(_USE_TRANSFER_ENDPOINT_DETAIL)
     await repo.soft_delete(transaction, current_user.user_uid)
+    return success(data=None)
+
+
+@router.post(
+    "/transfer",
+    response_model=ApiResponse[TransferResponse],
+    status_code=201,
+    summary="建立轉帳（雙分錄：來源帳戶轉出、目標帳戶轉入，不計入收支彙總）",
+)
+async def create_transfer(
+    payload: TransferCreateRequest, db: DbSession, current_user: CurrentUser
+) -> ApiResponse[TransferResponse]:
+    await _ensure_account_owned(db, payload.from_account_uid, current_user.user_uid)
+    await _ensure_account_owned(db, payload.to_account_uid, current_user.user_uid)
+    outbound, inbound = await TransactionRepository(db).create_transfer(
+        user_uid=current_user.user_uid,
+        from_account_uid=payload.from_account_uid,
+        to_account_uid=payload.to_account_uid,
+        transaction_date=payload.transaction_date,
+        description=payload.description,
+        amount=payload.amount,
+        payment_method=payload.payment_method,
+        created_by=current_user.user_uid,
+    )
+    return success(data=_to_transfer_response(outbound, inbound), response_code=201)
+
+
+@router.patch(
+    "/transfer/{transfer_group_uid}",
+    response_model=ApiResponse[TransferResponse],
+    summary="更新轉帳（兩列同步改寫，含帳戶/金額變動的餘額重算）",
+)
+async def update_transfer(
+    transfer_group_uid: UUID,
+    payload: TransferUpdateRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[TransferResponse]:
+    repo = TransactionRepository(db)
+    legs = await repo.find_transfer_by_group_uid(transfer_group_uid, current_user.user_uid)
+    if legs is None:
+        raise NotFoundError(_TRANSFER_NOT_FOUND_DETAIL)
+    outbound, inbound = legs
+
+    resolved_from = payload.from_account_uid or outbound.account_uid
+    resolved_to = payload.to_account_uid or inbound.account_uid
+    if resolved_from == resolved_to:
+        raise ConflictError(_ACCOUNTS_SAME_DETAIL)
+
+    if payload.from_account_uid is not None:
+        await _ensure_account_owned(db, payload.from_account_uid, current_user.user_uid)
+    if payload.to_account_uid is not None:
+        await _ensure_account_owned(db, payload.to_account_uid, current_user.user_uid)
+
+    outbound, inbound = await repo.update_transfer(
+        outbound,
+        inbound,
+        from_account_uid=payload.from_account_uid,
+        to_account_uid=payload.to_account_uid,
+        transaction_date=payload.transaction_date,
+        description=payload.description,
+        amount=payload.amount,
+        payment_method=payload.payment_method,
+        updated_by=current_user.user_uid,
+    )
+    return success(data=_to_transfer_response(outbound, inbound))
+
+
+@router.delete(
+    "/transfer/{transfer_group_uid}",
+    response_model=ApiResponse[None],
+    summary="刪除轉帳（軟刪兩列，退回兩帳戶餘額）",
+)
+async def delete_transfer(
+    transfer_group_uid: UUID, db: DbSession, current_user: CurrentUser
+) -> ApiResponse[None]:
+    repo = TransactionRepository(db)
+    legs = await repo.find_transfer_by_group_uid(transfer_group_uid, current_user.user_uid)
+    if legs is None:
+        raise NotFoundError(_TRANSFER_NOT_FOUND_DETAIL)
+    outbound, inbound = legs
+    await repo.soft_delete_transfer(outbound, inbound, current_user.user_uid)
     return success(data=None)

@@ -10,7 +10,7 @@ import { useBreakpoint } from '@/hooks/useBreakpoint'
 import {
   useListAccountOptionsQuery,
   useListCategoryOptionsQuery,
-  type TransactionType,
+  type NonTransferType,
 } from '@/lib/api/transactionsApi'
 import {
   RecurringFieldset,
@@ -89,7 +89,10 @@ const transactionFormSchema = z
       .refine((v) => AMOUNT_PATTERN.test(v) && Number(v) > 0, '金額需大於 0'),
     categoryUid: z.string(),
     description: z.string(),
+    // 收入/支出時是「帳戶」；轉帳時是「轉出帳戶」（→ toAccountUid 才是「轉入帳戶」）。
     accountUid: z.string().min(1, '請選擇帳戶'),
+    // 只有轉帳（transactionType === 'transfer'）用得到，見下方 superRefine。
+    toAccountUid: z.string(),
     paymentMethod: z.string(),
     isRecurring: z.boolean(),
     recurring: z.object({
@@ -99,6 +102,14 @@ const transactionFormSchema = z
     }),
   })
   .superRefine((values, ctx) => {
+    if (values.transactionType === 'transfer') {
+      if (values.toAccountUid.length === 0) {
+        ctx.addIssue({ code: 'custom', path: ['toAccountUid'], message: '請選擇轉入帳戶' })
+      } else if (values.toAccountUid === values.accountUid) {
+        ctx.addIssue({ code: 'custom', path: ['toAccountUid'], message: '轉出與轉入帳戶不可相同' })
+      }
+      return
+    }
     if (!values.isRecurring) return
     if (values.recurring.intervalCount < 1 || values.recurring.intervalCount > 99) {
       ctx.addIssue({ code: 'custom', path: ['recurring', 'intervalCount'], message: '間隔需為 1–99' })
@@ -118,6 +129,7 @@ function defaultFormInput(): FormInput {
     categoryUid: '',
     description: '',
     accountUid: '',
+    toAccountUid: '',
     paymentMethod: '',
     isRecurring: false,
     recurring: defaultRecurringValue(),
@@ -132,8 +144,8 @@ export interface TransactionFormRecurringValues {
 
 // 與 `TransactionCreateRequest`（`frontend/src/lib/api/transactionsApi.ts`）欄位同名同型別，
 // 呼叫端可直接把 recurring 以外的欄位原樣傳給 `createTransaction`。
-export interface TransactionFormValues {
-  transaction_type: TransactionType
+export interface TransactionFormNonTransferValues {
+  transaction_type: NonTransferType
   transaction_date: string
   amount: string
   category_uid: string
@@ -144,8 +156,24 @@ export interface TransactionFormValues {
   recurring: TransactionFormRecurringValues | null
 }
 
-export interface TransactionFormInitialValues {
-  transaction_type: TransactionType
+// 轉帳沒有分類/標籤/固定收支（→ 明確排除範圍，見 propose），欄位對齊
+// `TransferCreateRequest`（少了 tags/recurring，多了 from/to 兩個帳戶）。
+export interface TransactionFormTransferValues {
+  transaction_type: 'transfer'
+  transaction_date: string
+  amount: string
+  description: string
+  from_account_uid: string
+  to_account_uid: string
+  payment_method: string
+}
+
+// 用 transaction_type 判別式聯集：呼叫端 `if (values.transaction_type === 'transfer')` 就能讓
+// TypeScript 正確窄化出 from_account_uid/to_account_uid vs category_uid/account_uid/recurring。
+export type TransactionFormValues = TransactionFormNonTransferValues | TransactionFormTransferValues
+
+export interface TransactionFormNonTransferInitialValues {
+  transaction_type: NonTransferType
   transaction_date: string
   amount: string
   category_uid: string
@@ -154,6 +182,10 @@ export interface TransactionFormInitialValues {
   payment_method: string
   recurring: TransactionFormRecurringValues | null
 }
+
+export type TransactionFormInitialValues =
+  | TransactionFormNonTransferInitialValues
+  | TransactionFormTransferValues
 
 export interface TransactionFormDialogProps {
   open: boolean
@@ -218,6 +250,8 @@ export function TransactionFormDialog({
   // useWatch（而非 watch()）：react-hook-form 的 `watch()` 回傳的函式無法被 React Compiler
   // 安全地記憶化（會跳過 memoization），改用 `useWatch` 這個 render-safe 的訂閱 hook。
   const isRecurringChecked = useWatch({ control, name: 'isRecurring' })
+  const transactionType = useWatch({ control, name: 'transactionType' })
+  const isTransfer = transactionType === 'transfer'
 
   const defaultCategoryUid = useMemo(
     () => categories?.find((category) => category.name === DEFAULT_CATEGORY_NAME)?.category_uid ?? '',
@@ -228,6 +262,21 @@ export function TransactionFormDialog({
   useEffect(() => {
     if (!open) return
     if (mode === 'edit' && initialValues) {
+      if (initialValues.transaction_type === 'transfer') {
+        // 轉帳沒有分類/固定收支欄位；該列自己是哪個方向（OUT/IN）由呼叫端
+        // （→ TransactionList.tsx）解析好，統一還原成「轉出帳戶＝該列自己的帳戶」。
+        reset({
+          ...defaultFormInput(),
+          transactionType: 'transfer',
+          transactionDate: extractDateInput(initialValues.transaction_date),
+          amount: initialValues.amount,
+          description: initialValues.description,
+          accountUid: initialValues.from_account_uid,
+          toAccountUid: initialValues.to_account_uid,
+          paymentMethod: initialValues.payment_method,
+        })
+        return
+      }
       reset({
         transactionType: initialValues.transaction_type,
         transactionDate: extractDateInput(initialValues.transaction_date),
@@ -235,6 +284,7 @@ export function TransactionFormDialog({
         categoryUid: initialValues.category_uid,
         description: initialValues.description,
         accountUid: initialValues.account_uid,
+        toAccountUid: '',
         paymentMethod: initialValues.payment_method,
         isRecurring: initialValues.recurring !== null,
         recurring: initialValues.recurring
@@ -269,23 +319,34 @@ export function TransactionFormDialog({
   }
 
   async function handleValidSubmit(data: FormInput): Promise<void> {
-    const payload: TransactionFormValues = {
-      transaction_type: data.transactionType as TransactionType,
-      transaction_date: dateInputToApiDatetime(data.transactionDate),
-      amount: data.amount,
-      category_uid: data.categoryUid || defaultCategoryUid,
-      description: data.description,
-      account_uid: data.accountUid,
-      payment_method: data.paymentMethod,
-      tags: [],
-      recurring: data.isRecurring
+    const payload: TransactionFormValues =
+      data.transactionType === 'transfer'
         ? {
-            interval_unit: data.recurring.intervalUnit,
-            interval_count: data.recurring.intervalCount,
-            anchor_date: data.recurring.anchorDate,
+            transaction_type: 'transfer',
+            transaction_date: dateInputToApiDatetime(data.transactionDate),
+            amount: data.amount,
+            description: data.description,
+            from_account_uid: data.accountUid,
+            to_account_uid: data.toAccountUid,
+            payment_method: data.paymentMethod,
           }
-        : null,
-    }
+        : {
+            transaction_type: data.transactionType as NonTransferType,
+            transaction_date: dateInputToApiDatetime(data.transactionDate),
+            amount: data.amount,
+            category_uid: data.categoryUid || defaultCategoryUid,
+            description: data.description,
+            account_uid: data.accountUid,
+            payment_method: data.paymentMethod,
+            tags: [],
+            recurring: data.isRecurring
+              ? {
+                  interval_unit: data.recurring.intervalUnit,
+                  interval_count: data.recurring.intervalCount,
+                  anchor_date: data.recurring.anchorDate,
+                }
+              : null,
+          }
     setSubmitError(null)
     setIsSubmitting(true)
     try {
@@ -305,8 +366,8 @@ export function TransactionFormDialog({
           control={control}
           name="transactionType"
           render={({ field }) => (
-            <div role="radiogroup" aria-label="收支類型" className="grid grid-cols-2 gap-2">
-              {(['expense', 'income'] as const).map((type) => (
+            <div role="radiogroup" aria-label="收支類型" className="grid grid-cols-3 gap-2">
+              {(['expense', 'income', 'transfer'] as const).map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -317,11 +378,13 @@ export function TransactionFormDialog({
                     field.value === type
                       ? type === 'income'
                         ? 'border-income-500 bg-income-100 text-income-700'
-                        : 'border-expense-500 bg-expense-100 text-expense-700'
+                        : type === 'expense'
+                          ? 'border-expense-500 bg-expense-100 text-expense-700'
+                          : 'border-primary-500 bg-primary-100 text-primary-700'
                       : 'border-border text-text-secondary'
                   }`}
                 >
-                  {type === 'income' ? '收入' : '支出'}
+                  {type === 'income' ? '收入' : type === 'expense' ? '支出' : '轉帳'}
                 </button>
               ))}
             </div>
@@ -373,20 +436,22 @@ export function TransactionFormDialog({
         </button>
 
         <div className={`flex-col gap-4 md:flex ${showMoreFields ? 'flex' : 'hidden'}`}>
-          <label className="flex flex-col gap-1">
-            <span className="text-sm text-text-secondary">分類</span>
-            <select
-              {...register('categoryUid')}
-              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
-            >
-              <option value="">未選（送出時補「其他」）</option>
-              {(categories ?? []).map((category) => (
-                <option key={category.category_uid} value={category.category_uid}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!isTransfer && (
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-text-secondary">分類</span>
+              <select
+                {...register('categoryUid')}
+                className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+              >
+                <option value="">未選（送出時補「其他」）</option>
+                {(categories ?? []).map((category) => (
+                  <option key={category.category_uid} value={category.category_uid}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">明細</span>
@@ -399,7 +464,7 @@ export function TransactionFormDialog({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-sm text-text-secondary">帳戶</span>
+            <span className="text-sm text-text-secondary">{isTransfer ? '轉出帳戶' : '帳戶'}</span>
             <select
               {...register('accountUid', { onChange: handleAccountUidChange })}
               className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -418,6 +483,28 @@ export function TransactionFormDialog({
             )}
           </label>
 
+          {isTransfer && (
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-text-secondary">轉入帳戶</span>
+              <select
+                {...register('toAccountUid')}
+                className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+              >
+                <option value="">請選擇帳戶</option>
+                {(accounts ?? []).map((account) => (
+                  <option key={account.account_uid} value={account.account_uid}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+              {errors.toAccountUid && (
+                <span role="alert" className="text-sm text-danger-500">
+                  {errors.toAccountUid.message}
+                </span>
+              )}
+            </label>
+          )}
+
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">支付方式</span>
             <input
@@ -435,12 +522,14 @@ export function TransactionFormDialog({
           </label>
         </div>
 
-        <label className="flex min-h-[44px] items-center gap-2">
-          <input type="checkbox" {...register('isRecurring')} className="h-5 w-5" />
-          <span className="text-sm text-text-primary">固定收支</span>
-        </label>
+        {!isTransfer && (
+          <label className="flex min-h-[44px] items-center gap-2">
+            <input type="checkbox" {...register('isRecurring')} className="h-5 w-5" />
+            <span className="text-sm text-text-primary">固定收支</span>
+          </label>
+        )}
 
-        {isRecurringChecked && (
+        {!isTransfer && isRecurringChecked && (
           <Controller
             control={control}
             name="recurring"

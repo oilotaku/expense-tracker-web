@@ -60,11 +60,14 @@ const useListCategoryOptionsQuery = vi.fn()
 const useListAccountOptionsQuery = vi.fn()
 const createTransaction = vi.fn()
 const useCreateTransactionMutation = vi.fn()
+const createTransfer = vi.fn()
+const useCreateTransferMutation = vi.fn()
 vi.mock('@/lib/api/transactionsApi', () => ({
   useListTransactionsQuery: (args: unknown) => useListTransactionsQuery(args),
   useListCategoryOptionsQuery: () => useListCategoryOptionsQuery(),
   useListAccountOptionsQuery: () => useListAccountOptionsQuery(),
   useCreateTransactionMutation: () => useCreateTransactionMutation(),
+  useCreateTransferMutation: () => useCreateTransferMutation(),
 }))
 
 const createRecurringRule = vi.fn()
@@ -152,6 +155,8 @@ describe('DashboardPage', () => {
     useListAccountOptionsQuery.mockReset().mockReturnValue({ data: ACCOUNTS.items })
     createTransaction.mockReset().mockReturnValue({ unwrap: () => Promise.resolve(TRANSACTIONS.items[0]) })
     useCreateTransactionMutation.mockReset().mockReturnValue([createTransaction, { isLoading: false }])
+    createTransfer.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({}) })
+    useCreateTransferMutation.mockReset().mockReturnValue([createTransfer, { isLoading: false }])
     createRecurringRule.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({}) })
     useCreateRecurringRuleMutation.mockReset().mockReturnValue([createRecurringRule, { isLoading: false }])
   })

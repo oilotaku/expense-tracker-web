@@ -30,6 +30,44 @@ async def _account_balance(client: AsyncClient, account_uid: str) -> str:
     return balance
 
 
+async def _create_transfer(
+    client: AsyncClient,
+    *,
+    from_account_uid: str,
+    to_account_uid: str,
+    amount: str = "100.00",
+    description: str = "轉帳",
+) -> dict[str, object]:
+    res = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "from_account_uid": from_account_uid,
+            "to_account_uid": to_account_uid,
+            "transaction_date": "2026-09-09T12:00:00+08:00",
+            "description": description,
+            "amount": amount,
+            "payment_method": "銀行轉帳",
+        },
+    )
+    assert res.status_code == 201
+    data: dict[str, object] = res.json()["data"]
+    return data
+
+
+async def _get_summary(client: AsyncClient) -> dict[str, object]:
+    res = await client.get(
+        "/api/v1/dashboard/summary",
+        params={
+            "period": "month",
+            "date_from": "2026-09-01T00:00:00+08:00",
+            "date_to": "2026-09-30T23:59:59+08:00",
+        },
+    )
+    assert res.status_code == 200
+    data: dict[str, object] = res.json()["data"]
+    return data
+
+
 async def test_create_transaction_with_two_tags(client: AsyncClient) -> None:
     await _register_and_login(client, "tx-user-1@example.com")
     account_uid = await _create_account(client)
@@ -377,4 +415,209 @@ async def test_transactions_are_scoped_to_owner(client: AsyncClient) -> None:
     assert patch_res.status_code == 404
 
     delete_res = await client.delete(f"/api/v1/transactions/{transaction_uid}")
+    assert delete_res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 轉帳（雙分錄）：多帳戶互轉不計入當月收支累積
+# ---------------------------------------------------------------------------
+
+
+async def test_create_transfer_moves_balance_without_affecting_income_expense(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "tx-transfer-balance@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+    categories = await _list_category_uids(client)
+
+    # 先建一筆收入，確認 Dashboard 收支彙總「轉帳前」的基準值。
+    await client.post(
+        "/api/v1/transactions",
+        json={
+            "account_uid": cash_uid,
+            "category_uid": categories["其他"],
+            "transaction_date": "2026-09-01T00:00:00+08:00",
+            "description": "薪水",
+            "amount": "10000.00",
+            "transaction_type": "income",
+            "payment_method": "銀行轉帳",
+        },
+    )
+    summary_before = await _get_summary(client)
+
+    await _create_transfer(
+        client, from_account_uid=cash_uid, to_account_uid=bank_uid, amount="3000.00"
+    )
+
+    assert await _account_balance(client, cash_uid) == "8000.00"  # 1000 起始 + 10000 收入 - 3000
+    assert await _account_balance(client, bank_uid) == "4000.00"  # 1000 起始 + 3000
+
+    summary_after = await _get_summary(client)
+    assert summary_after == summary_before  # 轉帳完全不影響收支彙總
+
+
+async def test_create_transfer_same_account_returns_422(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-same-account@example.com")
+    cash_uid = await _create_account(client, "現金")
+
+    res = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "from_account_uid": cash_uid,
+            "to_account_uid": cash_uid,
+            "transaction_date": "2026-09-09T12:00:00+08:00",
+            "description": "自轉",
+            "amount": "100.00",
+            "payment_method": "銀行轉帳",
+        },
+    )
+    assert res.status_code == 422
+
+
+async def test_create_transfer_response_shape(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-shape@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(
+        client, from_account_uid=cash_uid, to_account_uid=bank_uid, amount="500.00"
+    )
+    outbound = data["outbound"]
+    inbound = data["inbound"]
+    assert isinstance(outbound, dict) and isinstance(inbound, dict)
+
+    assert outbound["transaction_type"] == "transfer"
+    assert outbound["transfer_direction"] == "out"
+    assert outbound["category_uid"] is None
+    assert outbound["account_uid"] == cash_uid
+    assert outbound["transfer_counterpart_account_uid"] == bank_uid
+    assert outbound["transfer_group_uid"] == inbound["transfer_group_uid"]
+
+    assert inbound["transaction_type"] == "transfer"
+    assert inbound["transfer_direction"] == "in"
+    assert inbound["category_uid"] is None
+    assert inbound["account_uid"] == bank_uid
+    assert inbound["transfer_counterpart_account_uid"] == cash_uid
+
+
+async def test_old_update_endpoint_rejects_transfer_leg_with_409(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-old-patch@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(client, from_account_uid=cash_uid, to_account_uid=bank_uid)
+    outbound_uid = data["outbound"]["transaction_uid"]  # type: ignore[index]
+
+    res = await client.patch(f"/api/v1/transactions/{outbound_uid}", json={"description": "改一下"})
+    assert res.status_code == 409
+
+
+async def test_old_delete_endpoint_rejects_transfer_leg_with_409(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-old-delete@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(client, from_account_uid=cash_uid, to_account_uid=bank_uid)
+    outbound_uid = data["outbound"]["transaction_uid"]  # type: ignore[index]
+
+    res = await client.delete(f"/api/v1/transactions/{outbound_uid}")
+    assert res.status_code == 409
+
+
+async def test_update_transfer_amount_resyncs_both_balances(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-update-amount@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(
+        client, from_account_uid=cash_uid, to_account_uid=bank_uid, amount="1000.00"
+    )
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    res = await client.patch(
+        f"/api/v1/transactions/transfer/{group_uid}", json={"amount": "4000.00"}
+    )
+    assert res.status_code == 200
+
+    assert await _account_balance(client, cash_uid) == "-3000.00"  # 1000 起始 - 4000
+    assert await _account_balance(client, bank_uid) == "5000.00"  # 1000 起始 + 4000
+
+
+async def test_update_transfer_changing_account_resyncs_old_and_new_accounts(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "tx-transfer-update-account@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+    savings_uid = await _create_account(client, "儲蓄")
+
+    data = await _create_transfer(
+        client, from_account_uid=cash_uid, to_account_uid=bank_uid, amount="1000.00"
+    )
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    # 轉入帳戶從銀行改成儲蓄：銀行退回 1000、儲蓄收到 1000，現金不受影響。
+    res = await client.patch(
+        f"/api/v1/transactions/transfer/{group_uid}", json={"to_account_uid": savings_uid}
+    )
+    assert res.status_code == 200
+
+    assert await _account_balance(client, cash_uid) == "0.00"  # 1000 起始 - 1000，不受這次更新影響
+    assert await _account_balance(client, bank_uid) == "1000.00"  # 1000 起始，退回轉入的 1000
+    assert await _account_balance(client, savings_uid) == "2000.00"  # 1000 起始 + 1000
+
+
+async def test_update_transfer_to_same_account_returns_409(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-update-same-account@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(client, from_account_uid=cash_uid, to_account_uid=bank_uid)
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    res = await client.patch(
+        f"/api/v1/transactions/transfer/{group_uid}", json={"to_account_uid": cash_uid}
+    )
+    assert res.status_code == 409
+
+
+async def test_delete_transfer_refunds_both_accounts(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-delete@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(
+        client, from_account_uid=cash_uid, to_account_uid=bank_uid, amount="600.00"
+    )
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    res = await client.delete(f"/api/v1/transactions/transfer/{group_uid}")
+    assert res.status_code == 200
+
+    assert await _account_balance(client, cash_uid) == "1000.00"
+    assert await _account_balance(client, bank_uid) == "1000.00"
+
+    second_delete = await client.delete(f"/api/v1/transactions/transfer/{group_uid}")
+    assert second_delete.status_code == 404
+
+    list_res = await client.get("/api/v1/transactions")
+    assert list_res.json()["data"]["total"] == 0
+
+
+async def test_get_transfer_not_owned_returns_404(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-owner-a@example.com")
+    cash_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+    data = await _create_transfer(client, from_account_uid=cash_uid, to_account_uid=bank_uid)
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    await _register_and_login(client, "tx-transfer-owner-b@example.com")
+
+    patch_res = await client.patch(
+        f"/api/v1/transactions/transfer/{group_uid}", json={"description": "被 B 改"}
+    )
+    assert patch_res.status_code == 404
+
+    delete_res = await client.delete(f"/api/v1/transactions/transfer/{group_uid}")
     assert delete_res.status_code == 404

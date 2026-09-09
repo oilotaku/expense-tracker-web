@@ -14,11 +14,14 @@ import {
   type TransactionFormValues,
 } from '@/components/transactions/TransactionFormDialog'
 import {
+  useDeleteTransferMutation,
   useListAccountOptionsQuery,
   useListCategoryOptionsQuery,
   useListTransactionsQuery,
+  useUpdateTransferMutation,
   type AccountOption,
   type CategoryOption,
+  type NonTransferType,
   type TransactionResponse,
   type TransactionType,
 } from '@/lib/api/transactionsApi'
@@ -67,7 +70,7 @@ export interface TransactionUpdateRequest {
   transaction_date: string
   description: string
   amount: string
-  transaction_type: TransactionType
+  transaction_type: NonTransferType
   payment_method: string
 }
 
@@ -109,7 +112,46 @@ const transactionMutationsApi = baseApi
 
 const { useUpdateTransactionMutation, useDeleteTransactionMutation } = transactionMutationsApi
 
-const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = { expense: '支出', income: '收入' }
+const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = {
+  expense: '支出',
+  income: '收入',
+  transfer: '轉帳',
+}
+
+// 轉帳兩列（→ transfer_group_uid）各自只知道「自己的帳戶」+「對方的帳戶」，統一算成
+// 「來源 → 目標」方向的顯示字串，不管當前這一列是 OUT 還是 IN（→ TransactionResponse
+// transfer_direction/transfer_counterpart_account_uid）。
+function transferAccountsLabel(
+  transaction: TransactionResponse,
+  accountNameByUid: ReadonlyMap<string, string>,
+): string {
+  const ownName = accountNameByUid.get(transaction.account_uid) ?? '未知帳戶'
+  const counterpartName = accountNameByUid.get(transaction.transfer_counterpart_account_uid ?? '') ?? '未知帳戶'
+  return transaction.transfer_direction === 'out'
+    ? `${ownName} → ${counterpartName}`
+    : `${counterpartName} → ${ownName}`
+}
+
+// 轉帳沒有分類（category_uid 恆為 null，→ ck_transactions_transfer_shape），清單上顯示
+// 「—」（同本次會話已用過的 null 顯示慣例，→ assets/page.tsx principal_amount）。
+function categoryDisplayName(
+  transaction: TransactionResponse,
+  categoryNameByUid: ReadonlyMap<string, string>,
+): string {
+  if (transaction.category_uid === null) return '—'
+  return categoryNameByUid.get(transaction.category_uid) ?? ''
+}
+
+// 一般收支交易顯示自己的帳戶名稱；轉帳顯示「來源 → 目標」（→ transferAccountsLabel）。
+function accountDisplayName(
+  transaction: TransactionResponse,
+  accountNameByUid: ReadonlyMap<string, string>,
+): string {
+  if (transaction.transaction_type === 'transfer') {
+    return transferAccountsLabel(transaction, accountNameByUid)
+  }
+  return accountNameByUid.get(transaction.account_uid) ?? ''
+}
 
 interface TransactionFiltersValue {
   dateFrom: string
@@ -235,7 +277,11 @@ function TransactionTableRow({
   onDelete,
 }: TransactionRowProps): ReactNode {
   const amountColor =
-    transaction.transaction_type === 'income' ? 'text-income-700' : 'text-expense-700'
+    transaction.transaction_type === 'income'
+      ? 'text-income-700'
+      : transaction.transaction_type === 'expense'
+        ? 'text-expense-700'
+        : 'text-text-primary'
 
   return (
     <tr className="group border-b border-border last:border-0">
@@ -278,7 +324,11 @@ function TransactionCard({
   onDelete,
 }: TransactionRowProps): ReactNode {
   const amountColor =
-    transaction.transaction_type === 'income' ? 'text-income-700' : 'text-expense-700'
+    transaction.transaction_type === 'income'
+      ? 'text-income-700'
+      : transaction.transaction_type === 'expense'
+        ? 'text-expense-700'
+        : 'text-text-primary'
 
   function handleDeleteClick(event: { stopPropagation: () => void }): void {
     event.stopPropagation()
@@ -333,7 +383,10 @@ export function TransactionList(): ReactNode {
   })
 
   const [updateTransaction] = useUpdateTransactionMutation()
-  const [deleteTransaction, { isLoading: isDeleting }] = useDeleteTransactionMutation()
+  const [deleteTransaction, { isLoading: isDeletingTransaction }] = useDeleteTransactionMutation()
+  const [updateTransfer] = useUpdateTransferMutation()
+  const [deleteTransfer, { isLoading: isDeletingTransfer }] = useDeleteTransferMutation()
+  const isDeleting = isDeletingTransaction || isDeletingTransfer
 
   const categoryNameByUid = useMemo(
     () => new Map((categories ?? []).map((category) => [category.category_uid, category.name])),
@@ -359,6 +412,19 @@ export function TransactionList(): ReactNode {
 
   async function handleEditSubmit(values: TransactionFormValues): Promise<void> {
     if (!editingTransaction) return
+    if (values.transaction_type === 'transfer') {
+      if (!editingTransaction.transfer_group_uid) return
+      await updateTransfer({
+        transferGroupUid: editingTransaction.transfer_group_uid,
+        from_account_uid: values.from_account_uid,
+        to_account_uid: values.to_account_uid,
+        transaction_date: values.transaction_date,
+        description: values.description,
+        amount: values.amount,
+        payment_method: values.payment_method,
+      }).unwrap()
+      return
+    }
     await updateTransaction({
       transactionUid: editingTransaction.transaction_uid,
       account_uid: values.account_uid,
@@ -374,7 +440,11 @@ export function TransactionList(): ReactNode {
   async function handleConfirmDelete(): Promise<void> {
     if (!deletingTransaction) return
     try {
-      await deleteTransaction(deletingTransaction.transaction_uid).unwrap()
+      if (deletingTransaction.transaction_type === 'transfer' && deletingTransaction.transfer_group_uid) {
+        await deleteTransfer(deletingTransaction.transfer_group_uid).unwrap()
+      } else {
+        await deleteTransaction(deletingTransaction.transaction_uid).unwrap()
+      }
     } catch {
       // 刪除失敗維持既有清單顯示，錯誤不額外攔截（→ accounts/page.tsx 同慣例）
     }
@@ -383,17 +453,35 @@ export function TransactionList(): ReactNode {
 
   // 個別交易的 TransactionResponse 未帶固定收支關聯資訊（後端該欄位屬 recurring_rules 獨立資源，
   // →design-spec [A13]），編輯既有交易時「固定收支」一律預帶未勾選狀態。
+  // 轉帳列（→ transfer_direction）還原「轉出／轉入帳戶」：自己是 OUT 那一列時，自己的帳戶＝
+  // 轉出帳戶、對方帳戶＝轉入帳戶；是 IN 那一列時相反——不管使用者點的是哪一列都還原成同一組值。
   const editInitialValues: TransactionFormInitialValues | undefined = editingTransaction
-    ? {
-        transaction_type: editingTransaction.transaction_type,
-        transaction_date: editingTransaction.transaction_date,
-        amount: editingTransaction.amount,
-        category_uid: editingTransaction.category_uid,
-        description: editingTransaction.description,
-        account_uid: editingTransaction.account_uid,
-        payment_method: editingTransaction.payment_method,
-        recurring: null,
-      }
+    ? editingTransaction.transaction_type === 'transfer'
+      ? {
+          transaction_type: 'transfer',
+          transaction_date: editingTransaction.transaction_date,
+          amount: editingTransaction.amount,
+          description: editingTransaction.description,
+          from_account_uid:
+            editingTransaction.transfer_direction === 'out'
+              ? editingTransaction.account_uid
+              : (editingTransaction.transfer_counterpart_account_uid ?? ''),
+          to_account_uid:
+            editingTransaction.transfer_direction === 'out'
+              ? (editingTransaction.transfer_counterpart_account_uid ?? '')
+              : editingTransaction.account_uid,
+          payment_method: editingTransaction.payment_method,
+        }
+      : {
+          transaction_type: editingTransaction.transaction_type,
+          transaction_date: editingTransaction.transaction_date,
+          amount: editingTransaction.amount,
+          category_uid: editingTransaction.category_uid ?? '',
+          description: editingTransaction.description,
+          account_uid: editingTransaction.account_uid,
+          payment_method: editingTransaction.payment_method,
+          recurring: null,
+        }
     : undefined
 
   return (
@@ -459,8 +547,8 @@ export function TransactionList(): ReactNode {
                   <TransactionTableRow
                     key={transaction.transaction_uid}
                     transaction={transaction}
-                    categoryName={categoryNameByUid.get(transaction.category_uid) ?? ''}
-                    accountName={accountNameByUid.get(transaction.account_uid) ?? ''}
+                    categoryName={categoryDisplayName(transaction, categoryNameByUid)}
+                    accountName={accountDisplayName(transaction, accountNameByUid)}
                     onEdit={setEditingTransaction}
                     onDelete={setDeletingTransaction}
                   />
@@ -474,8 +562,8 @@ export function TransactionList(): ReactNode {
               <TransactionCard
                 key={transaction.transaction_uid}
                 transaction={transaction}
-                categoryName={categoryNameByUid.get(transaction.category_uid) ?? ''}
-                accountName={accountNameByUid.get(transaction.account_uid) ?? ''}
+                categoryName={categoryDisplayName(transaction, categoryNameByUid)}
+                accountName={accountDisplayName(transaction, accountNameByUid)}
                 onEdit={setEditingTransaction}
                 onDelete={setDeletingTransaction}
               />

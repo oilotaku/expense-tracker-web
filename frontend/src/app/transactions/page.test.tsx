@@ -17,11 +17,20 @@ vi.mock('@/lib/api/authApi', () => ({
 
 const createTransaction = vi.fn()
 const useCreateTransactionMutation = vi.fn()
+const createTransfer = vi.fn()
+const useCreateTransferMutation = vi.fn()
+const updateTransfer = vi.fn()
+const useUpdateTransferMutation = vi.fn()
+const deleteTransfer = vi.fn()
+const useDeleteTransferMutation = vi.fn()
 const useListAccountOptionsQuery = vi.fn()
 const useListCategoryOptionsQuery = vi.fn()
 const useListTransactionsQuery = vi.fn()
 vi.mock('@/lib/api/transactionsApi', () => ({
   useCreateTransactionMutation: () => useCreateTransactionMutation(),
+  useCreateTransferMutation: () => useCreateTransferMutation(),
+  useUpdateTransferMutation: () => useUpdateTransferMutation(),
+  useDeleteTransferMutation: () => useDeleteTransferMutation(),
   useListAccountOptionsQuery: () => useListAccountOptionsQuery(),
   useListCategoryOptionsQuery: () => useListCategoryOptionsQuery(),
   useListTransactionsQuery: (...args: unknown[]) => useListTransactionsQuery(...args),
@@ -85,6 +94,12 @@ describe('TransactionsPage', () => {
 
     createTransaction.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({ transaction_uid: 't1' }) })
     useCreateTransactionMutation.mockReturnValue([createTransaction, { isLoading: false }])
+    createTransfer.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({}) })
+    useCreateTransferMutation.mockReturnValue([createTransfer, { isLoading: false }])
+    updateTransfer.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({}) })
+    useUpdateTransferMutation.mockReturnValue([updateTransfer, { isLoading: false }])
+    deleteTransfer.mockReset().mockReturnValue({ unwrap: () => Promise.resolve(undefined) })
+    useDeleteTransferMutation.mockReturnValue([deleteTransfer, { isLoading: false }])
     createRecurringRule
       .mockReset()
       .mockReturnValue({ unwrap: () => Promise.resolve({ recurring_rule_uid: 'r1' }) })

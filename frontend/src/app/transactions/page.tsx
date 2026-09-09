@@ -8,7 +8,7 @@ import {
   type TransactionFormValues,
 } from '@/components/transactions/TransactionFormDialog'
 import { TransactionList } from '@/components/TransactionList'
-import { useCreateTransactionMutation } from '@/lib/api/transactionsApi'
+import { useCreateTransactionMutation, useCreateTransferMutation } from '@/lib/api/transactionsApi'
 import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
 
 /**
@@ -17,13 +17,26 @@ import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
  * 對等的「＋新增交易」按鈕（`<BottomNav>` 的 FAB 只在 `md:hidden` 顯示，→ AppShell.tsx）。
  * [A13]：表單內「固定收支」勾選只是呼叫既有 `recurring_rules` 建立 API 的另一個入口，非重複
  * 實作——`values.recurring` 非 null 時改呼叫 `createRecurringRule`，不建立一次性交易。
+ * 轉帳（`values.transaction_type === 'transfer'`）沒有分類/固定收支，改呼叫 `createTransfer`。
  */
 export default function TransactionsPage(): ReactNode {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [createTransaction] = useCreateTransactionMutation()
+  const [createTransfer] = useCreateTransferMutation()
   const [createRecurringRule] = useCreateRecurringRuleMutation()
 
   async function handleCreateSubmit(values: TransactionFormValues): Promise<void> {
+    if (values.transaction_type === 'transfer') {
+      await createTransfer({
+        from_account_uid: values.from_account_uid,
+        to_account_uid: values.to_account_uid,
+        transaction_date: values.transaction_date,
+        description: values.description,
+        amount: values.amount,
+        payment_method: values.payment_method,
+      }).unwrap()
+      return
+    }
     if (values.recurring) {
       await createRecurringRule({
         account_uid: values.account_uid,
