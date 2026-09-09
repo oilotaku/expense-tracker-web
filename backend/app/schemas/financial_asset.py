@@ -33,6 +33,8 @@ class FinancialAssetCreateRequest(ApiInput):
     name: str = Field(min_length=1, max_length=100)
     input_quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
     input_unit: str = Field(min_length=1, max_length=10)
+    # 本金（原始購入成本）：新建資產一律要求輸入
+    principal_amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
 
     @model_validator(mode="after")
     def _validate_unit(self) -> FinancialAssetCreateRequest:
@@ -41,13 +43,14 @@ class FinancialAssetCreateRequest(ApiInput):
 
 
 class FinancialAssetUpdateRequest(ApiInput):
-    """`asset_type` 建立後不可變更；只能改名稱 / 數量 / 單位。單位是否與既有 `asset_type`
+    """`asset_type` 建立後不可變更；只能改名稱 / 數量 / 單位 / 本金。單位是否與既有 `asset_type`
     搭配，因需要既有資料才知道 `asset_type`，改在 API 層（`financial_assets.py`）驗證。
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     input_quantity: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=4)
     input_unit: str | None = Field(default=None, min_length=1, max_length=10)
+    principal_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
 
 
 class FinancialAssetResponse(ApiSchema):
@@ -57,6 +60,7 @@ class FinancialAssetResponse(ApiSchema):
     input_quantity: Decimal
     input_unit: str
     base_quantity: Decimal
+    principal_amount: Decimal | None
 
     @field_serializer("input_quantity", when_used="json")
     def _input_quantity_to_str(self, v: Decimal) -> str:
@@ -65,6 +69,10 @@ class FinancialAssetResponse(ApiSchema):
     @field_serializer("base_quantity", when_used="json")
     def _base_quantity_to_str(self, v: Decimal) -> str:
         return str(v)
+
+    @field_serializer("principal_amount", when_used="json")
+    def _principal_amount_to_str(self, v: Decimal | None) -> str | None:
+        return None if v is None else str(v)
 
 
 class FinancialAssetListResponse(ApiSchema):

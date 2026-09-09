@@ -21,6 +21,7 @@ class FinancialAssetRepository:
         input_quantity: Decimal,
         input_unit: str,
         base_quantity: Decimal,
+        principal_amount: Decimal | None,
         created_by: UUID,
     ) -> FinancialAsset:
         asset = FinancialAsset(
@@ -30,6 +31,7 @@ class FinancialAssetRepository:
             input_quantity=input_quantity,
             input_unit=input_unit,
             base_quantity=base_quantity,
+            principal_amount=principal_amount,
             created_by=created_by,
             updated_by=created_by,
         )
@@ -64,6 +66,7 @@ class FinancialAssetRepository:
         input_quantity: Decimal | None,
         input_unit: str | None,
         base_quantity: Decimal | None,
+        principal_amount: Decimal | None,
         updated_by: UUID,
     ) -> FinancialAsset:
         if name is not None:
@@ -76,6 +79,8 @@ class FinancialAssetRepository:
             asset.input_unit = input_unit
         if base_quantity is not None:
             asset.base_quantity = base_quantity
+        if principal_amount is not None:
+            asset.principal_amount = principal_amount
         asset.updated_by = updated_by
         await self.db.flush()
         return asset

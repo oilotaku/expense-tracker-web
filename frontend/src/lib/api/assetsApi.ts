@@ -19,7 +19,7 @@ export interface FinancialAssetResponse {
   input_quantity: string
   input_unit: string
   base_quantity: string
-  // 本金（選填，backend/app/schemas/financial_asset.py Decimal | None，nullable-safe serializer）
+  // 本金（原始購入成本），nullable：舊資產列可能沒有
   principal_amount: string | null
 }
 

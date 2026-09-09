@@ -76,7 +76,7 @@ const METAL_ASSET = {
   input_quantity: '5.0000',
   input_unit: '錢',
   base_quantity: '5.0000',
-  principal_amount: '30000.00',
+  principal_amount: null,
 }
 
 const LIABILITY = {
@@ -209,6 +209,12 @@ describe('AssetsPage', () => {
     expect(screen.getByText('股票')).toBeInTheDocument()
     expect(screen.getByText('黃金')).toBeInTheDocument()
     expect(screen.getByText('貴金屬')).toBeInTheDocument()
+  })
+
+  it('金融資產清單顯示本金，null 時顯示 em dash', () => {
+    render(<AssetsPage />)
+    expect(screen.getByText('400000.00')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 
   it('負債清單顯示名稱、金額與利率', () => {

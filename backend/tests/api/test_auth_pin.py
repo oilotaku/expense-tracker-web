@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
 from app.main import app
+from app.models.account import Account
 from app.models.category import Category
 from app.models.user import User, UserCredential
 
@@ -208,12 +209,15 @@ async def _cleanup_real_user(user_uid: UUID) -> None:
     """這組測試不走 conftest 的 db fixture（那個外層 transaction 最後會 rollback），
     改用真實 get_db，會真的 commit 進 DB，所以要自己清乾淨。
 
-    註冊會觸發 DB trigger（`trg_users_seed_default_categories`，見
-    `backend/alembic/versions/2026_09_04_0900-add_categories.py`）自動種預設分類，
-    須先刪 categories 才能刪 users（FK）。
+    註冊會觸發 DB trigger 自動種預設分類（`trg_users_seed_default_categories`，見
+    `backend/alembic/versions/2026_09_04_0900-add_categories.py`）與預設帳戶
+    （`trg_users_seed_default_accounts`，見
+    `backend/alembic/versions/2026_09_09_0900-add_default_accounts.py`），
+    須先刪 categories / accounts 才能刪 users（FK）。
     """
     async with AsyncSessionLocal() as session:
         await session.execute(delete(Category).where(Category.user_uid == user_uid))
+        await session.execute(delete(Account).where(Account.user_uid == user_uid))
         await session.execute(delete(UserCredential).where(UserCredential.user_uid == user_uid))
         await session.execute(delete(User).where(User.user_uid == user_uid))
         await session.commit()

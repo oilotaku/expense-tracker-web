@@ -5,6 +5,7 @@ import { cva } from 'class-variance-authority'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AppShell } from '@/components/common/AppShell'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { useListCategoryOptionsQuery } from '@/lib/api/transactionsApi'
 import {
@@ -292,11 +293,13 @@ function BudgetProgressList(): ReactNode {
 export default function BudgetsPage(): ReactNode {
   return (
     <AuthGuard>
-      <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
-        <h1 className="text-2xl font-bold text-text-primary md:text-3xl">預算</h1>
-        <BudgetForm />
-        <BudgetProgressList />
-      </main>
+      <AppShell>
+        <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
+          <h1 className="text-2xl font-bold text-text-primary md:text-3xl">預算</h1>
+          <BudgetForm />
+          <BudgetProgressList />
+        </main>
+      </AppShell>
     </AuthGuard>
   )
 }

@@ -11,6 +11,10 @@ from app.repositories.user_repository import UserRepository
 
 _PASSWORD = "correct horse battery"
 _COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+# 註冊時由 DB trigger 自動種入（2026_09_09_0900-add_default_accounts），故新使用者的
+# 帳戶清單基準是 2 筆而非 0 筆。
+_DEFAULT_ACCOUNT_NAMES = {"現金", "銀行"}
+_DEFAULT_ACCOUNT_COUNT = len(_DEFAULT_ACCOUNT_NAMES)
 
 
 async def _register_and_login(client: AsyncClient, email: str) -> None:
@@ -49,12 +53,27 @@ async def test_create_and_list_account(client: AsyncClient) -> None:
     assert isinstance(body["data"]["balance"], str)
     assert body["data"]["color"] == "#8B6ED6"
     assert body["data"]["icon"] == "wallet"
+    account_uid = body["data"]["account_uid"]
 
     list_res = await client.get("/api/v1/accounts")
     assert list_res.status_code == 200
     list_body = list_res.json()
-    assert list_body["data"]["total"] == 1
-    assert list_body["data"]["items"][0]["name"] == "現金"
+    assert list_body["data"]["total"] == _DEFAULT_ACCOUNT_COUNT + 1
+    assert account_uid in {item["account_uid"] for item in list_body["data"]["items"]}
+
+
+async def test_new_user_gets_default_accounts(client: AsyncClient) -> None:
+    """註冊即由 users 的 AFTER INSERT trigger 種入「現金」「銀行」兩個預設帳戶，餘額 0。"""
+    await _register_and_login(client, "acct-default-seed@example.com")
+
+    res = await client.get("/api/v1/accounts")
+    assert res.status_code == 200
+    body = res.json()["data"]
+    assert body["total"] == _DEFAULT_ACCOUNT_COUNT
+    assert {item["name"] for item in body["items"]} == _DEFAULT_ACCOUNT_NAMES
+    assert {item["balance"] for item in body["items"]} == {"0.00"}
+    assert all(_COLOR_RE.match(item["color"]) for item in body["items"])
+    assert all(item["icon"] for item in body["items"])
 
 
 async def test_create_account_invalid_color_returns_422(client: AsyncClient) -> None:
@@ -141,7 +160,8 @@ async def test_soft_delete_account_hides_it(client: AsyncClient) -> None:
     assert get_res.status_code == 404
 
     list_res = await client.get("/api/v1/accounts")
-    assert list_res.json()["data"]["total"] == 0
+    assert list_res.json()["data"]["total"] == _DEFAULT_ACCOUNT_COUNT
+    assert account_uid not in {item["account_uid"] for item in list_res.json()["data"]["items"]}
 
 
 async def test_accounts_scoped_to_owner_not_leaked_to_other_user(client: AsyncClient) -> None:
@@ -157,8 +177,9 @@ async def test_accounts_scoped_to_owner_not_leaked_to_other_user(client: AsyncCl
 
     list_res = await client.get("/api/v1/accounts")
     assert list_res.status_code == 200
-    assert list_res.json()["data"]["total"] == 0
-    assert list_res.json()["data"]["items"] == []
+    # B 只看得到自己註冊時的預設帳戶，看不到 A 建立的那一筆
+    assert list_res.json()["data"]["total"] == _DEFAULT_ACCOUNT_COUNT
+    assert account_uid not in {item["account_uid"] for item in list_res.json()["data"]["items"]}
 
     get_res = await client.get(f"/api/v1/accounts/{account_uid}")
     assert get_res.status_code == 404
