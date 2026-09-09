@@ -24,7 +24,7 @@ async function registerAndLogin(page: Page, email: string, password: string): Pr
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('密碼').fill(password)
   await page.getByRole('button', { name: '登入' }).click()
-  await expect(page).toHaveURL(/\/transactions$/)
+  await expect(page).toHaveURL(/\/dashboard$/)
 }
 
 // GET /net-worth 在上游報價來源暫時不可用時回 424（→ net_worth_service.py
@@ -43,14 +43,17 @@ async function pollTotalAssets(
         if (await retryButton.isVisible().catch(() => false)) {
           await retryButton.click()
         }
-        // 用 `text-gray-600` 鎖定卡片標籤本身，不會誤配到 424 錯誤提示（該段文字含「總資產」
-        // 子字串，但用的是 `text-red-600`，→ dashboard/page.tsx isPricingUnavailable 分支）。
+        // task-016（Dashboard 重做）把總資產從 `<p class="text-gray-600">` 換成
+        // <NetWorthCard>/<NetWorthRow>（→ components/dashboard/NetWorthCard.tsx）：標籤與數值
+        // 各是一個緊鄰的 <span>，數值經 formatAmount 格式化成「NT$1,234」（千分位 + 前綴）。用
+        // exact 文字比對鎖定「總資產」標籤本身，不會誤配到 424 錯誤提示裡同樣含「總資產」子字串
+        // 的完整句子（isPricingUnavailable 分支，該段文字不會與「總資產」完全相等）。
         const valueLocator = page
-          .locator('p.text-sm.text-gray-600', { hasText: '總資產' })
-          .locator('xpath=following-sibling::p[1]')
+          .getByText('總資產', { exact: true })
+          .locator('xpath=following-sibling::span[1]')
         if (!(await valueLocator.isVisible().catch(() => false))) return false
         const text = await valueLocator.innerText()
-        const value = Number(text)
+        const value = Number(text.replace(/[^0-9.-]/g, ''))
         if (Number.isNaN(value)) return false
         lastValue = value
         return predicate(value)
@@ -89,10 +92,13 @@ test('新增股票資產後，dashboard 總資產反映抓到的市價', async (
   const netWorthBody = (await netWorthResponse.json()) as { data: { total_assets: string } }
   const expectedTotalAssets = Number(netWorthBody.data.total_assets)
   expect(expectedTotalAssets).toBeGreaterThan(0)
+  // formatAmount（→ StatTile.tsx）用 toLocaleString({ maximumFractionDigits: 0 }) 顯示，UI 數字
+  // 是四捨五入到整數，跟後端回傳的精確小數不會逐位元相等，比對前先同步做一次四捨五入。
+  const expectedTotalAssetsRounded = Math.round(expectedTotalAssets)
 
   await page.goto('/dashboard')
-  const totalAssetsAfter = await pollTotalAssets(page, (value) => value === expectedTotalAssets)
+  const totalAssetsAfter = await pollTotalAssets(page, (value) => value === expectedTotalAssetsRounded)
 
   expect(totalAssetsAfter).toBeGreaterThan(totalAssetsBefore)
-  expect(totalAssetsAfter).toBe(expectedTotalAssets)
+  expect(totalAssetsAfter).toBe(expectedTotalAssetsRounded)
 })

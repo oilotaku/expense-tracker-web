@@ -23,7 +23,7 @@ async function login(page: Page, email: string, password: string): Promise<void>
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('密碼').fill(password)
   await page.getByRole('button', { name: '登入' }).click()
-  await expect(page).toHaveURL(/\/transactions$/)
+  await expect(page).toHaveURL(/\/dashboard$/)
 }
 
 // 交易表單要求選帳戶（→ TransactionForm.tsx），但本 task 的 affected_files 不含帳戶管理頁面
@@ -31,7 +31,7 @@ async function login(page: Page, email: string, password: string): Promise<void>
 // 走 `page.request`（與 page 共用 browser context 的 cookie），沿用當前登入使用者的 session。
 async function createAccountViaApi(page: Page, name: string): Promise<void> {
   const response = await page.request.post(`${API_BASE_URL}/accounts`, {
-    data: { name, balance: '0' },
+    data: { name, balance: '0', color: '#8B6ED6', icon: 'wallet' },
   })
   expect(response.ok()).toBeTruthy()
 }
@@ -52,13 +52,21 @@ test('雙帳號隔離：使用者 B 看不到使用者 A 的交易紀錄', async
   await createAccountViaApi(page, 'A的帳戶')
 
   await page.goto('/transactions')
-  const transactionForm = page.locator('form')
-  await transactionForm.getByLabel('分類').selectOption({ index: 1 })
-  await transactionForm.getByLabel('帳戶').selectOption({ index: 1 })
-  await transactionForm.getByLabel('說明').fill(secretDescription)
-  await transactionForm.getByLabel('金額').fill('123')
-  await transactionForm.getByLabel('支付方式').fill('現金')
-  await transactionForm.getByRole('button', { name: '新增交易' }).click()
+  // task-017（交易清單頁重做）已把新增交易表單改成 <TransactionFormDialog>（由「＋ 新增交易」按鈕
+  // 觸發的 dialog），不再是頁面常駐 <form>；金額欄位也改用 <NumericKeypad>（readOnly input，靠點
+  // 數字鍵輸入，不能 .fill()）。這是 task-032 拆解當下未預見、但同屬本檔 affected_files 範圍內需
+  // 一併同步的互動細節。
+  await page.getByRole('button', { name: '＋ 新增交易' }).click()
+  const transactionDialog = page.getByRole('dialog')
+  await transactionDialog.getByRole('radio', { name: '支出' }).click()
+  await transactionDialog.getByLabel('分類').selectOption({ index: 1 })
+  await transactionDialog.getByLabel('帳戶').selectOption({ index: 1 })
+  await transactionDialog.getByLabel('明細').fill(secretDescription)
+  for (const digit of '123') {
+    await transactionDialog.getByRole('button', { name: `數字 ${digit}` }).click()
+  }
+  await transactionDialog.getByLabel('支付方式').fill('現金')
+  await transactionDialog.getByRole('button', { name: '儲存' }).click()
 
   await expect(page.getByRole('cell', { name: secretDescription })).toBeVisible()
 
