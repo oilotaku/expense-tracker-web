@@ -1,15 +1,16 @@
 'use client'
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cva } from 'class-variance-authority'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useDispatch } from 'react-redux'
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
 import { CurvedCard } from '@/components/common/CurvedCard'
+import { Dialog } from '@/components/common/Dialog'
 import { CategoryBarChart } from '@/components/dashboard/CategoryBarChart'
 import { CategoryPieChart, type CategorySlice } from '@/components/dashboard/CategoryPieChart'
 import { ChartTypeSwitcher, type ChartType } from '@/components/dashboard/ChartTypeSwitcher'
@@ -28,6 +29,7 @@ import {
 } from '@/components/transactions/TransactionFormDialog'
 import { useListAccountsQuery } from '@/lib/api/accountsApi'
 import { useGetNetWorthQuery } from '@/lib/api/assetsApi'
+import { useGetMeQuery } from '@/lib/api/authApi'
 import { baseApi } from '@/lib/api/baseApi'
 import { useGetDashboardSummaryQuery } from '@/lib/api/dashboardApi'
 import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
@@ -64,6 +66,34 @@ function getErrorMessage(error: FetchBaseQueryError | SerializedError | undefine
 // 需後端補一支分類/趨勢彙總 API 才能根治（不在 task-016 的 affected_files 範圍）。
 const CHART_TRANSACTION_LIMIT = 100
 const RECENT_TRANSACTION_LIMIT = 5
+
+// PIN 快速登入提醒：只在「註冊後的首次登入」（登入頁帶來的 `?justRegistered=1`）出現，且同一
+// 瀏覽器每個帳號最多出現一次 —— 不是「只要沒設 PIN 就提醒」，否則會一直騷擾刻意不設的使用者。
+// 依 user_uid 分開記，慣例同 settings/page.tsx 的 `pin-status:${userUid}`。
+function pinReminderStorageKey(userUid: string): string {
+  return `pin-reminder-shown:${userUid}`
+}
+
+function hasSeenPinReminder(userUid: string): boolean {
+  try {
+    return window.localStorage.getItem(pinReminderStorageKey(userUid)) === 'shown'
+  } catch {
+    return false
+  }
+}
+
+function markPinReminderShown(userUid: string): void {
+  try {
+    window.localStorage.setItem(pinReminderStorageKey(userUid), 'shown')
+  } catch {
+    // 私密瀏覽模式等寫入失敗場景降級為「下次可能再出現一次」，不影響本次操作（同 settings/page.tsx）
+  }
+}
+
+const PIN_REMINDER_PRIMARY_BUTTON_CLASS =
+  'min-h-11 rounded-md bg-primary-600 px-4 font-medium text-text-inverse transition-colors hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
+const PIN_REMINDER_SECONDARY_BUTTON_CLASS =
+  'min-h-11 rounded-md border border-border px-4 font-medium text-text-secondary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
 
 function toCategorySlices(
   transactions: readonly TransactionResponse[],
@@ -123,7 +153,63 @@ function signedTransactionAmount(transaction: TransactionResponse): string {
     : formatAmount(`-${transaction.amount}`)
 }
 
-export default function DashboardPage(): ReactNode {
+/**
+ * 註冊後首次登入才出現的 PIN 快速登入提醒（見上方 pinReminderStorageKey 註解）。
+ * 刻意做成獨立元件並放在 <AuthGuard> 之內才 mount：`me` 因此在首次 render 就已就緒，
+ * 「要不要顯示」可以一次算完（同 settings/page.tsx 讀本機 PIN 狀態的慣例）。
+ */
+function PinSetupReminder(): ReactNode {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  // AuthGuard 已呼叫過同一支 query，這裡取的是 RTK Query 快取，不會多打一次 API
+  const { data: me } = useGetMeQuery()
+  const userUid = me?.user_uid ?? ''
+  const justRegistered = searchParams.get('justRegistered') === '1'
+
+  const [isOpen, setIsOpen] = useState<boolean>(
+    () => justRegistered && userUid !== '' && !hasSeenPinReminder(userUid),
+  )
+
+  useEffect(() => {
+    // 顯示的當下就記錄，不等使用者按按鈕：直接關掉分頁或跳走也算「已經提醒過」
+    if (isOpen) markPinReminderShown(userUid)
+  }, [isOpen, userUid])
+
+  useEffect(() => {
+    // 訊號用過即清掉網址上的 query param，避免重新整理或分享網址時再次帶入
+    if (justRegistered) router.replace('/dashboard')
+  }, [justRegistered, router])
+
+  function handleSetUp(): void {
+    setIsOpen(false)
+    // PIN 設定流程已完整實作在設定頁（design-spec §9.7），這裡只負責把使用者帶過去
+    router.push('/settings')
+  }
+
+  return (
+    <Dialog
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      title="要設定 PIN 快速登入嗎？"
+      description="設定 6 碼 PIN 後，下次在這台裝置就能免密碼登入。也可以之後再到「設定」開啟。"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row-reverse">
+        <button type="button" onClick={handleSetUp} className={PIN_REMINDER_PRIMARY_BUTTON_CLASS}>
+          立即設定
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className={PIN_REMINDER_SECONDARY_BUTTON_CLASS}
+        >
+          稍後再說
+        </button>
+      </div>
+    </Dialog>
+  )
+}
+
+function DashboardContent(): ReactNode {
   const router = useRouter()
   const dispatch = useDispatch<AppDispatch>()
 
@@ -329,7 +415,18 @@ export default function DashboardPage(): ReactNode {
         </div>
 
         <TransactionFormDialog open={isFormOpen} onOpenChange={setIsFormOpen} onSubmit={handleSubmitTransaction} />
+        <PinSetupReminder />
       </AppShell>
     </AuthGuard>
+  )
+}
+
+// `useSearchParams()` 在靜態預渲染時必須包在 Suspense 邊界內（Next.js
+// missing-suspense-with-csr-bailout），故 page 元件只負責邊界，畫面本體在 <DashboardContent>。
+export default function DashboardPage(): ReactNode {
+  return (
+    <Suspense>
+      <DashboardContent />
+    </Suspense>
   )
 }

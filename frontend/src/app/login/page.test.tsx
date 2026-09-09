@@ -4,8 +4,10 @@ import type { DeviceAccount } from '@/hooks/useDeviceAccounts'
 import LoginPage from './page'
 
 const push = vi.fn()
+let searchParams = new URLSearchParams()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
+  useSearchParams: () => searchParams,
 }))
 
 const login = vi.fn()
@@ -58,6 +60,7 @@ async function typePin(pin: string): Promise<void> {
 describe('LoginPage', () => {
   beforeEach(() => {
     push.mockClear()
+    searchParams = new URLSearchParams()
     login.mockReset()
     loginWithPin.mockReset()
     useLoginMutation.mockReturnValue([login, { isLoading: false, error: undefined }])
@@ -163,6 +166,36 @@ describe('LoginPage', () => {
     })
 
     expect(login).toHaveBeenCalledWith({ email: 'a@b.com', password: 'password123' })
+    expect(push).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('網址帶 justRegistered 時密碼登入成功後把訊號續傳給 /dashboard', async () => {
+    stubMatchMedia(false)
+    searchParams = new URLSearchParams('justRegistered=1')
+    login.mockReturnValue({ unwrap: () => Promise.resolve({ user_uid: 'u1', email: 'a@b.com' }) })
+    render(<LoginPage />)
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByLabelText('密碼'), { target: { value: 'password123' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '登入' }))
+    })
+
+    expect(push).toHaveBeenCalledWith('/dashboard?justRegistered=1')
+  })
+
+  it('PIN 登入不轉傳 justRegistered（能用 PIN 代表不是剛註冊的新帳號）', async () => {
+    stubMatchMedia(false)
+    searchParams = new URLSearchParams('justRegistered=1')
+    useDeviceAccounts.mockReturnValue({ accounts: [ACCOUNT], rememberAccount: vi.fn(), forgetAccount: vi.fn() })
+    loginWithPin.mockReturnValue({
+      unwrap: () => Promise.resolve({ user_uid: ACCOUNT.user_uid, email: 'j1025178@gmail.com' }),
+    })
+    render(<LoginPage />)
+
+    fireEvent.click(screen.getByText('j***8@gmail.com'))
+    await typePin('123456')
+
     expect(push).toHaveBeenCalledWith('/dashboard')
   })
 

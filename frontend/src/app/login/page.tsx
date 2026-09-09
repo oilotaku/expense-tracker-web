@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, type FormEvent, type ReactNode } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { cva } from 'class-variance-authority'
 import { CurvedCard } from '@/components/common/CurvedCard'
@@ -37,8 +37,9 @@ type ManualView = 'accounts' | 'password'
  * §9.1「對應表」已註記此處屬允許的 `useBreakpoint` JS 判斷情境）。使用者可透過畫面內連結手動切換
  * （`manualView` 覆蓋預設值），選定帳號後進入 PIN 畫面（`selectedAccount` 非 null）。
  */
-export default function LoginPage(): ReactNode {
+function LoginView(): ReactNode {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const isDesktop = useBreakpoint('md')
   const { accounts } = useDeviceAccounts()
   const hasAccounts = accounts.length > 0
@@ -69,7 +70,8 @@ export default function LoginPage(): ReactNode {
 
   function handlePinSuccess(): void {
     // 登入成功後 cookie 已由後端設定（httponly，→ FE-035），前端只負責導向；
-    // PinLoginPad 的 onSuccess 會帶入 AuthUser，這裡用不到，函式簽章刻意省略該參數
+    // PinLoginPad 的 onSuccess 會帶入 AuthUser，這裡用不到，函式簽章刻意省略該參數。
+    // 刻意不轉傳 justRegistered：能走 PIN 登入代表該帳號早已設好 PIN，不會是剛註冊的新帳號
     router.push('/dashboard')
   }
 
@@ -82,7 +84,9 @@ export default function LoginPage(): ReactNode {
     event.preventDefault()
     try {
       await login({ email, password }).unwrap()
-      router.push('/dashboard')
+      // 註冊頁帶過來的「註冊後首次登入」訊號續傳給總覽頁，由該頁決定是否提醒設定 PIN
+      const justRegistered = searchParams.get('justRegistered') === '1'
+      router.push(justRegistered ? '/dashboard?justRegistered=1' : '/dashboard')
     } catch {
       // 錯誤已透過 useLoginMutation() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
     }
@@ -162,5 +166,15 @@ export default function LoginPage(): ReactNode {
         )}
       </CurvedCard>
     </main>
+  )
+}
+
+// `useSearchParams()` 在靜態預渲染時必須包在 Suspense 邊界內（Next.js
+// missing-suspense-with-csr-bailout），故 page 元件只負責邊界，畫面本體在 <LoginView>。
+export default function LoginPage(): ReactNode {
+  return (
+    <Suspense>
+      <LoginView />
+    </Suspense>
   )
 }

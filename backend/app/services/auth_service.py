@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, ConflictError
 from app.core.security import create_access_token, hash_password_async, verify_password_async
-from app.models.user import UserCredential
+from app.models.user import User, UserCredential
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import UserResponse
 
@@ -18,6 +18,14 @@ _PIN_LOCKED_DETAIL = "PIN 已鎖定，請改用密碼登入或稍後再試"
 _PIN_ALREADY_SET_DETAIL = "PIN 已設定，請使用變更 PIN"
 _PIN_LOCK_THRESHOLD = 5
 _PIN_LOCK_MINUTES = 15
+
+
+def _to_user_response(user: User, credential: UserCredential | None) -> UserResponse:
+    return UserResponse(
+        user_uid=user.user_uid,
+        email=user.email,
+        has_pin=credential is not None and credential.pin_hash is not None,
+    )
 
 
 class AuthService:
@@ -34,7 +42,12 @@ class AuthService:
         except IntegrityError as e:
             # 併發註冊同一 email 的最後防線；平時靠上面的 find_by_email 先擋
             raise ConflictError("此 email 已被註冊") from e
-        return UserResponse.model_validate(user)
+        # 新建帳號的 credential 必然還沒有 pin_hash（PIN 只能登入後在設定頁設）
+        return _to_user_response(user, None)
+
+    async def get_me(self, user: User) -> UserResponse:
+        credential = await self.repo.find_credential_by_user_uid(user.user_uid)
+        return _to_user_response(user, credential)
 
     async def login(self, email: str, password: str) -> tuple[UserResponse, str]:
         user = await self.repo.find_by_email(email)
@@ -46,7 +59,7 @@ class AuthService:
         ):
             raise AppError(_LOGIN_FAILED_DETAIL, response_code=401, status_code=401)
         token = create_access_token(str(user.user_uid))
-        return UserResponse.model_validate(user), token
+        return _to_user_response(user, credential), token
 
     async def set_pin(self, user_uid: UUID, pin: str, password: str) -> None:
         credential = await self.repo.find_credential_by_user_uid(user_uid)
@@ -84,7 +97,7 @@ class AuthService:
             raise AppError(_PIN_FAILED_DETAIL, response_code=401, status_code=401)
         await self._verify_pin_or_raise(credential, pin)
         token = create_access_token(str(user.user_uid))
-        return UserResponse.model_validate(user), token
+        return _to_user_response(user, credential), token
 
     async def _verify_pin_or_raise(self, credential: UserCredential, pin: str) -> None:
         """鎖定機制：連續 5 次失敗鎖 15 分鐘，鎖定期間一律 429 且不比對 PIN 本身；成功歸零。"""

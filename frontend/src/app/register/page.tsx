@@ -35,9 +35,10 @@ export default function RegisterPage(): ReactNode {
     event.preventDefault()
     try {
       // 註冊不會設定登入 cookie（只有 /auth/login 會，見 backend/app/api/v1/auth.py），
-      // 成功後導去登入頁而非交易頁
+      // 成功後導去登入頁而非交易頁。`justRegistered` 由登入頁一路帶到總覽頁，作為「註冊後的
+      // 首次登入」訊號，用來提醒設定 PIN 快速登入（只此一次，不打擾刻意不設 PIN 的既有使用者）。
       await register({ email, password }).unwrap()
-      router.push('/login')
+      router.push('/login?justRegistered=1')
     } catch {
       // 錯誤已透過 useRegisterMutation() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
     }

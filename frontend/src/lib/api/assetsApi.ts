@@ -19,6 +19,8 @@ export interface FinancialAssetResponse {
   input_quantity: string
   input_unit: string
   base_quantity: string
+  // 本金（選填，backend/app/schemas/financial_asset.py Decimal | None，nullable-safe serializer）
+  principal_amount: string | null
 }
 
 export interface FinancialAssetListResponse {
@@ -31,6 +33,18 @@ export interface FinancialAssetCreateRequest {
   name: string
   input_quantity: string
   input_unit: StockUnit | MetalUnit
+  // backend FinancialAssetCreateRequest.principal_amount: Decimal = Field(gt=0, ...)，必填
+  principal_amount: string
+}
+
+// asset_type 不可修改（後端不接受），故不含在 partial-update 欄位內（→ accountsApi.ts
+// AccountUpdateRequest 同一 partial-update 慣例）。
+export interface FinancialAssetUpdateRequest {
+  financial_asset_uid: string
+  name?: string
+  input_quantity?: string
+  input_unit?: StockUnit | MetalUnit
+  principal_amount?: string
 }
 
 export interface LiabilityResponse {
@@ -49,6 +63,13 @@ export interface LiabilityCreateRequest {
   name: string
   amount: string
   interest_rate: string | null
+}
+
+export interface LiabilityUpdateRequest {
+  liability_uid: string
+  name?: string
+  amount?: string
+  interest_rate?: string | null
 }
 
 export interface NetWorthResponse {
@@ -80,6 +101,20 @@ const assetsApi = baseApi
           { type: 'NetWorth', id: 'SUMMARY' },
         ],
       }),
+      updateFinancialAsset: build.mutation<FinancialAssetResponse, FinancialAssetUpdateRequest>({
+        query: ({ financial_asset_uid, ...body }) => ({
+          url: `financial-assets/${financial_asset_uid}`,
+          method: 'PATCH',
+          body,
+        }),
+        transformResponse: (res: ApiResponse<FinancialAssetResponse>) => unwrapData(res),
+        // 數量／本金變動會影響淨資產彙總，同 createFinancialAsset 一併 invalidate NetWorth SUMMARY
+        invalidatesTags: (_result, _error, { financial_asset_uid }) => [
+          { type: 'FinancialAsset' as const, id: financial_asset_uid },
+          { type: 'FinancialAsset' as const, id: 'LIST' },
+          { type: 'NetWorth' as const, id: 'SUMMARY' },
+        ],
+      }),
       listLiabilities: build.query<LiabilityListResponse, void>({
         query: () => 'liabilities',
         transformResponse: (res: ApiResponse<LiabilityListResponse>) => unwrapData(res),
@@ -99,6 +134,31 @@ const assetsApi = baseApi
           { type: 'NetWorth', id: 'SUMMARY' },
         ],
       }),
+      updateLiability: build.mutation<LiabilityResponse, LiabilityUpdateRequest>({
+        query: ({ liability_uid, ...body }) => ({
+          url: `liabilities/${liability_uid}`,
+          method: 'PATCH',
+          body,
+        }),
+        transformResponse: (res: ApiResponse<LiabilityResponse>) => unwrapData(res),
+        // 還款會改動 amount，影響淨資產彙總，同 createLiability 一併 invalidate NetWorth SUMMARY
+        invalidatesTags: (_result, _error, { liability_uid }) => [
+          { type: 'Liability' as const, id: liability_uid },
+          { type: 'Liability' as const, id: 'LIST' },
+          { type: 'NetWorth' as const, id: 'SUMMARY' },
+        ],
+      }),
+      // 刪除成功回應為 ApiResponse[None]（data 恆為 null），與「data 為 null 視為錯誤」的
+      // unwrapData 語意衝突（→ accountsApi.ts deleteAccount 同寫法），不經 unwrapData。
+      deleteLiability: build.mutation<void, string>({
+        query: (liability_uid) => ({ url: `liabilities/${liability_uid}`, method: 'DELETE' }),
+        transformResponse: () => undefined,
+        invalidatesTags: (_result, _error, liability_uid) => [
+          { type: 'Liability' as const, id: liability_uid },
+          { type: 'Liability' as const, id: 'LIST' },
+          { type: 'NetWorth' as const, id: 'SUMMARY' },
+        ],
+      }),
       // task-016 彙總 API：可回 424（上游報價來源暫時不可用，非 5xx），呼叫端需分開處理
       // 一般錯誤與 424，不可讓整頁崩潰（見 dashboard/page.tsx）。
       getNetWorth: build.query<NetWorthResponse, void>({
@@ -113,7 +173,10 @@ const assetsApi = baseApi
 export const {
   useListFinancialAssetsQuery,
   useCreateFinancialAssetMutation,
+  useUpdateFinancialAssetMutation,
   useListLiabilitiesQuery,
   useCreateLiabilityMutation,
+  useUpdateLiabilityMutation,
+  useDeleteLiabilityMutation,
   useGetNetWorthQuery,
 } = assetsApi

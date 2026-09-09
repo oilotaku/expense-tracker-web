@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import UserCredential
 
 _PASSWORD = "correct horse battery"
+_PIN = "123456"
 
 
 async def test_register_creates_user_with_hashed_password(
@@ -20,6 +21,8 @@ async def test_register_creates_user_with_hashed_password(
     body = res.json()
     assert body["success"] is True
     assert body["data"]["email"] == "user-1@example.com"
+    # 新帳號一定還沒有 PIN（PIN 只能登入後在設定頁設）
+    assert body["data"]["has_pin"] is False
     user_uid = UUID(body["data"]["user_uid"])
 
     credential = (
@@ -79,4 +82,30 @@ async def test_login_unknown_email_returns_401(client: AsyncClient) -> None:
         "/api/v1/auth/login",
         json={"email": "no-such-user@example.com", "password": "whatever password"},
     )
+    assert res.status_code == 401
+
+
+async def test_me_returns_has_pin_false_before_setup_and_true_after(client: AsyncClient) -> None:
+    payload = {"email": "user-5@example.com", "password": _PASSWORD}
+    await client.post("/api/v1/auth/register", json=payload)
+    login = await client.post("/api/v1/auth/login", json=payload)
+    assert login.status_code == 200
+    assert login.json()["data"]["has_pin"] is False
+
+    before = await client.get("/api/v1/auth/me")
+    assert before.status_code == 200
+    body = before.json()
+    assert body["data"]["email"] == payload["email"]
+    assert body["data"]["has_pin"] is False
+
+    set_pin = await client.post("/api/v1/auth/pin", json={"pin": _PIN, "password": _PASSWORD})
+    assert set_pin.status_code == 201
+
+    after = await client.get("/api/v1/auth/me")
+    assert after.status_code == 200
+    assert after.json()["data"]["has_pin"] is True
+
+
+async def test_me_without_cookie_returns_401(client: AsyncClient) -> None:
+    res = await client.get("/api/v1/auth/me")
     assert res.status_code == 401
