@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import PricingServiceDep, get_current_user, get_db
 from app.core.response import success
 from app.models.user import User
 from app.schemas.dashboard import DashboardSummaryFilter, DashboardSummaryResponse
@@ -25,8 +25,9 @@ async def get_dashboard_summary(
     filters: Annotated[DashboardSummaryFilter, Query()],
     db: DbSession,
     current_user: CurrentUser,
+    pricing_service: PricingServiceDep,
 ) -> ApiResponse[DashboardSummaryResponse]:
-    result = await DashboardService(db).get_summary(
+    result = await DashboardService(db, pricing_service).get_summary(
         current_user.user_uid, filters.period, filters.date_from, filters.date_to
     )
     return success(result)

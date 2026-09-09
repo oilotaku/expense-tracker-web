@@ -11,11 +11,13 @@ import { CHART_SWATCH_COLORS, ColorSwatchPicker } from '@/components/common/Colo
 import { IconPicker } from '@/components/common/IconPicker'
 import { AccountCard } from '@/components/accounts/AccountCard'
 import {
+  SUPPORTED_CURRENCIES,
   useCreateAccountMutation,
   useDeleteAccountMutation,
   useListAccountsQuery,
   useUpdateAccountMutation,
   type AccountResponse,
+  type SupportedCurrency,
 } from '@/lib/api/accountsApi'
 
 // 同 CategoriesPage / BudgetsPage（FE-029）：錯誤處理必用型別收窄，禁 `error as any`。本 task
@@ -63,6 +65,7 @@ function AccountCreateDialog({ open, defaultColor, onOpenChange }: AccountCreate
   const [balance, setBalance] = useState('0')
   const [color, setColor] = useState(defaultColor)
   const [icon, setIcon] = useState(DEFAULT_ICON)
+  const [currency, setCurrency] = useState<SupportedCurrency>('TWD')
   const [createAccount, { isLoading, error }] = useCreateAccountMutation()
 
   // 依 React 文件建議的「render 期間依 prop 變化調整 state」寫法（非 useEffect，
@@ -75,6 +78,7 @@ function AccountCreateDialog({ open, defaultColor, onOpenChange }: AccountCreate
       setBalance('0')
       setColor(defaultColor)
       setIcon(DEFAULT_ICON)
+      setCurrency('TWD')
     }
   }
 
@@ -85,7 +89,7 @@ function AccountCreateDialog({ open, defaultColor, onOpenChange }: AccountCreate
     event.preventDefault()
     if (!canSubmit) return
     try {
-      await createAccount({ name: trimmedName, balance, color, icon }).unwrap()
+      await createAccount({ name: trimmedName, balance, color, icon, currency }).unwrap()
       onOpenChange(false)
     } catch {
       // 錯誤已透過 createAccount() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
@@ -116,6 +120,20 @@ function AccountCreateDialog({ open, defaultColor, onOpenChange }: AccountCreate
             onChange={(event) => setBalance(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
           />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">幣別（建立後不可變更）</span>
+          <select
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value as SupportedCurrency)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          >
+            {SUPPORTED_CURRENCIES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="flex flex-col gap-2">
           <span className="text-sm text-text-secondary">顏色</span>

@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import Field, field_serializer, field_validator
 
 from app.schemas.base import ApiInput, ApiSchema
+from app.utils.currency import SupportedCurrency
 
 _COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -24,6 +25,9 @@ def _validate_color_format(v: str) -> str:
 class AccountCreateRequest(ApiInput):
     name: str = Field(min_length=1, max_length=100)
     balance: Decimal = Field(max_digits=18, decimal_places=2)
+    # 建立後不可變更（→ app/models/account.py currency 欄位註解），AccountUpdateRequest
+    # 因此刻意不接受這個欄位。
+    currency: SupportedCurrency = SupportedCurrency.TWD
     color: str = Field(
         min_length=7, max_length=7, description="hex 色碼，含 #", examples=["#8B6ED6"]
     )
@@ -53,7 +57,7 @@ class AccountResponse(ApiSchema):
     account_uid: UUID
     name: str
     balance: Decimal
-    currency: str
+    currency: SupportedCurrency
     color: str
     icon: str
 

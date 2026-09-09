@@ -22,9 +22,11 @@ class AccountRepository:
         created_by: UUID,
         color: str | None = None,
         icon: str | None = None,
+        currency: str | None = None,
     ) -> Account:
-        # color/icon 為 None 時不寫入該欄位，交由 DB server_default 兜底（→ Account model 註解）；
-        # 一般建立流程經 AccountCreateRequest 一律帶入明確值。
+        # color/icon/currency 為 None 時不寫入該欄位，交由 DB server_default 兜底（→ Account
+        # model 註解）；一般建立流程經 AccountCreateRequest 一律帶入明確值。currency 建立後不可
+        # 變更，update_fields 不接受這個欄位。
         account = Account(
             user_uid=user_uid,
             name=name,
@@ -36,6 +38,8 @@ class AccountRepository:
             account.color = color
         if icon is not None:
             account.icon = icon
+        if currency is not None:
+            account.currency = currency
         self.db.add(account)
         await self.db.flush()
         return account

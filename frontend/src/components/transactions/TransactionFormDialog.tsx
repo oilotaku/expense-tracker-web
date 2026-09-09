@@ -253,6 +253,19 @@ export function TransactionFormDialog({
   const transactionType = useWatch({ control, name: 'transactionType' })
   const isTransfer = transactionType === 'transfer'
 
+  // 外幣帳戶功能：轉出/轉入帳戶幣別不同時顯示提示，不擋送出、不在前端算匯率——實際換算
+  // 由後端算（→ backend/app/api/v1/transactions.py _convert_amount），避免前後端匯率不同步。
+  const watchedAccountUid = useWatch({ control, name: 'accountUid' })
+  const watchedToAccountUid = useWatch({ control, name: 'toAccountUid' })
+  const accountCurrencyByUid = useMemo(
+    () => new Map((accounts ?? []).map((account) => [account.account_uid, account.currency])),
+    [accounts],
+  )
+  const fromCurrency = accountCurrencyByUid.get(watchedAccountUid ?? '')
+  const toCurrency = accountCurrencyByUid.get(watchedToAccountUid ?? '')
+  const isCrossCurrencyTransfer =
+    isTransfer && fromCurrency !== undefined && toCurrency !== undefined && fromCurrency !== toCurrency
+
   const defaultCategoryUid = useMemo(
     () => categories?.find((category) => category.name === DEFAULT_CATEGORY_NAME)?.category_uid ?? '',
     [categories],
@@ -503,6 +516,13 @@ export function TransactionFormDialog({
                 </span>
               )}
             </label>
+          )}
+          {/* 提示文字刻意放在 <label> 外面：放在裡面會被瀏覽器併入 <select> 的
+              accessible name，讓 getByLabelText('轉入帳戶') 這類查詢在提示出現後失效。 */}
+          {isCrossCurrencyTransfer && (
+            <p className="text-sm text-text-secondary">
+              {fromCurrency} → {toCurrency}：將以即時匯率換算成 {toCurrency}
+            </p>
           )}
 
           <label className="flex flex-col gap-1">

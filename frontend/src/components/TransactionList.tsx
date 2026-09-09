@@ -153,6 +153,15 @@ function accountDisplayName(
   return accountNameByUid.get(transaction.account_uid) ?? ''
 }
 
+// 外幣帳戶功能：一筆交易的 amount 天生就是「該筆交易所屬帳戶（transaction.account_uid）」的
+// 幣別（轉帳雙分錄兩列各自的 account_uid 對應各自那一列的幣別，同一邏輯直接適用，不用特判）。
+function amountCurrency(
+  transaction: TransactionResponse,
+  accountCurrencyByUid: ReadonlyMap<string, string>,
+): string {
+  return accountCurrencyByUid.get(transaction.account_uid) ?? ''
+}
+
 interface TransactionFiltersValue {
   dateFrom: string
   dateTo: string
@@ -264,6 +273,7 @@ interface TransactionRowProps {
   transaction: TransactionResponse
   categoryName: string
   accountName: string
+  currency: string
   onEdit: (transaction: TransactionResponse) => void
   onDelete: (transaction: TransactionResponse) => void
 }
@@ -273,6 +283,7 @@ function TransactionTableRow({
   transaction,
   categoryName,
   accountName,
+  currency,
   onEdit,
   onDelete,
 }: TransactionRowProps): ReactNode {
@@ -288,7 +299,9 @@ function TransactionTableRow({
       <td className="p-2 text-text-primary">{formatDate(transaction.transaction_date)}</td>
       <td className="p-2 text-text-primary">{categoryName}</td>
       <td className="p-2 text-text-primary">{transaction.description}</td>
-      <td className={`p-2 font-semibold ${amountColor}`}>{transaction.amount}</td>
+      <td className={`p-2 font-semibold ${amountColor}`}>
+        {transaction.amount} {currency}
+      </td>
       <td className="p-2 text-text-primary">{TRANSACTION_TYPE_LABEL[transaction.transaction_type]}</td>
       <td className="p-2 text-text-primary">{accountName}</td>
       <td className="p-2">
@@ -320,6 +333,7 @@ function TransactionCard({
   transaction,
   categoryName,
   accountName,
+  currency,
   onEdit,
   onDelete,
 }: TransactionRowProps): ReactNode {
@@ -347,7 +361,9 @@ function TransactionCard({
           </span>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <span className={`text-lg font-semibold ${amountColor}`}>{transaction.amount}</span>
+          <span className={`text-lg font-semibold ${amountColor}`}>
+            {transaction.amount} {currency}
+          </span>
           <button
             type="button"
             aria-label="刪除"
@@ -394,6 +410,10 @@ export function TransactionList(): ReactNode {
   )
   const accountNameByUid = useMemo(
     () => new Map((accounts ?? []).map((account) => [account.account_uid, account.name])),
+    [accounts],
+  )
+  const accountCurrencyByUid = useMemo(
+    () => new Map((accounts ?? []).map((account) => [account.account_uid, account.currency])),
     [accounts],
   )
 
@@ -549,6 +569,7 @@ export function TransactionList(): ReactNode {
                     transaction={transaction}
                     categoryName={categoryDisplayName(transaction, categoryNameByUid)}
                     accountName={accountDisplayName(transaction, accountNameByUid)}
+                    currency={amountCurrency(transaction, accountCurrencyByUid)}
                     onEdit={setEditingTransaction}
                     onDelete={setDeletingTransaction}
                   />
@@ -564,6 +585,7 @@ export function TransactionList(): ReactNode {
                 transaction={transaction}
                 categoryName={categoryDisplayName(transaction, categoryNameByUid)}
                 accountName={accountDisplayName(transaction, accountNameByUid)}
+                currency={amountCurrency(transaction, accountCurrencyByUid)}
                 onEdit={setEditingTransaction}
                 onDelete={setDeletingTransaction}
               />

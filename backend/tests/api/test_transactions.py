@@ -1,6 +1,29 @@
+from collections.abc import Callable
+from decimal import Decimal
+
 from httpx import AsyncClient
 
+from app.api.deps import get_pricing_service
+from app.main import app
+
 _PASSWORD = "correct horse battery"
+
+
+class _FakePricingService:
+    """固定回傳事先給定的匯率，驗證跨幣別轉帳換算金額用，不含任何 I/O（同
+    test_net_worth.py / test_dashboard.py 既有的 get_pricing_service override 手法）。"""
+
+    def __init__(self, exchange_rates: dict[tuple[str, str], Decimal] | None = None) -> None:
+        self._exchange_rates = exchange_rates or {}
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+        if base == quote:
+            return Decimal(1)
+        return self._exchange_rates[(base, quote)]
+
+
+def _override_pricing(factory: Callable[[], object]) -> None:
+    app.dependency_overrides[get_pricing_service] = factory
 
 
 async def _register_and_login(client: AsyncClient, email: str) -> None:
@@ -10,11 +33,18 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
     assert res.status_code == 200
 
 
-async def _create_account(client: AsyncClient, name: str = "現金") -> str:
-    res = await client.post(
-        "/api/v1/accounts",
-        json={"name": name, "balance": "1000.00", "color": "#8B6ED6", "icon": "wallet"},
-    )
+async def _create_account(
+    client: AsyncClient, name: str = "現金", currency: str | None = None
+) -> str:
+    body: dict[str, str] = {
+        "name": name,
+        "balance": "1000.00",
+        "color": "#8B6ED6",
+        "icon": "wallet",
+    }
+    if currency is not None:
+        body["currency"] = currency
+    res = await client.post("/api/v1/accounts", json=body)
     account_uid: str = res.json()["data"]["account_uid"]
     return account_uid
 
@@ -621,3 +651,128 @@ async def test_get_transfer_not_owned_returns_404(client: AsyncClient) -> None:
 
     delete_res = await client.delete(f"/api/v1/transactions/transfer/{group_uid}")
     assert delete_res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 轉帳跨幣別換算（外幣帳戶功能）
+# ---------------------------------------------------------------------------
+
+
+async def test_create_transfer_cross_currency_converts_to_amount(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-cross-currency@example.com")
+    _override_pricing(
+        lambda: _FakePricingService(exchange_rates={("TWD", "USD"): Decimal("0.0317")})
+    )
+    twd_uid = await _create_account(client, "現金")
+    usd_uid = await _create_account(client, "美金帳戶", currency="USD")
+
+    data = await _create_transfer(
+        client, from_account_uid=twd_uid, to_account_uid=usd_uid, amount="1000.00"
+    )
+    outbound = data["outbound"]
+    inbound = data["inbound"]
+    assert isinstance(outbound, dict) and isinstance(inbound, dict)
+
+    assert outbound["amount"] == "1000.00"  # 來源幣別金額原樣保留
+    assert inbound["amount"] == "31.70"  # 1000 * 0.0317，四捨五入到分
+
+    assert await _account_balance(client, twd_uid) == "0.00"  # 1000 起始 - 1000
+    assert await _account_balance(client, usd_uid) == "1031.70"  # 1000 起始 + 31.70
+
+
+async def test_create_transfer_same_currency_does_not_call_pricing_service(
+    client: AsyncClient,
+) -> None:
+    """同幣別轉帳不應該打匯率服務——沒設定 override 時假物件缺任何匯率資料，一呼叫就會
+    因 KeyError 500，用這個反向驗證「同幣別完全不經過匯率換算路徑」。"""
+    await _register_and_login(client, "tx-transfer-same-currency-no-fx@example.com")
+    _override_pricing(lambda: _FakePricingService())  # 空匯率表：真的被呼叫就會 KeyError
+    twd_uid = await _create_account(client, "現金")
+    bank_uid = await _create_account(client, "銀行")
+
+    data = await _create_transfer(
+        client, from_account_uid=twd_uid, to_account_uid=bank_uid, amount="500.00"
+    )
+    outbound = data["outbound"]
+    inbound = data["inbound"]
+    assert isinstance(outbound, dict) and isinstance(inbound, dict)
+    assert outbound["amount"] == inbound["amount"] == "500.00"
+
+
+async def test_update_transfer_cross_currency_recomputes_to_amount(client: AsyncClient) -> None:
+    await _register_and_login(client, "tx-transfer-cross-currency-update@example.com")
+    _override_pricing(
+        lambda: _FakePricingService(exchange_rates={("TWD", "USD"): Decimal("0.0317")})
+    )
+    twd_uid = await _create_account(client, "現金")
+    usd_uid = await _create_account(client, "美金帳戶", currency="USD")
+
+    data = await _create_transfer(
+        client, from_account_uid=twd_uid, to_account_uid=usd_uid, amount="1000.00"
+    )
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    res = await client.patch(
+        f"/api/v1/transactions/transfer/{group_uid}", json={"amount": "2000.00"}
+    )
+    assert res.status_code == 200
+    body = res.json()["data"]
+    assert body["outbound"]["amount"] == "2000.00"
+    assert body["inbound"]["amount"] == "63.40"  # 2000 * 0.0317
+
+    assert await _account_balance(client, twd_uid) == "-1000.00"  # 1000 起始 - 2000
+    assert await _account_balance(client, usd_uid) == "1063.40"  # 1000 起始 + 63.40
+
+
+async def test_update_transfer_without_amount_or_account_change_does_not_recompute(
+    client: AsyncClient,
+) -> None:
+    """只改備註、金額/帳戶都沒動，不該重新打匯率服務（→ update_transfer repository 註解：
+    避免單純改備註卻因為即時匯率飄動讓轉入金額跟著變）。用會 KeyError 的空匯率表反向驗證。"""
+    await _register_and_login(client, "tx-transfer-update-no-recompute@example.com")
+    _override_pricing(
+        lambda: _FakePricingService(exchange_rates={("TWD", "USD"): Decimal("0.0317")})
+    )
+    twd_uid = await _create_account(client, "現金")
+    usd_uid = await _create_account(client, "美金帳戶", currency="USD")
+    data = await _create_transfer(
+        client, from_account_uid=twd_uid, to_account_uid=usd_uid, amount="1000.00"
+    )
+    group_uid = data["outbound"]["transfer_group_uid"]  # type: ignore[index]
+
+    # 換成空匯率表：若這次更新誤觸換算路徑會直接 500（KeyError）
+    _override_pricing(lambda: _FakePricingService())
+
+    res = await client.patch(
+        f"/api/v1/transactions/transfer/{group_uid}", json={"description": "改個備註"}
+    )
+    assert res.status_code == 200
+    body = res.json()["data"]
+    assert body["inbound"]["amount"] == "31.70"  # 維持原本換算結果，沒有重算
+    assert body["outbound"]["description"] == "改個備註"
+
+
+async def test_create_transfer_pricing_unavailable_returns_424(client: AsyncClient) -> None:
+    class _TimeoutPricingService:
+        async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+            from app.clients.metal_price_client import ExchangeRateTimeoutError
+
+            raise ExchangeRateTimeoutError()
+
+    await _register_and_login(client, "tx-transfer-pricing-timeout@example.com")
+    _override_pricing(lambda: _TimeoutPricingService())
+    twd_uid = await _create_account(client, "現金")
+    usd_uid = await _create_account(client, "美金帳戶", currency="USD")
+
+    res = await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "from_account_uid": twd_uid,
+            "to_account_uid": usd_uid,
+            "transaction_date": "2026-09-09T12:00:00+08:00",
+            "description": "轉帳",
+            "amount": "100.00",
+            "payment_method": "銀行轉帳",
+        },
+    )
+    assert res.status_code == 424

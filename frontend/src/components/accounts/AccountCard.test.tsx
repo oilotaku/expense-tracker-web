@@ -1,8 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import type { AccountResponse } from '@/lib/api/accountsApi'
 import { AccountCard } from './AccountCard'
 
-const CASH_ACCOUNT = {
+const CASH_ACCOUNT: AccountResponse = {
   account_uid: 'a-cash',
   name: '現金',
   balance: '1000.00',

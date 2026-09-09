@@ -1,10 +1,36 @@
-"""Dashboard 期間彙總 API：月 / 年 / 自訂範圍三種 period，budget_remaining 依 period 分流。"""
+"""Dashboard 期間彙總 API：月 / 年 / 自訂範圍三種 period，budget_remaining 依 period 分流。
 
+外幣帳戶跨幣別彙總（→ dashboard_service.py 頂部註解）以假匯率服務取代
+（`app.dependency_overrides`），不打外部網路（→ AGENTS.md § Testing），同
+`test_net_worth.py` 既有的 `get_pricing_service` override 手法。
+"""
+
+from collections.abc import Callable
 from datetime import datetime
+from decimal import Decimal
 
 from httpx import AsyncClient
 
+from app.api.deps import get_pricing_service
+from app.main import app
+
 _PASSWORD = "correct horse battery"
+
+
+class _FakePricingService:
+    """固定回傳事先給定的匯率，驗證跨幣別彙總數字用，不含任何 I/O。"""
+
+    def __init__(self, exchange_rates: dict[tuple[str, str], Decimal] | None = None) -> None:
+        self._exchange_rates = exchange_rates or {}
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+        if base == quote:
+            return Decimal(1)
+        return self._exchange_rates[(base, quote)]
+
+
+def _override_pricing(factory: Callable[[], object]) -> None:
+    app.dependency_overrides[get_pricing_service] = factory
 
 
 async def _register_and_login(client: AsyncClient, email: str) -> None:
@@ -14,11 +40,18 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
     assert res.status_code == 200
 
 
-async def _create_account(client: AsyncClient, name: str = "現金") -> str:
-    res = await client.post(
-        "/api/v1/accounts",
-        json={"name": name, "balance": "1000.00", "color": "#8B6ED6", "icon": "wallet"},
-    )
+async def _create_account(
+    client: AsyncClient, name: str = "現金", currency: str | None = None
+) -> str:
+    body: dict[str, str] = {
+        "name": name,
+        "balance": "1000.00",
+        "color": "#8B6ED6",
+        "icon": "wallet",
+    }
+    if currency is not None:
+        body["currency"] = currency
+    res = await client.post("/api/v1/accounts", json=body)
     account_uid: str = res.json()["data"]["account_uid"]
     return account_uid
 
@@ -278,3 +311,74 @@ async def test_dashboard_summary_response_has_all_required_fields(client: AsyncC
         client, "month", "2026-01-01T00:00:00+08:00", "2026-01-31T23:59:59+08:00"
     )
     assert {"income", "expense", "balance", "budget_remaining"} <= body.keys()
+
+
+async def test_dashboard_summary_converts_foreign_currency_transactions_to_twd(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "dashboard-foreign-currency@example.com")
+    _override_pricing(lambda: _FakePricingService(exchange_rates={("USD", "TWD"): Decimal("31.5")}))
+
+    twd_account = await _create_account(client, "現金")
+    usd_account = await _create_account(client, "美金帳戶", currency="USD")
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    await _create_transaction(
+        client,
+        twd_account,
+        food_uid,
+        datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
+        "300.00",
+        "expense",
+    )
+    await _create_transaction(
+        client,
+        usd_account,
+        food_uid,
+        datetime.fromisoformat("2026-01-16T12:00:00+08:00"),
+        "10.00",
+        "expense",
+    )
+
+    body = await _get_summary(
+        client, "month", "2026-01-01T00:00:00+08:00", "2026-01-31T23:59:59+08:00"
+    )
+    # 300 TWD + 10 USD * 31.5 = 300 + 315 = 615.00
+    assert body["expense"] == "615.00"
+
+
+async def test_dashboard_budget_remaining_converts_foreign_currency_spending(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "dashboard-budget-foreign-currency@example.com")
+    _override_pricing(lambda: _FakePricingService(exchange_rates={("USD", "TWD"): Decimal("31.5")}))
+
+    twd_account = await _create_account(client, "現金")
+    usd_account = await _create_account(client, "美金帳戶", currency="USD")
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    await _create_budget(client, food_uid, "monthly", "1000.00")
+    await _create_transaction(
+        client,
+        twd_account,
+        food_uid,
+        datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
+        "200.00",
+        "expense",
+    )
+    await _create_transaction(
+        client,
+        usd_account,
+        food_uid,
+        datetime.fromisoformat("2026-01-16T12:00:00+08:00"),
+        "10.00",
+        "expense",
+    )
+
+    body = await _get_summary(
+        client, "month", "2026-01-01T00:00:00+08:00", "2026-01-31T23:59:59+08:00"
+    )
+    # 1000 - (200 + 10 * 31.5) = 1000 - 515 = 485.00
+    assert body["budget_remaining"] == "485.00"

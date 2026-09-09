@@ -1,8 +1,10 @@
 """淨資產彙總 API：帳戶 + 股票 / 貴金屬金融資產 + 負債混合案例。
 
 外部報價（`pricing_service`）以假物件取代（`app.dependency_overrides`），不打外部網路
-（→ AGENTS.md § Testing）；`app/api/v1/net_worth.py` 特意把 `PricingService` 的建構拆成獨立
-的 `get_pricing_service` dependency 正是為了讓這裡可以整段替換掉。
+（→ AGENTS.md § Testing）；`app/api/deps.py` 特意把 `PricingService` 的建構拆成獨立的
+`get_pricing_service` dependency 正是為了讓這裡可以整段替換掉（原本定義在 `net_worth.py`，
+帳戶幣別換算上線後 `dashboard.py` 也需要同一份匯率服務，搬到 `deps.py` 共用，
+→ `test_dashboard.py` 用同一個 override 目標）。
 """
 
 from collections.abc import Callable
@@ -11,7 +13,7 @@ from decimal import Decimal
 import pytest
 from httpx import AsyncClient
 
-from app.api.v1.net_worth import get_pricing_service
+from app.api.deps import get_pricing_service
 from app.clients.metal_price_client import MetalSymbol
 from app.clients.stock_price_client import TwseMisTimeoutError
 from app.main import app
@@ -27,17 +29,19 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
 
 
 class _FakePricingService:
-    """固定回傳事先給定的台股 / 美股 / 貴金屬單價，驗證彙總數字用，不含任何 I/O。"""
+    """固定回傳事先給定的台股 / 美股 / 貴金屬單價 / 匯率，驗證彙總數字用，不含任何 I/O。"""
 
     def __init__(
         self,
         stock_prices: dict[str, Decimal] | None = None,
         us_stock_prices: dict[str, Decimal] | None = None,
         metal_prices: dict[MetalSymbol, Decimal] | None = None,
+        exchange_rates: dict[tuple[str, str], Decimal] | None = None,
     ) -> None:
         self._stock_prices = stock_prices or {}
         self._us_stock_prices = us_stock_prices or {}
         self._metal_prices = metal_prices or {}
+        self._exchange_rates = exchange_rates or {}
 
     async def get_stock_price(self, ticker: str) -> Decimal:
         return self._stock_prices[ticker]
@@ -47,6 +51,11 @@ class _FakePricingService:
 
     async def get_metal_price_per_mace(self, symbol: MetalSymbol) -> Decimal:
         return self._metal_prices[symbol]
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+        if base == quote:
+            return Decimal(1)
+        return self._exchange_rates[(base, quote)]
 
 
 class _TimeoutPricingService:
@@ -59,6 +68,9 @@ class _TimeoutPricingService:
         raise TwseMisTimeoutError()
 
     async def get_metal_price_per_mace(self, symbol: MetalSymbol) -> Decimal:
+        raise TwseMisTimeoutError()
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
         raise TwseMisTimeoutError()
 
 
@@ -83,6 +95,35 @@ async def test_net_worth_with_no_data_is_zero(client: AsyncClient) -> None:
     assert body["total_assets"] == "0.00"
     assert body["total_liabilities"] == "0.00"
     assert body["net_worth"] == "0.00"
+
+
+async def test_net_worth_converts_foreign_currency_account_to_twd(client: AsyncClient) -> None:
+    await _register_and_login(client, "networth-foreign-currency@example.com")
+    _override_pricing(lambda: _FakePricingService(exchange_rates={("USD", "TWD"): Decimal("31.5")}))
+
+    twd_res = await client.post(
+        "/api/v1/accounts",
+        json={"name": "現金", "balance": "1000.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
+    assert twd_res.status_code == 201
+    usd_res = await client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "美金帳戶",
+            "balance": "100.00",
+            "color": "#3E8FD0",
+            "icon": "bank",
+            "currency": "USD",
+        },
+    )
+    assert usd_res.status_code == 201
+
+    res = await client.get("/api/v1/net-worth")
+    assert res.status_code == 200
+    body = res.json()["data"]
+    # 1000 TWD + 100 USD * 31.5 = 1000 + 3150 = 4150
+    assert body["total_assets"] == "4150.00"
+    assert body["net_worth"] == "4150.00"
 
 
 async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncClient) -> None:
@@ -299,3 +340,25 @@ async def test_net_worth_pricing_timeout_returns_clear_non_5xx_error(
     assert res.status_code == 424
     assert body["success"] is False
     assert body["detail"] == "報價服務暫時無法使用，請稍後再試"
+
+
+async def test_net_worth_foreign_currency_pricing_timeout_returns_424(client: AsyncClient) -> None:
+    await _register_and_login(client, "networth-currency-timeout@example.com")
+    res = await client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "美金帳戶",
+            "balance": "100.00",
+            "color": "#8B6ED6",
+            "icon": "wallet",
+            "currency": "USD",
+        },
+    )
+    assert res.status_code == 201
+
+    _override_pricing(lambda: _TimeoutPricingService())
+
+    res = await client.get("/api/v1/net-worth")
+    body = res.json()
+    assert res.status_code == 424
+    assert body["success"] is False

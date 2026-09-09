@@ -7,12 +7,40 @@ import { unwrapData, type ApiResponse } from './types'
 // `components['schemas']['AccountResponse']` 等型別。
 //
 // design-spec §12.4（→ A8）：color/icon 為 task-005 新增欄位，取代前端依名稱雜湊配色的舊方案。
+//
+// 外幣帳戶功能：固定 10 種幣別（對齊 backend/app/utils/currency.py SupportedCurrency），
+// 建立帳戶時可選，建立後不可變更（→ AccountUpdateRequest 沒有 currency 欄位）。
+export type SupportedCurrency =
+  | 'TWD'
+  | 'USD'
+  | 'JPY'
+  | 'EUR'
+  | 'CNY'
+  | 'HKD'
+  | 'GBP'
+  | 'AUD'
+  | 'KRW'
+  | 'THB'
+
+export const SUPPORTED_CURRENCIES: SupportedCurrency[] = [
+  'TWD',
+  'USD',
+  'JPY',
+  'EUR',
+  'CNY',
+  'HKD',
+  'GBP',
+  'AUD',
+  'KRW',
+  'THB',
+]
+
 export interface AccountResponse {
   account_uid: string
   name: string
   // Decimal 由後端 field_serializer 轉字串（DB-038），前端不解析成 number 以免精度誤差
   balance: string
-  currency: string
+  currency: SupportedCurrency
   // hex 色碼，含 #（後端驗證 ^#[0-9A-Fa-f]{6}$）
   color: string
   // 圖示 key，合法清單由 <IconPicker> 維護（→ A9），後端只驗證非空字串
@@ -29,6 +57,7 @@ export interface AccountCreateRequest {
   balance: string
   color: string
   icon: string
+  currency: SupportedCurrency
 }
 
 // 改名/改色/改圖示不需通過重建帳戶流程（design-spec §9.6），四欄位皆各自 optional，比照後端

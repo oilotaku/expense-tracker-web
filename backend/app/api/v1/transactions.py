@@ -1,14 +1,16 @@
 """交易 CRUD：所有查詢皆以 `Depends(get_current_user)` 限定當前使用者（→ BE-023）。"""
 
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
-from app.core.exceptions import ConflictError, NotFoundError
+from app.api.deps import PricingServiceDep, get_current_user, get_db
+from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.response import success
+from app.models.account import Account
 from app.models.tag import Tag
 from app.models.transaction import Transaction, TransactionType
 from app.models.user import User
@@ -27,11 +29,14 @@ from app.schemas.transaction import (
     TransferResponse,
     TransferUpdateRequest,
 )
+from app.services.pricing_service import PricingService
 
 router = APIRouter(prefix="/transactions")
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+_CENTS = Decimal("0.01")
 
 _NOT_FOUND_DETAIL = "交易不存在"
 _ACCOUNT_NOT_FOUND_DETAIL = "帳戶不存在"
@@ -39,12 +44,39 @@ _CATEGORY_NOT_FOUND_DETAIL = "分類不存在"
 _TRANSFER_NOT_FOUND_DETAIL = "轉帳交易不存在"
 _USE_TRANSFER_ENDPOINT_DETAIL = "轉帳交易請改用 /transactions/transfer/{transfer_group_uid}"
 _ACCOUNTS_SAME_DETAIL = "轉出與轉入帳戶不可相同"
+_TRANSFER_PRICING_UNAVAILABLE_DETAIL = "匯率服務暫時無法使用，請稍後再試"
 
 
-async def _ensure_account_owned(db: AsyncSession, account_uid: UUID, user_uid: UUID) -> None:
+async def _ensure_account_owned(db: AsyncSession, account_uid: UUID, user_uid: UUID) -> Account:
     account = await AccountRepository(db).find_by_account_uid(account_uid, user_uid)
     if account is None:
         raise NotFoundError(_ACCOUNT_NOT_FOUND_DETAIL)
+    return account
+
+
+class _TransferPricingUnavailableError(AppError):
+    """轉帳兩端帳戶幣別不同、需要即時匯率換算時，外部匯率來源逾時/失敗（非本服務崩潰），
+    同 `net_worth_service.NetWorthPricingUnavailableError` 的既有處理慣例（424，非 5xx）。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            _TRANSFER_PRICING_UNAVAILABLE_DETAIL,
+            response_code=424,
+            status_code=424,
+            error_code="TRANSFER_PRICING_UNAVAILABLE",
+        )
+
+
+async def _convert_amount(
+    pricing_service: PricingService, amount: Decimal, from_currency: str, to_currency: str
+) -> Decimal:
+    if from_currency == to_currency:
+        return amount
+    try:
+        rate = await pricing_service.get_exchange_rate(from_currency, to_currency)
+    except AppError as e:
+        raise _TransferPricingUnavailableError() from e
+    return (amount * rate).quantize(_CENTS, rounding=ROUND_HALF_UP)
 
 
 async def _ensure_category_owned(db: AsyncSession, category_uid: UUID, user_uid: UUID) -> None:
@@ -208,17 +240,24 @@ async def delete_transaction(
     summary="建立轉帳（雙分錄：來源帳戶轉出、目標帳戶轉入，不計入收支彙總）",
 )
 async def create_transfer(
-    payload: TransferCreateRequest, db: DbSession, current_user: CurrentUser
+    payload: TransferCreateRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+    pricing_service: PricingServiceDep,
 ) -> ApiResponse[TransferResponse]:
-    await _ensure_account_owned(db, payload.from_account_uid, current_user.user_uid)
-    await _ensure_account_owned(db, payload.to_account_uid, current_user.user_uid)
+    from_account = await _ensure_account_owned(db, payload.from_account_uid, current_user.user_uid)
+    to_account = await _ensure_account_owned(db, payload.to_account_uid, current_user.user_uid)
+    to_amount = await _convert_amount(
+        pricing_service, payload.amount, from_account.currency, to_account.currency
+    )
     outbound, inbound = await TransactionRepository(db).create_transfer(
         user_uid=current_user.user_uid,
         from_account_uid=payload.from_account_uid,
         to_account_uid=payload.to_account_uid,
         transaction_date=payload.transaction_date,
         description=payload.description,
-        amount=payload.amount,
+        from_amount=payload.amount,
+        to_amount=to_amount,
         payment_method=payload.payment_method,
         created_by=current_user.user_uid,
     )
@@ -235,6 +274,7 @@ async def update_transfer(
     payload: TransferUpdateRequest,
     db: DbSession,
     current_user: CurrentUser,
+    pricing_service: PricingServiceDep,
 ) -> ApiResponse[TransferResponse]:
     repo = TransactionRepository(db)
     legs = await repo.find_transfer_by_group_uid(transfer_group_uid, current_user.user_uid)
@@ -247,10 +287,19 @@ async def update_transfer(
     if resolved_from == resolved_to:
         raise ConflictError(_ACCOUNTS_SAME_DETAIL)
 
-    if payload.from_account_uid is not None:
-        await _ensure_account_owned(db, payload.from_account_uid, current_user.user_uid)
-    if payload.to_account_uid is not None:
-        await _ensure_account_owned(db, payload.to_account_uid, current_user.user_uid)
+    # 只在「金額或帳戶真的變了」時才重新換算 to_amount：單純改備註/日期不該因為即時匯率
+    # 飄動而讓轉入金額跟著變（→ update_transfer repository 註解）。帳戶變了就順便驗證
+    # 新帳戶的擁有權與拿到最新幣別；帳戶沒變但金額變了，仍需要兩邊帳戶的幣別才能重算，
+    # 一律重新查一次（AccountRepository 有 index，成本可忽略）。
+    to_amount: Decimal | None = None
+    account_changed = payload.from_account_uid is not None or payload.to_account_uid is not None
+    if payload.amount is not None or account_changed:
+        from_account = await _ensure_account_owned(db, resolved_from, current_user.user_uid)
+        to_account = await _ensure_account_owned(db, resolved_to, current_user.user_uid)
+        from_amount = payload.amount if payload.amount is not None else outbound.amount
+        to_amount = await _convert_amount(
+            pricing_service, from_amount, from_account.currency, to_account.currency
+        )
 
     outbound, inbound = await repo.update_transfer(
         outbound,
@@ -259,7 +308,8 @@ async def update_transfer(
         to_account_uid=payload.to_account_uid,
         transaction_date=payload.transaction_date,
         description=payload.description,
-        amount=payload.amount,
+        from_amount=payload.amount,
+        to_amount=to_amount,
         payment_method=payload.payment_method,
         updated_by=current_user.user_uid,
     )

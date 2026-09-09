@@ -272,7 +272,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('現金')).toBeInTheDocument()
     expect(screen.getByText('最近交易')).toBeInTheDocument()
     expect(screen.getByText('09/03 餐飲')).toBeInTheDocument()
-    expect(screen.getByText('-NT$120')).toBeInTheDocument()
+    expect(screen.getByText('-120 TWD')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查看全部 →' })).toHaveAttribute('href', '/transactions')
   })
 

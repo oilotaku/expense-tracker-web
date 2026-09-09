@@ -39,6 +39,7 @@ async def create_account(
         created_by=current_user.user_uid,
         color=payload.color,
         icon=payload.icon,
+        currency=payload.currency.value,
     )
     return success(data=AccountResponse.model_validate(account), response_code=201)
 

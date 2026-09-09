@@ -88,7 +88,15 @@ class NetWorthService:
         assets = await FinancialAssetRepository(self._db).list_by_user_uid(user_uid)
         liabilities = await LiabilityRepository(self._db).list_by_user_uid(user_uid)
 
-        total_assets = sum((account.balance for account in accounts), Decimal("0"))
+        total_assets = Decimal("0")
+        for account in accounts:
+            if account.currency == "TWD":
+                total_assets += account.balance
+            else:
+                rate = await self._call_pricing(
+                    self._pricing_service.get_exchange_rate(account.currency, "TWD")
+                )
+                total_assets += account.balance * rate
         asset_items: list[NetWorthAssetItem] = []
         for asset in assets:
             price = await self._get_unit_price(asset.asset_type, asset.name)

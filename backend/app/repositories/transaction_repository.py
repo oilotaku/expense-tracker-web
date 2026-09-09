@@ -189,13 +189,16 @@ class TransactionRepository:
         to_account_uid: UUID,
         transaction_date: datetime,
         description: str,
-        amount: Decimal,
+        from_amount: Decimal,
+        to_amount: Decimal,
         payment_method: str,
         created_by: UUID,
     ) -> tuple[Transaction, Transaction]:
         """雙分錄轉帳：來源帳戶一列 OUT、目標帳戶一列 IN，用共同的 transfer_group_uid 串起來
         （不是彼此的 FK，避免插入順序的雞生蛋問題，→ Transaction model 註解）。轉帳沒有分類、
-        不支援標籤（本次範圍刻意排除）。"""
+        不支援標籤（本次範圍刻意排除）。`from_amount`/`to_amount` 兩個帳戶幣別相同時數值相等，
+        不同幣別時 `to_amount` 已由呼叫端（API 層）用即時匯率換算好——repository 本身不碰
+        `PricingService`，只負責把兩個已經算好的金額寫進兩列、分別套用到兩個帳戶餘額。"""
         group_uid = uuid4()
         outbound = Transaction(
             user_uid=user_uid,
@@ -203,7 +206,7 @@ class TransactionRepository:
             category_uid=None,
             transaction_date=transaction_date,
             description=description,
-            amount=amount,
+            amount=from_amount,
             transaction_type=TransactionType.TRANSFER,
             transfer_group_uid=group_uid,
             transfer_direction=TransferDirection.OUT,
@@ -217,7 +220,7 @@ class TransactionRepository:
             category_uid=None,
             transaction_date=transaction_date,
             description=description,
-            amount=amount,
+            amount=to_amount,
             transaction_type=TransactionType.TRANSFER,
             transfer_group_uid=group_uid,
             transfer_direction=TransferDirection.IN,
@@ -227,8 +230,8 @@ class TransactionRepository:
         )
         self.db.add_all([outbound, inbound])
         await self.db.flush()
-        await self._adjust_account_balance(from_account_uid, -amount)
-        await self._adjust_account_balance(to_account_uid, amount)
+        await self._adjust_account_balance(from_account_uid, -from_amount)
+        await self._adjust_account_balance(to_account_uid, to_amount)
         return outbound, inbound
 
     async def find_transfer_by_group_uid(
@@ -257,40 +260,48 @@ class TransactionRepository:
         to_account_uid: UUID | None,
         transaction_date: datetime | None,
         description: str | None,
-        amount: Decimal | None,
+        from_amount: Decimal | None,
+        to_amount: Decimal | None,
         payment_method: str | None,
         updated_by: UUID,
     ) -> tuple[Transaction, Transaction]:
         """不像 `update_fields` 特判「帳戶沒變就用差額」：轉帳要同時處理兩個帳戶、且各自都可能
         換帳戶，統一「全退回舊 delta、全套用新 delta」邏輯簡單很多、不容易漏 case
-        （`_adjust_account_balance` 對 delta=0 是 no-op，多送幾次不影響正確性）。"""
+        （`_adjust_account_balance` 對 delta=0 是 no-op，多送幾次不影響正確性）。`from_amount`/
+        `to_amount` 分開傳（不像 create_transfer 假設呼叫端一定會給兩個值）：呼叫端
+        （API 層）只在「金額或帳戶幣別組合真的變了」時才重新算 `to_amount`，沒變就傳 None
+        維持原本換算結果，避免單純改備註卻因為即時匯率飄動而讓轉入金額跟著變。"""
         old_from_account_uid = outbound.account_uid
         old_to_account_uid = inbound.account_uid
-        old_amount = outbound.amount
+        old_from_amount = outbound.amount
+        old_to_amount = inbound.amount
 
         if from_account_uid is not None:
             outbound.account_uid = from_account_uid
         if to_account_uid is not None:
             inbound.account_uid = to_account_uid
+        if from_amount is not None:
+            outbound.amount = from_amount
+        if to_amount is not None:
+            inbound.amount = to_amount
         for leg in (outbound, inbound):
             if transaction_date is not None:
                 leg.transaction_date = transaction_date
             if description is not None:
                 leg.description = description
-            if amount is not None:
-                leg.amount = amount
             if payment_method is not None:
                 leg.payment_method = payment_method
             leg.updated_by = updated_by
 
         new_from_account_uid = outbound.account_uid
         new_to_account_uid = inbound.account_uid
-        new_amount = outbound.amount
+        new_from_amount = outbound.amount
+        new_to_amount = inbound.amount
 
-        await self._adjust_account_balance(old_from_account_uid, old_amount)
-        await self._adjust_account_balance(old_to_account_uid, -old_amount)
-        await self._adjust_account_balance(new_from_account_uid, -new_amount)
-        await self._adjust_account_balance(new_to_account_uid, new_amount)
+        await self._adjust_account_balance(old_from_account_uid, old_from_amount)
+        await self._adjust_account_balance(old_to_account_uid, -old_to_amount)
+        await self._adjust_account_balance(new_from_account_uid, -new_from_amount)
+        await self._adjust_account_balance(new_to_account_uid, new_to_amount)
 
         await self.db.flush()
         return outbound, inbound

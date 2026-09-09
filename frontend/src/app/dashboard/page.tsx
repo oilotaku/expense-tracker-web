@@ -157,11 +157,17 @@ const transactionAmountClassName = cva('shrink-0 text-sm font-semibold tabular-n
 
 // 支出在清單一律顯示負號、收入顯示正號（design-spec §9.2 wireframe `-NT$120` / `+NT$45,000`）；
 // 轉帳兩邊帳戶互相抵銷、不是真正的增減，不加正負號。
-function signedTransactionAmount(transaction: TransactionResponse): string {
-  if (transaction.transaction_type === 'transfer') return formatAmount(transaction.amount)
-  return transaction.transaction_type === 'income'
-    ? formatAmount(transaction.amount, true)
-    : formatAmount(`-${transaction.amount}`)
+//
+// 外幣帳戶功能：一筆交易的金額是「該筆交易所屬帳戶」的原生幣別，不能一律假設 NT$（→
+// NetWorthCard.tsx 帳戶總覽同一類 bug 的修法），故不走 formatAmount（固定 NT$ 前綴），
+// 改用相同的千分位規則但換成呼叫端傳入的實際幣別代碼。
+function signedTransactionAmount(transaction: TransactionResponse, currency: string): string {
+  const amount = Number(transaction.amount)
+  if (!Number.isFinite(amount)) return `${transaction.amount} ${currency}`
+  const absolute = amount.toLocaleString('zh-Hant-TW', { maximumFractionDigits: 0 })
+  if (transaction.transaction_type === 'transfer') return `${absolute} ${currency}`
+  const sign = transaction.transaction_type === 'income' ? '+' : '-'
+  return `${sign}${absolute} ${currency}`
 }
 
 /**
@@ -265,6 +271,10 @@ function DashboardContent(): ReactNode {
   )
   const accountNames = useMemo(
     () => new Map(accounts.map((account) => [account.account_uid, account.name])),
+    [accounts],
+  )
+  const accountCurrencies = useMemo(
+    () => new Map(accounts.map((account) => [account.account_uid, account.currency])),
     [accounts],
   )
   const categorySlices = useMemo(
@@ -433,7 +443,10 @@ function DashboardContent(): ReactNode {
                         transactionType: transaction.transaction_type,
                       })}
                     >
-                      {signedTransactionAmount(transaction)}
+                      {signedTransactionAmount(
+                        transaction,
+                        accountCurrencies.get(transaction.account_uid) ?? '',
+                      )}
                     </span>
                   </li>
                 ))}

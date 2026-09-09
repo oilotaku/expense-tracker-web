@@ -145,6 +145,46 @@ async def test_us_stock_price_cache_prevents_second_external_call_and_converts_t
 
 
 @respx.mock
+async def test_get_exchange_rate_same_currency_returns_one_without_external_call(
+    redis_client: Redis,
+) -> None:
+    """帳戶幣別換算（外幣帳戶功能）常見情境：帳戶本身就是 TWD，不該為此打匯率 API 或佔快取。"""
+    fx_route = respx.get("https://open.er-api.com/v6/latest/TWD").mock(
+        return_value=httpx.Response(
+            200, json={"result": "success", "base_code": "TWD", "rates": {"TWD": 1}}
+        )
+    )
+    service = PricingService(redis=redis_client)
+
+    rate = await service.get_exchange_rate("TWD", "TWD")
+
+    assert rate == Decimal(1)
+    assert fx_route.call_count == 0
+    assert await redis_client.get(_fx_rate_key("TWD", "TWD")) is None
+
+
+@respx.mock
+async def test_get_exchange_rate_caches_result(redis_client: Redis) -> None:
+    """帳戶幣別換算重用既有的匯率快取機制：同一組 base/quote 命中快取 TTL 內不重打外部 API
+    （跟美股/貴金屬換算共用同一份快取，`_fx_rate_key` 本身就是通用的，不是寫死 USD/TWD）。"""
+    fx_route = respx.get("https://open.er-api.com/v6/latest/EUR").mock(
+        return_value=httpx.Response(
+            200, json={"result": "success", "base_code": "EUR", "rates": {"TWD": 34.2}}
+        )
+    )
+    service = PricingService(redis=redis_client)
+
+    rate1 = await service.get_exchange_rate("EUR", "TWD")
+    rate2 = await service.get_exchange_rate("EUR", "TWD")
+
+    assert rate1 == rate2 == Decimal("34.2")
+    assert fx_route.call_count == 1
+
+    ttl = await redis_client.ttl(_fx_rate_key("EUR", "TWD"))
+    assert 0 < ttl <= 43200
+
+
+@respx.mock
 async def test_us_stock_price_not_found_returns_404(redis_client: Redis) -> None:
     respx.get("https://query1.finance.yahoo.com/v8/finance/chart/ZZZZZ").mock(
         return_value=httpx.Response(404)

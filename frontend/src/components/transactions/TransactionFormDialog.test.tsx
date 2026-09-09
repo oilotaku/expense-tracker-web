@@ -108,6 +108,29 @@ describe('TransactionFormDialog', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  // 外幣帳戶功能：轉出/轉入帳戶幣別不同時顯示提示文字，不擋送出（實際換算由後端算，
+  // → backend/app/api/v1/transactions.py _convert_amount）。
+  it('轉帳模式下，轉出/轉入帳戶幣別不同時顯示換算提示；改回同幣別時提示消失', async () => {
+    useListAccountOptionsQuery.mockReturnValue({
+      data: [
+        { account_uid: 'a1', name: '現金', balance: '100.00', currency: 'TWD' },
+        { account_uid: 'a2', name: '美金帳戶', balance: '50.00', currency: 'USD' },
+        { account_uid: 'a3', name: '銀行', balance: '200.00', currency: 'TWD' },
+      ],
+    })
+    render(<TransactionFormDialog open onOpenChange={() => {}} onSubmit={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '轉帳' }))
+    fireEvent.change(screen.getByLabelText('轉出帳戶'), { target: { value: 'a1' } })
+    fireEvent.change(screen.getByLabelText('轉入帳戶'), { target: { value: 'a2' } })
+
+    expect(screen.getByText('TWD → USD：將以即時匯率換算成 USD')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('轉入帳戶'), { target: { value: 'a3' } })
+
+    expect(screen.queryByText(/將以即時匯率換算成/)).not.toBeInTheDocument()
+  })
+
   it('RecurringFieldset 週/月/年三種單位可選，勾選固定收支後送出對應 recurring 設定', async () => {
     const onSubmit = vi.fn()
     render(<TransactionFormDialog open onOpenChange={() => {}} onSubmit={onSubmit} />)

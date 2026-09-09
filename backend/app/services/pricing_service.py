@@ -148,10 +148,20 @@ class PricingService:
         return price
 
     async def _get_usd_twd_rate(self) -> Decimal:
-        key = _fx_rate_key("USD", "TWD")
+        return await self.get_exchange_rate("USD", "TWD")
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+        """回傳 `base` → `quote` 匯率，供帳戶幣別換算（淨資產/Dashboard/轉帳）重用同一套
+        `ExchangeRateClient` + Redis 快取機制（原本只有 `_get_usd_twd_rate()` 這個 private
+        寫死用法，這裡把它泛化成公開方法，`_get_usd_twd_rate()` 保留給既有美股/貴金屬呼叫端
+        不用改）。`base == quote` 時直接回 1，不打外部 API、不佔快取。
+        """
+        if base == quote:
+            return Decimal(1)
+        key = _fx_rate_key(base, quote)
         cached = await _get_cached_decimal(self._redis, key)
         if cached is not None:
             return cached
-        rate = await self._fx_client.get_rate("USD", "TWD")
+        rate = await self._fx_client.get_rate(base, quote)
         await _set_cached_decimal(self._redis, key, rate, FX_RATE_TTL_SECONDS)
         return rate

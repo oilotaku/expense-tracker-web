@@ -40,6 +40,7 @@ vi.mock('@/lib/api/accountsApi', () => ({
   useUpdateAccountMutation: () => useUpdateAccountMutation(),
   useDeleteAccountMutation: () => useDeleteAccountMutation(),
   useListAccountsQuery: () => useListAccountsQuery(),
+  SUPPORTED_CURRENCIES: ['TWD', 'USD', 'JPY', 'EUR', 'CNY', 'HKD', 'GBP', 'AUD', 'KRW', 'THB'],
 }))
 
 const CASH_ACCOUNT = {
@@ -120,7 +121,26 @@ describe('AccountsPage', () => {
       balance: '2500',
       color: '#2FA98A',
       icon: 'savings',
+      currency: 'TWD',
     })
+  })
+
+  it('新增帳戶：可選非預設幣別，送出時一併帶入 createAccount', async () => {
+    render(<AccountsPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: '＋ 新增帳戶' })[0]!)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('名稱'), { target: { value: '美金帳戶' } })
+    fireEvent.change(screen.getByLabelText('幣別（建立後不可變更）'), { target: { value: 'USD' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '建立帳戶' }))
+    })
+
+    expect(createAccount).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: '美金帳戶', currency: 'USD' }),
+    )
   })
 
   it('新增帳戶未手動選色時，預帶下一個尚未被目前帳戶清單使用的色票（避開現有 #8B6ED6 / #E8834B）', async () => {

@@ -117,8 +117,10 @@ export function NetWorthCard({ accounts, netWorth, isLoading, error, onRetry }: 
                 />
                 <span className="truncate text-sm text-text-primary md:text-base">{account.name}</span>
               </span>
+              {/* 外幣帳戶功能：帳戶餘額用原生幣別顯示（→ AccountCard.tsx 同慣例），不能套
+                  formatAmount（固定 NT$ 前綴）——那是假設所有帳戶都是 TWD 的既有 bug。 */}
               <span className="shrink-0 text-sm tabular-nums text-text-primary md:text-base">
-                {formatAmount(account.balance)}
+                {account.balance} {account.currency}
               </span>
             </li>
           ))}

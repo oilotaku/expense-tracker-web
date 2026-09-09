@@ -86,6 +86,67 @@ async def test_create_account_invalid_color_returns_422(client: AsyncClient) -> 
     assert res.status_code == 422
 
 
+async def test_create_account_without_currency_defaults_to_twd(client: AsyncClient) -> None:
+    await _register_and_login(client, "acct-currency-default@example.com")
+    res = await client.post(
+        "/api/v1/accounts",
+        json={"name": "現金", "balance": "0.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
+    assert res.status_code == 201
+    assert res.json()["data"]["currency"] == "TWD"
+
+
+async def test_create_account_with_foreign_currency(client: AsyncClient) -> None:
+    await _register_and_login(client, "acct-currency-foreign@example.com")
+    res = await client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "美金帳戶",
+            "balance": "100.00",
+            "color": "#8B6ED6",
+            "icon": "wallet",
+            "currency": "USD",
+        },
+    )
+    assert res.status_code == 201
+    assert res.json()["data"]["currency"] == "USD"
+
+
+async def test_create_account_invalid_currency_returns_422(client: AsyncClient) -> None:
+    await _register_and_login(client, "acct-currency-invalid@example.com")
+    res = await client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "假幣帳戶",
+            "balance": "0.00",
+            "color": "#8B6ED6",
+            "icon": "wallet",
+            "currency": "XXX",
+        },
+    )
+    assert res.status_code == 422
+
+
+async def test_update_account_does_not_accept_currency_change(client: AsyncClient) -> None:
+    await _register_and_login(client, "acct-currency-immutable@example.com")
+    create_res = await client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "美金帳戶",
+            "balance": "100.00",
+            "color": "#8B6ED6",
+            "icon": "wallet",
+            "currency": "USD",
+        },
+    )
+    account_uid = create_res.json()["data"]["account_uid"]
+
+    res = await client.patch(f"/api/v1/accounts/{account_uid}", json={"currency": "JPY"})
+    assert res.status_code == 200
+    # AccountUpdateRequest 沒有 currency 欄位，多餘欄位被忽略，幣別維持建立時的值
+    assert res.json()["data"]["currency"] == "USD"
+
+
 async def test_get_single_account(client: AsyncClient) -> None:
     await _register_and_login(client, "acct-owner-2@example.com")
     create_res = await client.post(

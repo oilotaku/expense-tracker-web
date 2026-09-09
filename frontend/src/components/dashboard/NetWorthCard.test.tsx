@@ -60,9 +60,9 @@ describe('NetWorthCard', () => {
     )
 
     expect(screen.getByText('現金')).toBeInTheDocument()
-    expect(screen.getByText('NT$12,000')).toBeInTheDocument()
+    expect(screen.getByText('12000.00 TWD')).toBeInTheDocument()
     expect(screen.getByText('銀行')).toBeInTheDocument()
-    expect(screen.getByText('NT$61,000')).toBeInTheDocument()
+    expect(screen.getByText('61000.00 TWD')).toBeInTheDocument()
 
     expect(screen.getByText('總資產')).toBeInTheDocument()
     expect(screen.getByText('NT$150,000')).toBeInTheDocument()

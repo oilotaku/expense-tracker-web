@@ -81,6 +81,7 @@ describe('accountsApi', () => {
       balance: '1000.00',
       color: '#8B6ED6',
       icon: 'wallet',
+      currency: 'TWD',
     }).unwrap()
 
     expect(response).toEqual(CASH_ACCOUNT)
@@ -89,6 +90,7 @@ describe('accountsApi', () => {
       balance: '1000.00',
       color: '#8B6ED6',
       icon: 'wallet',
+      currency: 'TWD',
     })
   })
 
@@ -155,7 +157,7 @@ describe('accountsApi', () => {
     const [createAccount] = result.current
 
     await expect(
-      createAccount({ name: '現金', balance: '0.00', color: 'bad', icon: 'wallet' }).unwrap(),
+      createAccount({ name: '現金', balance: '0.00', color: 'bad', icon: 'wallet', currency: 'TWD' }).unwrap(),
     ).rejects.toMatchObject({ status: 422, data: { detail: 'color 格式錯誤，需為 #RRGGBB' } })
   })
 

@@ -264,7 +264,7 @@ describe('TransactionList', () => {
       expect(table.getByText('—')).toBeInTheDocument()
       expect(table.getByText('現金 → 銀行')).toBeInTheDocument()
 
-      const amountCell = table.getByText('500.00')
+      const amountCell = table.getByText('500.00 TWD')
       expect(amountCell).toHaveClass('text-text-primary')
       expect(amountCell).not.toHaveClass('text-income-700')
       expect(amountCell).not.toHaveClass('text-expense-700')
