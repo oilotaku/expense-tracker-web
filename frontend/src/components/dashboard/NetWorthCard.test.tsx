@@ -105,11 +105,11 @@ describe('NetWorthCard', () => {
     expect(screen.getByText('浮動資產')).toBeInTheDocument()
     expect(screen.getByText('2330')).toBeInTheDocument()
     expect(screen.getByText('NT$1,200,000')).toBeInTheDocument()
-    expect(screen.getByText('+1900.00%')).toHaveClass('text-expense-600')
+    expect(screen.getByText('+1900.00%')).toHaveClass('text-expense-700')
 
     expect(screen.getByText('黃金')).toBeInTheDocument()
     expect(screen.getByText('NT$20,000')).toBeInTheDocument()
-    expect(screen.getByText('-33.33%')).toHaveClass('text-income-600')
+    expect(screen.getByText('-33.33%')).toHaveClass('text-income-700')
   })
 
   it('沒有浮動資產時不顯示浮動資產區塊', () => {

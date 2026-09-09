@@ -65,8 +65,8 @@ function getServerSnapshot(): PriceColorScheme {
 export interface UsePriceColorPreferenceResult {
   scheme: PriceColorScheme
   setScheme: (scheme: PriceColorScheme) => void
-  /** 依目前偏好把「漲跌」映射成語意色 class（income-600 綠 / expense-600 紅）。 */
-  colorForGain: (isGain: boolean) => 'text-income-600' | 'text-expense-600'
+  /** 依目前偏好把「漲跌」映射成語意色 class（income-700 綠 / expense-700 紅）。 */
+  colorForGain: (isGain: boolean) => 'text-income-700' | 'text-expense-700'
 }
 
 /**
@@ -82,10 +82,10 @@ export function usePriceColorPreference(): UsePriceColorPreferenceResult {
   }, [])
 
   const colorForGain = useCallback(
-    (isGain: boolean): 'text-income-600' | 'text-expense-600' => {
+    (isGain: boolean): 'text-income-700' | 'text-expense-700' => {
       const upIsGreen = scheme === 'green-up'
-      if (isGain) return upIsGreen ? 'text-income-600' : 'text-expense-600'
-      return upIsGreen ? 'text-expense-600' : 'text-income-600'
+      if (isGain) return upIsGreen ? 'text-income-700' : 'text-expense-700'
+      return upIsGreen ? 'text-expense-700' : 'text-income-700'
     },
     [scheme],
   )

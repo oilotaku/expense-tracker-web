@@ -50,16 +50,16 @@ describe('usePriceColorPreference', () => {
     expect(nextResult.current.scheme).toBe('green-up')
   })
 
-  it('red-up：漲用 expense-600（紅）、跌用 income-600（綠）', () => {
+  it('red-up：漲用 expense-700（紅）、跌用 income-700（綠）', () => {
     const { result } = renderHook(() => usePriceColorPreference())
-    expect(result.current.colorForGain(true)).toBe('text-expense-600')
-    expect(result.current.colorForGain(false)).toBe('text-income-600')
+    expect(result.current.colorForGain(true)).toBe('text-expense-700')
+    expect(result.current.colorForGain(false)).toBe('text-income-700')
   })
 
-  it('green-up：漲用 income-600（綠）、跌用 expense-600（紅）', () => {
+  it('green-up：漲用 income-700（綠）、跌用 expense-700（紅）', () => {
     window.localStorage.setItem(STORAGE_KEY, 'green-up')
     const { result } = renderHook(() => usePriceColorPreference())
-    expect(result.current.colorForGain(true)).toBe('text-income-600')
-    expect(result.current.colorForGain(false)).toBe('text-expense-600')
+    expect(result.current.colorForGain(true)).toBe('text-income-700')
+    expect(result.current.colorForGain(false)).toBe('text-expense-700')
   })
 })

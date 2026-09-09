@@ -235,7 +235,7 @@ function TransactionTableRow({
   onDelete,
 }: TransactionRowProps): ReactNode {
   const amountColor =
-    transaction.transaction_type === 'income' ? 'text-income-600' : 'text-expense-600'
+    transaction.transaction_type === 'income' ? 'text-income-700' : 'text-expense-700'
 
   return (
     <tr className="group border-b border-border last:border-0">
@@ -278,7 +278,7 @@ function TransactionCard({
   onDelete,
 }: TransactionRowProps): ReactNode {
   const amountColor =
-    transaction.transaction_type === 'income' ? 'text-income-600' : 'text-expense-600'
+    transaction.transaction_type === 'income' ? 'text-income-700' : 'text-expense-700'
 
   function handleDeleteClick(event: { stopPropagation: () => void }): void {
     event.stopPropagation()

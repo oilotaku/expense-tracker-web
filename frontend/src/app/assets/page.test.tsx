@@ -269,7 +269,7 @@ describe('AssetsPage', () => {
     })
     render(<AssetsPage />)
 
-    expect(screen.getByText('+100.00%')).toHaveClass('text-expense-600')
+    expect(screen.getByText('+100.00%')).toHaveClass('text-expense-700')
     // 黃金（a2）沒有對應的漲跌幅資料，但本身仍正常顯示，不因報價暫不可用而整頁壞掉
     expect(screen.getByText('黃金')).toBeInTheDocument()
   })
