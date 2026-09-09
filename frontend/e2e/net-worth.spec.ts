@@ -85,7 +85,10 @@ test('新增股票資產後，dashboard 總資產反映抓到的市價', async (
   await stockForm.getByLabel('單位').selectOption('股')
   await stockForm.getByRole('button', { name: '新增股票' }).click()
 
-  await expect(page.getByRole('cell', { name: STOCK_TICKER })).toBeVisible()
+  // task-018（資產清單 table → 卡片化，→ FinancialAssetRow）之後頁面上不再有 <table>/<td>，
+  // 沒有 role="cell" 可比對；改用卡片上「編輯 <名稱>」按鈕的 aria-label（asset.name 就是股票
+  // 代號本身）確認新資產已出現，同 category-account-color.spec.ts 既有的卡片定位慣例。
+  await expect(page.getByRole('button', { name: `編輯 ${STOCK_TICKER}` })).toBeVisible()
 
   // 直接呼叫後端 API 取得權威計算結果（會觸發並快取一次真實的 TWSE MIS 報價查詢），
   // 用來驗證 UI 顯示的數字「確實反映抓到的市價」，而不是隨便一個非零數字就放行。

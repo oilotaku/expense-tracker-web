@@ -93,7 +93,10 @@ test('新增帳戶時自訂顏色與圖示，重新整理後仍保留', async ({
 
   const accountName = `e2e帳戶${Date.now()}`
   await page.goto('/accounts')
-  await expect(page.getByText('尚未建立任何帳戶')).toBeVisible()
+  // 新使用者註冊即自動建立「現金」「銀行」兩個預設帳戶（→ trg_users_seed_default_accounts），
+  // 不會再是空清單。
+  await expect(page.getByText('現金')).toBeVisible()
+  await expect(page.getByText('銀行')).toBeVisible()
 
   // 「＋ 新增帳戶」有桌機（Header）與行動端（頁尾全寬）兩顆，靠 Tailwind breakpoint class 決定
   // 顯示哪一顆（`→ FE-063` CSS-only RWD），DOM 內兩顆都在，只取當下可見的那顆。
@@ -116,9 +119,10 @@ test('新增帳戶時自訂顏色與圖示，重新整理後仍保留', async ({
   const cardEditButton = page.getByRole('button', { name: `編輯 ${accountName}` })
   await expect(cardEditButton).toBeVisible()
 
-  // 該使用者只有這一個帳戶、且新增對話框已關閉，頁面上唯一帶 inline background-color 的 <span>
-  // 就是這張卡片的圓形徽章。
-  const badge = page.locator('span[style*="background-color"]')
+  // 該使用者現在有預設「現金」「銀行」+ 這筆新帳戶共 3 個帳戶，各自都有圓形徽章；
+  // 用 { has: cardEditButton } 把 badge 查詢限定在這張新帳戶卡片內，不是整頁筆數。
+  const card = page.locator('.rounded-lg.bg-surface.shadow-card', { has: cardEditButton })
+  const badge = card.locator('span[style*="background-color"]')
   await expect(badge).toHaveCount(1)
   expect(await backgroundColorOf(badge)).toBe(ACCOUNT_COLOR_RGB)
 

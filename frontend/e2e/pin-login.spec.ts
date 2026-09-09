@@ -143,27 +143,23 @@ test('設定 PIN 後可用 PIN 快速登入', async ({ page }) => {
 })
 
 /**
- * ⚠️ 目前為「預期失敗」（`test.fail()`）：本 spec 第一次跑起來就抓到 **PIN 鎖定機制在真實環境
- * 完全失效** —— 連續錯 5 次後第 6 次仍回 401（不是 429），`user_credentials.pin_failed_attempts`
- * 在 DB 內恆為 0。
+ * 本 spec 第一次跑起來時曾抓到 **PIN 鎖定機制在真實環境完全失效** —— 連續錯 5 次後第 6 次仍
+ * 回 401（不是 429），`user_credentials.pin_failed_attempts` 在 DB 內恆為 0。
  *
- * 根因（已用 curl 直打 backend + `psql` 查表確認，非前端問題）：
- * `AuthService._verify_pin_or_raise` 先 `record_pin_failure()`（只 `flush`，不 commit）再
- * `raise AppError(401)`；但 `app/api/deps.py::get_db` 的 `except Exception: await
+ * 根因當時是：`AuthService._verify_pin_or_raise` 先 `record_pin_failure()`（只 `flush`，不
+ * commit）再 `raise AppError(401)`；但 `app/api/deps.py::get_db` 的 `except Exception: await
  * session.rollback()` 會把剛剛 flush 的失敗次數一起回捲，於是每次失敗都從 0 重新算，永遠到不了
  * 門檻 5。後端整合測試（`tests/api/test_auth_pin.py`）之所以是綠的，是因為 `tests/conftest.py`
  * 的 `_override_get_db` 只 `yield` 一個共用 session、**沒有**複製正式 `get_db` 的
  * commit/rollback 生命週期，例外時不回捲，所以失敗次數在測試裡活了下來 —— 典型的 test double
  * 與正式路徑行為分歧造成的假綠燈。
  *
- * 修正落在 `backend/app/services/auth_service.py` / `app/api/deps.py`，**不在 task-026 的
- * `affected_files` 內**，依 CORE-140 停手回報，不擅自跨檔修改。這裡保留完整、會真的打真實 stack
- * 的斷言並標記 `test.fail()`：後端修好的當下，本 case 會因「意外通過」而讓 CI 轉紅，提醒把這行
- * `test.fail()` 拿掉，缺口不會被靜悄悄忘記。
+ * task-030 已修：`_verify_pin_or_raise` 在 `record_pin_failure()` 後、`raise` 前先明確
+ * `await self.db.commit()`，讓失敗次數在被通用 rollback 回捲前就已落地（→
+ * `backend/app/services/auth_service.py` 該處註解）。此測試已由 `test.fail()` 改回一般斷言。
  */
 test('連續輸入錯誤 PIN 5 次後，第 6 次被鎖定（design-spec §12.2 / A15）', async ({ page }) => {
   test.setTimeout(240_000)
-  test.fail(true, '後端鎖定計數被 get_db 的 rollback 回捲，見上方 JSDoc；修好後移除本行')
 
   const maskedEmail = await registerAccountWithPin(page, 'pin-lock')
   await openPinPad(page, maskedEmail)
