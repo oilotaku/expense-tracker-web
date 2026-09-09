@@ -16,6 +16,7 @@ from app.schemas.financial_asset import (
     FinancialAssetListResponse,
     FinancialAssetResponse,
     FinancialAssetUpdateRequest,
+    validate_name_for_asset_type,
     validate_unit_for_asset_type,
 )
 from app.schemas.response import ApiResponse
@@ -109,18 +110,20 @@ async def update_financial_asset(
     new_quantity = payload.input_quantity
     new_unit = payload.input_unit
     base_quantity: Decimal | None = None
-    if new_quantity is not None or new_unit is not None:
-        # asset_type 建立後不可變更（見 schema 註解），單位是否與 asset_type 搭配用既有型別驗證；
-        # 這裡不是 pydantic 的驗證流程（asset_type 不在 payload 內，來自既有資料），ValueError
-        # 需自行轉成 422，否則會被當成未預期例外回 500（→ BE-064）
-        asset_type: AssetType = "stock" if asset.asset_type == "stock" else "metal"
-        effective_unit = new_unit if new_unit is not None else asset.input_unit
-        effective_quantity = new_quantity if new_quantity is not None else asset.input_quantity
-        try:
+    # asset_type 建立後不可變更（見 schema 註解），單位／名稱是否與 asset_type 搭配用既有型別驗證；
+    # 這裡不是 pydantic 的驗證流程（asset_type 不在 payload 內，來自既有資料），ValueError
+    # 需自行轉成 422，否則會被當成未預期例外回 500（→ BE-064）
+    asset_type: AssetType = "stock" if asset.asset_type == "stock" else "metal"
+    try:
+        if payload.name is not None:
+            validate_name_for_asset_type(asset_type, payload.name)
+        if new_quantity is not None or new_unit is not None:
+            effective_unit = new_unit if new_unit is not None else asset.input_unit
+            effective_quantity = new_quantity if new_quantity is not None else asset.input_quantity
             validate_unit_for_asset_type(asset_type, effective_unit)
             base_quantity = _to_base_quantity(asset_type, effective_quantity, effective_unit)
-        except ValueError as e:
-            raise AppError(str(e), response_code=422, status_code=422) from e
+    except ValueError as e:
+        raise AppError(str(e), response_code=422, status_code=422) from e
 
     asset = await repo.update_fields(
         asset,

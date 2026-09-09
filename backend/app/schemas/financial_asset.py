@@ -4,6 +4,7 @@
 （股票只收「張」/「股」、貴金屬只收「兩」/「錢」）。
 """
 
+import re
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -20,12 +21,24 @@ _VALID_UNITS_BY_TYPE: dict[AssetType, frozenset[str]] = {
     "metal": frozenset({MetalUnit.TAEL.value, MetalUnit.MACE.value}),
 }
 
+# 上市櫃證券代號一律 4-6 位數字（含 ETF，例：2330／0050／00919）；report_service 用這個值
+# 直接向 TWSE MIS 查價，收公司中文名（例："聯發科"）會查無報價（→ TwseMisNotFoundError）。
+_STOCK_TICKER_RE = re.compile(r"^\d{4,6}$")
+
 
 def validate_unit_for_asset_type(asset_type: AssetType, unit: str) -> None:
     """確認 `unit` 是 `asset_type` 允許的輸入單位；供 create 的 schema 驗證與 update 端點重用。"""
     allowed = _VALID_UNITS_BY_TYPE[asset_type]
     if unit not in allowed:
         raise ValueError(f"{asset_type} 的單位必須為 {sorted(allowed)} 其中之一，收到 {unit!r}")
+
+
+def validate_name_for_asset_type(asset_type: AssetType, name: str) -> None:
+    """`stock` 的 `name` 即報價查詢用的證券代號，須為 4-6 位數字；`metal` 無此限制（自由品項名）。
+    供 create 的 schema 驗證與 update 端點重用（→ validate_unit_for_asset_type 同一慣例）。
+    """
+    if asset_type == "stock" and not _STOCK_TICKER_RE.match(name):
+        raise ValueError(f"股票請輸入 4-6 位數字證券代號（例：2330），收到 {name!r}")
 
 
 class FinancialAssetCreateRequest(ApiInput):
@@ -39,6 +52,7 @@ class FinancialAssetCreateRequest(ApiInput):
     @model_validator(mode="after")
     def _validate_unit(self) -> FinancialAssetCreateRequest:
         validate_unit_for_asset_type(self.asset_type, self.input_unit)
+        validate_name_for_asset_type(self.asset_type, self.name)
         return self
 
 

@@ -138,6 +138,31 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     )
 
 
+@pytest.mark.parametrize(
+    "case,bad_ticker", [("name", "聯發科"), ("en", "TSM"), ("short", "23"), ("long", "23300000")]
+)
+async def test_create_stock_asset_rejects_non_numeric_ticker(
+    client: AsyncClient, case: str, bad_ticker: str
+) -> None:
+    """`name` 是報價查詢用的證券代號，收公司名稱／英文代號等非 4-6 位數字一律 422，
+    避免建立後每次算淨資產都因查無報價而失敗（真實案例：使用者輸入「聯發科」而非「2454」）。
+    """
+    # email local-part 避免直接塞中文（EmailStr 可能不允許），改用 case 這個 ASCII 識別字。
+    await _register_and_login(client, f"networth-bad-ticker-{case}@example.com")
+    res = await client.post(
+        "/api/v1/financial-assets",
+        json={
+            "asset_type": "stock",
+            "name": bad_ticker,
+            "input_quantity": "1",
+            "input_unit": "股",
+            "principal_amount": "1000.00",
+        },
+    )
+    assert res.status_code == 422
+    assert res.json()["success"] is False
+
+
 async def test_net_worth_unsupported_metal_name_returns_422(client: AsyncClient) -> None:
     await _register_and_login(client, "networth-unsupported-metal@example.com")
     create_res = await client.post(

@@ -92,11 +92,17 @@ function StockAssetForm(): ReactNode {
             type="text"
             required
             maxLength={100}
+            placeholder="例：2330（不是公司名稱）"
+            pattern="\d{4,6}"
+            title="請輸入 4-6 位數字證券代號，例如 2330"
             value={name}
             onChange={(event) => setName(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
           />
         </label>
+        <p className="-mt-2 text-xs text-text-secondary">
+          用來查報價，須為證券代號（例：2330），輸入公司名稱會查不到報價
+        </p>
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">數量</span>
           <input
@@ -483,23 +489,27 @@ function FinancialAssetList(): ReactNode {
           <p className="text-text-secondary">尚未新增任何金融資產</p>
         )}
         {!isLoading && !error && items.length > 0 && (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="p-2 text-text-secondary">類型</th>
-                <th className="p-2 text-text-secondary">名稱</th>
-                <th className="p-2 text-text-secondary">輸入數量</th>
-                <th className="p-2 text-text-secondary">單位</th>
-                <th className="p-2 text-text-secondary">本金</th>
-                <th className="p-2 text-text-secondary">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((asset) => (
-                <FinancialAssetRow key={asset.financial_asset_uid} asset={asset} />
-              ))}
-            </tbody>
-          </table>
+          // 編輯模式一列有 4 個輸入框 + 下拉 + 按鈕，窄螢幕塞不下；比照 TransactionList.tsx
+          // 寬內容一律包 overflow-x-auto，讓表格在自己的容器內橫向捲動，不撐爆頁面版面。
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th className="p-2 text-text-secondary">類型</th>
+                  <th className="p-2 text-text-secondary">名稱</th>
+                  <th className="p-2 text-text-secondary">輸入數量</th>
+                  <th className="p-2 text-text-secondary">單位</th>
+                  <th className="p-2 text-text-secondary">本金</th>
+                  <th className="p-2 text-text-secondary">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((asset) => (
+                  <FinancialAssetRow key={asset.financial_asset_uid} asset={asset} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
     </CurvedCard>
@@ -648,25 +658,29 @@ function LiabilityList(): ReactNode {
           <p className="text-text-secondary">尚未新增任何負債</p>
         )}
         {!isLoading && !error && items.length > 0 && (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="p-2 text-text-secondary">名稱</th>
-                <th className="p-2 text-text-secondary">金額</th>
-                <th className="p-2 text-text-secondary">利率</th>
-                <th className="p-2 text-text-secondary">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((liability) => (
-                <LiabilityRow
-                  key={liability.liability_uid}
-                  liability={liability}
-                  onRequestDelete={setPendingDelete}
-                />
-              ))}
-            </tbody>
-          </table>
+          // 還款展開列是一整個 form（金額輸入 + 按鈕 + 錯誤文字），窄螢幕塞不下；同上一張表
+          // 包 overflow-x-auto 讓表格自己橫向捲動。
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th className="p-2 text-text-secondary">名稱</th>
+                  <th className="p-2 text-text-secondary">金額</th>
+                  <th className="p-2 text-text-secondary">利率</th>
+                  <th className="p-2 text-text-secondary">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((liability) => (
+                  <LiabilityRow
+                    key={liability.liability_uid}
+                    liability={liability}
+                    onRequestDelete={setPendingDelete}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
       <ConfirmDialog
