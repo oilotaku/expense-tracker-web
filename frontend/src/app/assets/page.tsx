@@ -56,6 +56,7 @@ function StockAssetForm(): ReactNode {
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState<StockUnit>('張')
+  const [principalAmount, setPrincipalAmount] = useState('')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -65,10 +66,12 @@ function StockAssetForm(): ReactNode {
         name,
         input_quantity: quantity,
         input_unit: unit,
+        principal_amount: principalAmount,
       }).unwrap()
       setName('')
       setQuantity('')
       setUnit('張')
+      setPrincipalAmount('')
     } catch {
       // 錯誤已透過 createFinancialAsset() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
     }
@@ -112,6 +115,18 @@ function StockAssetForm(): ReactNode {
             <option value="股">股</option>
           </select>
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">本金</span>
+          <input
+            type="number"
+            required
+            min="0.01"
+            step="0.01"
+            value={principalAmount}
+            onChange={(event) => setPrincipalAmount(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
         {error && (
           <p role="alert" className="text-sm text-danger-700">
             {getErrorMessage(error)}
@@ -131,6 +146,7 @@ function MetalAssetForm(): ReactNode {
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState<MetalUnit>('錢')
+  const [principalAmount, setPrincipalAmount] = useState('')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -140,10 +156,12 @@ function MetalAssetForm(): ReactNode {
         name,
         input_quantity: quantity,
         input_unit: unit,
+        principal_amount: principalAmount,
       }).unwrap()
       setName('')
       setQuantity('')
       setUnit('錢')
+      setPrincipalAmount('')
     } catch {
       // 錯誤已透過 createFinancialAsset() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
     }
@@ -186,6 +204,18 @@ function MetalAssetForm(): ReactNode {
             <option value="兩">兩</option>
             <option value="錢">錢</option>
           </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">本金</span>
+          <input
+            type="number"
+            required
+            min="0.01"
+            step="0.01"
+            value={principalAmount}
+            onChange={(event) => setPrincipalAmount(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
         </label>
         {error && (
           <p role="alert" className="text-sm text-danger-700">
@@ -303,6 +333,7 @@ function FinancialAssetList(): ReactNode {
                 <th className="p-2 text-text-secondary">名稱</th>
                 <th className="p-2 text-text-secondary">輸入數量</th>
                 <th className="p-2 text-text-secondary">單位</th>
+                <th className="p-2 text-text-secondary">本金</th>
               </tr>
             </thead>
             <tbody>
@@ -312,6 +343,9 @@ function FinancialAssetList(): ReactNode {
                   <td className="p-2 text-text-primary">{asset.name}</td>
                   <td className="p-2 text-text-primary">{asset.input_quantity}</td>
                   <td className="p-2 text-text-primary">{asset.input_unit}</td>
+                  <td className="p-2 text-text-primary">
+                    {asset.principal_amount === null ? '—' : asset.principal_amount}
+                  </td>
                 </tr>
               ))}
             </tbody>

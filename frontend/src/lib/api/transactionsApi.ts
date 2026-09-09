@@ -75,7 +75,7 @@ interface ListResponse<T> {
 }
 
 const transactionsApi = baseApi
-  .enhanceEndpoints({ addTagTypes: ['Transaction', 'Account', 'Category'] })
+  .enhanceEndpoints({ addTagTypes: ['Transaction', 'Account', 'Category', 'DashboardSummary'] })
   .injectEndpoints({
     endpoints: (build) => ({
       listTransactions: build.query<TransactionListResponse, TransactionListFilter | void>({
@@ -101,7 +101,11 @@ const transactionsApi = baseApi
       createTransaction: build.mutation<TransactionResponse, TransactionCreateRequest>({
         query: (body) => ({ url: 'transactions', method: 'POST', body }),
         transformResponse: (res: ApiResponse<TransactionResponse>) => unwrapData(res),
-        invalidatesTags: [{ type: 'Transaction', id: 'LIST' }],
+        invalidatesTags: [
+          { type: 'Transaction', id: 'LIST' },
+          { type: 'Account', id: 'LIST' },
+          { type: 'DashboardSummary', id: 'SUMMARY' },
+        ],
       }),
       listAccountOptions: build.query<AccountOption[], void>({
         query: () => 'accounts',

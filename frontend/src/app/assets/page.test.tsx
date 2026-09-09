@@ -43,6 +43,7 @@ const STOCK_ASSET = {
   input_quantity: '2.0000',
   input_unit: '張',
   base_quantity: '2000.0000',
+  principal_amount: '120000.00',
 }
 
 const METAL_ASSET = {
@@ -52,6 +53,7 @@ const METAL_ASSET = {
   input_quantity: '5.0000',
   input_unit: '錢',
   base_quantity: '5.0000',
+  principal_amount: null,
 }
 
 const LIABILITY = {
@@ -101,6 +103,7 @@ describe('AssetsPage', () => {
     })
     const stockForm = getFormByHeading('新增股票持股')
     fireEvent.change(within(stockForm).getByLabelText('數量'), { target: { value: '2' } })
+    fireEvent.change(within(stockForm).getByLabelText('本金'), { target: { value: '120000' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '新增股票' }))
@@ -111,6 +114,7 @@ describe('AssetsPage', () => {
       name: '台積電',
       input_quantity: '2',
       input_unit: '張',
+      principal_amount: '120000',
     })
   })
 
@@ -122,6 +126,7 @@ describe('AssetsPage', () => {
     })
     const metalForm = getFormByHeading('新增貴金屬持有')
     fireEvent.change(within(metalForm).getByLabelText('數量'), { target: { value: '5' } })
+    fireEvent.change(within(metalForm).getByLabelText('本金'), { target: { value: '30000' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '新增貴金屬' }))
@@ -132,6 +137,7 @@ describe('AssetsPage', () => {
       name: '黃金',
       input_quantity: '5',
       input_unit: '錢',
+      principal_amount: '30000',
     })
   })
 
@@ -158,6 +164,12 @@ describe('AssetsPage', () => {
     expect(screen.getByText('股票')).toBeInTheDocument()
     expect(screen.getByText('黃金')).toBeInTheDocument()
     expect(screen.getByText('貴金屬')).toBeInTheDocument()
+  })
+
+  it('金融資產清單顯示本金，null 時顯示 em dash', () => {
+    render(<AssetsPage />)
+    expect(screen.getByText('120000.00')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 
   it('負債清單顯示名稱、金額與利率', () => {

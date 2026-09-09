@@ -30,6 +30,8 @@ class FinancialAsset(BaseModel):
     input_unit: Mapped[str] = mapped_column(String(10), nullable=False)
     # 換算後基本單位數量：asset_type = stock → 股數；asset_type = metal → 錢數
     base_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # 本金（原始購入成本）：nullable，讓既有資產列不用回填一個編造的本金
+    principal_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
 
     __table_args__ = (
         CheckConstraint("asset_type IN ('stock', 'metal')", name="ck_financial_assets_asset_type"),
@@ -40,4 +42,8 @@ class FinancialAsset(BaseModel):
         ),
         CheckConstraint("input_quantity > 0", name="ck_financial_assets_input_quantity_positive"),
         CheckConstraint("base_quantity > 0", name="ck_financial_assets_base_quantity_positive"),
+        CheckConstraint(
+            "principal_amount IS NULL OR principal_amount > 0",
+            name="ck_financial_assets_principal_amount_positive",
+        ),
     )
