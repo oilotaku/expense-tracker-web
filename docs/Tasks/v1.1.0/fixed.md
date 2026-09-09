@@ -76,3 +76,36 @@
 - **修正**: 4 個測試檔的帳戶/分類建立呼叫皆補上 `color`/`icon`；`test_recurring_service.py` 測試分類改名「測試訂閱服務」並註解說明避開系統種子清單原因；`dashboard.py` 註解拆成兩行符合 100 字元行寬。修正後 `uv run pytest`（全套件）從 105 passed / 17 failed / 6 errors → **122 passed / 6 errors**（剩餘 6 個 errors 皆為既有 async 連線池跨 event loop 重用問題，逐一單獨執行皆通過，非本次改動造成，已於 `tasks-v1.1.0.md` 頂部環境備註記錄為已知問題，不在本次修正範圍）。
 - **rule**: NONE
 - **後續**: reflect 候選：`/propose-to-tasks` 對「修改既有必填 schema 欄位」這類橫向變更，拆解時應追加「掃描全 repo 呼叫該 API 的既有測試/程式碼」步驟，而不只看新 task 自己要新增的檔案；長期建議把帳戶/分類建立的測試 helper 收斂成 `tests/factories.py` 之類的共用 fixture，避免同一段建立邏輯在多個測試檔各自維護、各自漂移。
+
+## §8 — PIN 連續失敗鎖定機制從未真正持久化，安全承諾完全失效（task-026 e2e 執行中發現，阻斷性，已拆 task-030）
+
+- **time**: 2026-09-09T08:00:00+08:00
+- **commit**: pending（已拆 task-030 修正）
+- **files**: `backend/app/services/auth_service.py`（`_verify_pin_or_raise`）、`backend/app/api/deps.py`（`get_db` 的 commit/rollback 生命週期，問題根源但不應直接改）
+- **問題**: 本版對外承諾「PIN 連續輸入錯誤 5 次會鎖定 15 分鐘」（`→ propose-v1.1.0.md` 對外承諾、`design-spec.md` §12.2）。task-026 寫 e2e 時用 curl 直打 backend + psql 查表驗證，發現連錯 5 次後第 6 次仍回 401（不是預期的 429），DB 內 `pin_failed_attempts` 恆為 0，鎖定機制完全不生效。
+- **根因**: `_verify_pin_or_raise` 在 PIN 錯誤時呼叫 `record_pin_failure()`（只 `flush()`）後緊接著 `raise AppError(401)`；例外往上拋到 `app/api/deps.py::get_db` 的 `except Exception: await session.rollback(); raise`，把剛才的 flush 一併回捲，失敗計數從未真正寫進資料庫。`backend/tests/api/test_auth_pin.py`（task-002）之所以顯示綠燈，是因為 `tests/conftest.py` 的 `db`/`client` fixture 用外層 transaction + rollback 做測試隔離，沒有複製正式 `get_db` 的「成功 commit / 失敗 rollback」生命週期——test double 與正式路徑分歧，造成假綠燈，這是整個 v1.1.0 過程中第一次被 e2e（走真實 HTTP 全生命週期）而非單元測試（走 test fixture）抓到的分歧案例。
+- **修正**: 未修正（`auth_service.py` 不在 task-026 `affected_files` 內）。已拆 `docs/Tasks/v1.1.0/tasks/task-030-pin-lockout-persistence-fix.md`（CORE-068，優先序最高——這是安全性承諾），修正方向：`_verify_pin_or_raise` 記錄失敗/歸零計數後，在 `raise AppError` 之前明確 `await self.db.commit()`，讓側效應先落地再拋業務錯誤；不改動 `get_db` 通用例外處理（那對其他一般未預期例外的保護是對的）。
+- **rule**: NONE
+- **後續**: task-030 修正後解除；reflect 候選（1）「先記錄側效應、再刻意拋業務錯誤」這個模式，在 API 層規範上應該有明確寫法指引，避免下次新功能重蹈覆轍；（2）test fixture（`conftest.py` 的 `db`/`client`）與正式 `get_db` 生命週期分歧，應該有至少一條「跨 request 持久化」的合約測試守住，不能只靠 e2e 意外抓到。
+
+## §9 — 設定 PIN 成功後從未呼叫 `rememberAccount`，PIN 快速登入入口永遠不出現（task-026 e2e 執行中發現，功能阻斷，已拆 task-031）
+
+- **time**: 2026-09-09T08:00:00+08:00
+- **commit**: pending（已拆 task-031 修正）
+- **files**: `frontend/src/app/settings/page.tsx`（task-021，只解構 `forgetAccount` 未解構/呼叫 `rememberAccount`）、`frontend/src/app/login/page.tsx`（task-018，讀 `accounts` 決定要不要顯示 PIN 入口，因此永遠是空清單）
+- **問題**: `useDeviceAccounts.rememberAccount`（task-014 已完成）從未被任何正式程式碼呼叫，`localStorage`（`device-accounts`）永遠是空清單，導致 `/login` 的「改用 PIN 快速登入」/ `<AccountSwitcherList>` 入口永遠不出現——使用者實際上完全走不到 PIN 登入畫面，這個版本最核心的需求之一（客製化數字鍵盤 + PIN 快速登入）在真實使用情境下不可達。task-018/task-021 各自的單元測試都通過，因為各自都是用測試 fixture 直接塞資料到 `useDeviceAccounts` 底層 `localStorage` 繞過真實流程去驗證 UI 呈現，沒有測到「設定 PIN 成功→這個帳號真的被記住」這一步的串接。
+- **根因**: task-021（設定頁）與 task-014（PIN 前端串接）是同一波次（Wave 2/Wave 3）由不同 worker 平行完成，`rememberAccount` 這個 hook 方法存在，但「呼叫它」這個串接動作沒有被任何一個 task 的目標/Acceptance 明確要求，屬於拆解階段對「元件存在」與「元件被正確串接」兩者的落差。
+- **修正**: 未修正（`settings/page.tsx` 不在 task-026 `affected_files` 內）。已拆 `docs/Tasks/v1.1.0/tasks/task-031-remember-device-account-wiring.md`（CORE-068，優先序高），修正方向：`settings/page.tsx` 首次設定 PIN（`POST /auth/pin`）成功後呼叫 `rememberAccount({ user_uid: me.user_uid, email: me.email })`。
+- **rule**: NONE
+- **後續**: task-031 修正後解除；reflect 候選（元件/hook 拆解時，若該元件的價值完全依賴「被某處呼叫」，Acceptance 應該明確包含「串接點」的驗證，不能只驗元件自身行為）。
+
+## §10 — 2 支 v1.0.0 e2e 因 v1.1.0 改動變紅：登入導向 `/dashboard`、帳戶新增必填 `color`/`icon`（task-026 e2e 執行中發現，已拆 task-032）
+
+- **time**: 2026-09-09T08:00:00+08:00
+- **commit**: pending（已拆 task-032 修正）
+- **files**: `frontend/e2e/multi-user-isolation.spec.ts`、`frontend/e2e/net-worth.spec.ts`（皆為 v1.0.0 task-018 產出，既存自 v1.0.0）
+- **問題**: task-026 執行既有 e2e 全套件時，發現這兩支 v1.0.0 既有 e2e 現在會失敗：(1) 兩者皆斷言登入後導向 `/transactions`，但 task-018（登入頁重做）已把導向目標改成 `/dashboard`（對齊 v1.1.0 IA）；(2) `multi-user-isolation.spec.ts` 的 `createAccountViaApi()` 呼叫 `POST /accounts` 未帶 `color`/`icon`，撞上與 `fixed.md` §7 同一個根因（task-005 新增必填欄位）。CI 的 e2e job 目前因此必紅，與 task-026 新寫的 5 支 spec 無關。
+- **根因**: 這是（既存自 v1.0.0）測試對登入導向目標的斷言，在 v1.1.0 改變該行為時沒有被同步更新，屬於「跨版本既有測試與新版本行為變更」的常見落差類型，與 §7 同一類根因（新必填欄位未同步到所有既有呼叫點）的再次出現，但這次是在 e2e 層。
+- **修正**: 未修正（這兩支 e2e 不在 task-026 `affected_files` 內）。已拆 `docs/Tasks/v1.1.0/tasks/task-032-stale-e2e-specs-fix.md`（CORE-068）。
+- **rule**: NONE
+- **後續**: task-032 修正後解除；與 §7 同一個 reflect 候選（新增必填欄位這類橫向變更，拆解時應該掃描全 repo 含 e2e 在內的所有呼叫點，不只後端單元測試）。
