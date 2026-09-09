@@ -5,10 +5,11 @@ import { unwrapData, type ApiResponse } from './types'
 // 尚未接上該 pipeline（見 budgetsApi.ts / transactionsApi.ts 頂部同一備註）。這裡手寫對齊
 // backend/app/schemas/financial_asset.py / liability.py / net_worth.py 的最小型別；codegen
 // 接上後改成 `components['schemas']['FinancialAssetResponse']` 等型別。
-export type AssetType = 'stock' | 'metal'
+export type AssetType = 'stock' | 'us_stock' | 'metal'
 
-// backend/app/utils/unit_conversion.py：股票只收「張」「股」，貴金屬只收「兩」「錢」。
+// backend/app/utils/unit_conversion.py：台股只收「張」「股」，美股只收「股」，貴金屬只收「兩」「錢」。
 export type StockUnit = '張' | '股'
+export type UsStockUnit = '股'
 export type MetalUnit = '兩' | '錢'
 
 export interface FinancialAssetResponse {
@@ -32,7 +33,7 @@ export interface FinancialAssetCreateRequest {
   asset_type: AssetType
   name: string
   input_quantity: string
-  input_unit: StockUnit | MetalUnit
+  input_unit: StockUnit | UsStockUnit | MetalUnit
   // backend FinancialAssetCreateRequest.principal_amount: Decimal = Field(gt=0, ...)，必填
   principal_amount: string
 }
@@ -72,10 +73,22 @@ export interface LiabilityUpdateRequest {
   interest_rate?: string | null
 }
 
+export interface NetWorthAssetItem {
+  financial_asset_uid: string
+  asset_type: AssetType
+  name: string
+  market_value: string
+  // 本金為 null（舊資產列）或後端算不出漲跌幅時，gain_percent 也是 null——
+  // 不是「漲跌 0%」，前端顯示上要區分（→ backend/app/schemas/net_worth.py 註解）。
+  principal_amount: string | null
+  gain_percent: string | null
+}
+
 export interface NetWorthResponse {
   total_assets: string
   total_liabilities: string
   net_worth: string
+  assets: NetWorthAssetItem[]
 }
 
 const assetsApi = baseApi

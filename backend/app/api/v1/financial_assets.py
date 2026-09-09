@@ -20,7 +20,14 @@ from app.schemas.financial_asset import (
     validate_unit_for_asset_type,
 )
 from app.schemas.response import ApiResponse
-from app.utils.unit_conversion import MetalUnit, StockUnit, metal_to_mace, stock_to_shares
+from app.utils.unit_conversion import (
+    MetalUnit,
+    StockUnit,
+    UsStockUnit,
+    metal_to_mace,
+    stock_to_shares,
+    us_stock_to_shares,
+)
 
 router = APIRouter(prefix="/financial-assets")
 
@@ -34,6 +41,8 @@ def _to_base_quantity(asset_type: AssetType, quantity: Decimal, unit: str) -> De
     """依 asset_type 挑選對應的純換算函式（→ app.utils.unit_conversion）。"""
     if asset_type == "stock":
         return stock_to_shares(quantity, StockUnit(unit))
+    if asset_type == "us_stock":
+        return us_stock_to_shares(quantity, UsStockUnit(unit))
     return metal_to_mace(quantity, MetalUnit(unit))
 
 
@@ -112,8 +121,9 @@ async def update_financial_asset(
     base_quantity: Decimal | None = None
     # asset_type 建立後不可變更（見 schema 註解），單位／名稱是否與 asset_type 搭配用既有型別驗證；
     # 這裡不是 pydantic 的驗證流程（asset_type 不在 payload 內，來自既有資料），ValueError
-    # 需自行轉成 422，否則會被當成未預期例外回 500（→ BE-064）
-    asset_type: AssetType = "stock" if asset.asset_type == "stock" else "metal"
+    # 需自行轉成 422，否則會被當成未預期例外回 500（→ BE-064）。asset_type 存在 DB 已被
+    # ck_financial_assets_asset_type 限制在三個合法值內，cast 而非再猜測分派。
+    asset_type: AssetType = asset.asset_type  # type: ignore[assignment]
     try:
         if payload.name is not None:
             validate_name_for_asset_type(asset_type, payload.name)

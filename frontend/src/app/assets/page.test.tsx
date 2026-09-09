@@ -49,6 +49,7 @@ const useUpdateLiabilityMutation = vi.fn()
 const deleteLiability = vi.fn()
 const useDeleteLiabilityMutation = vi.fn()
 const useListLiabilitiesQuery = vi.fn()
+const useGetNetWorthQuery = vi.fn()
 vi.mock('@/lib/api/assetsApi', () => ({
   useCreateFinancialAssetMutation: () => useCreateFinancialAssetMutation(),
   useUpdateFinancialAssetMutation: () => useUpdateFinancialAssetMutation(),
@@ -57,6 +58,7 @@ vi.mock('@/lib/api/assetsApi', () => ({
   useUpdateLiabilityMutation: () => useUpdateLiabilityMutation(),
   useDeleteLiabilityMutation: () => useDeleteLiabilityMutation(),
   useListLiabilitiesQuery: () => useListLiabilitiesQuery(),
+  useGetNetWorthQuery: () => useGetNetWorthQuery(),
 }))
 
 const STOCK_ASSET = {
@@ -89,6 +91,7 @@ const LIABILITY = {
 describe('AssetsPage', () => {
   beforeEach(() => {
     stubMatchMedia()
+    window.localStorage.clear()
     replace.mockClear()
     useGetMeQuery.mockReset().mockReturnValue({ isLoading: false, isError: false })
 
@@ -138,6 +141,7 @@ describe('AssetsPage', () => {
       isLoading: false,
       error: undefined,
     })
+    useGetNetWorthQuery.mockReset().mockReturnValue({ data: undefined, isLoading: false, error: undefined })
   })
 
   it('送出股票表單觸發 createFinancialAsset mutation（asset_type: stock）', async () => {
@@ -160,6 +164,31 @@ describe('AssetsPage', () => {
       input_quantity: '2',
       input_unit: '張',
       principal_amount: '400000',
+    })
+  })
+
+  it('送出美股表單觸發 createFinancialAsset mutation（asset_type: us_stock，代號轉大寫）', async () => {
+    render(<AssetsPage />)
+
+    fireEvent.change(screen.getByLabelText('美股代號'), { target: { value: 'aapl' } })
+    const usStockForm = getFormByHeading('新增美股持股')
+    fireEvent.change(within(usStockForm).getByLabelText('數量（股）'), {
+      target: { value: '10' },
+    })
+    fireEvent.change(within(usStockForm).getByLabelText('本金（新台幣）'), {
+      target: { value: '40000' },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '新增美股' }))
+    })
+
+    expect(createFinancialAsset).toHaveBeenCalledWith({
+      asset_type: 'us_stock',
+      name: 'AAPL',
+      input_quantity: '10',
+      input_unit: '股',
+      principal_amount: '40000',
     })
   })
 
@@ -203,10 +232,10 @@ describe('AssetsPage', () => {
     })
   })
 
-  it('金融資產清單顯示股票與貴金屬', () => {
+  it('金融資產清單顯示台股與貴金屬', () => {
     render(<AssetsPage />)
     expect(screen.getByText('台積電')).toBeInTheDocument()
-    expect(screen.getByText('股票')).toBeInTheDocument()
+    expect(screen.getByText('台股')).toBeInTheDocument()
     expect(screen.getByText('黃金')).toBeInTheDocument()
     expect(screen.getByText('貴金屬')).toBeInTheDocument()
   })
@@ -215,6 +244,34 @@ describe('AssetsPage', () => {
     render(<AssetsPage />)
     expect(screen.getByText('400000.00')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('金融資產清單顯示對比本金的漲跌幅（預設紅漲綠跌），報價暫不可用時不顯示漲跌幅但資產仍正常顯示', () => {
+    useGetNetWorthQuery.mockReturnValue({
+      data: {
+        total_assets: '0.00',
+        total_liabilities: '0.00',
+        net_worth: '0.00',
+        assets: [
+          {
+            financial_asset_uid: 'a1',
+            asset_type: 'stock',
+            name: '台積電',
+            market_value: '800000.00',
+            principal_amount: '400000.00',
+            gain_percent: '100.00',
+          },
+          // a2（黃金）故意不在彙總結果內，模擬報價暫不可用時該筆沒有漲跌幅資料
+        ],
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<AssetsPage />)
+
+    expect(screen.getByText('+100.00%')).toHaveClass('text-expense-600')
+    // 黃金（a2）沒有對應的漲跌幅資料，但本身仍正常顯示，不因報價暫不可用而整頁壞掉
+    expect(screen.getByText('黃金')).toBeInTheDocument()
   })
 
   it('負債清單顯示名稱、金額與利率', () => {

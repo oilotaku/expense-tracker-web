@@ -1,9 +1,9 @@
 """PricingService：cache-aside 是否真的避免重打外部 API，以及貴金屬換算公式。
 
 外部 HTTP 一律用 `respx` mock（→ AGENTS.md § Testing），**禁**真打 TWSE / gold-api /
-open.er-api.com。Redis 走真實測試實例（→ CACHE-026），db index 1（與 production 的
-db 0 隔開），測試前後清掉本檔用到的 `price:*` key（**禁** `FLUSHALL`/`FLUSHDB`，
-即使是測試 fixture 也一樣，→ CACHE-017）。
+open.er-api.com / query1.finance.yahoo.com。Redis 走真實測試實例（→ CACHE-026），db index 1
+（與 production 的 db 0 隔開），測試前後清掉本檔用到的 `price:*` key（**禁**
+`FLUSHALL`/`FLUSHDB`，即使是測試 fixture 也一樣，→ CACHE-017）。
 """
 
 import json
@@ -16,6 +16,7 @@ import respx
 from redis.asyncio import Redis
 
 from app.clients.stock_price_client import TwseMisNotFoundError
+from app.clients.us_stock_price_client import UsStockPriceNotFoundError
 from app.core.cache import create_redis
 from app.core.config import get_settings
 from app.services.pricing_service import (
@@ -24,10 +25,12 @@ from app.services.pricing_service import (
     METAL_PRICE_TTL_SECONDS,
     STOCK_QUOTE_TTL_SECONDS,
     TROY_OUNCE_GRAMS,
+    US_STOCK_QUOTE_TTL_SECONDS,
     PricingService,
     _fx_rate_key,
     _metal_price_key,
     _stock_quote_key,
+    _us_stock_quote_key,
 )
 
 _PRICE_KEY_PATTERN = "expense_tracker_web:v1:price:*"
@@ -109,6 +112,47 @@ async def test_stock_price_not_found_when_both_markets_are_shell(redis_client: R
 
     with pytest.raises(TwseMisNotFoundError):
         await service.get_stock_price("0000")
+
+
+def _yahoo_chart_body(price: str) -> dict[str, object]:
+    return {"chart": {"result": [{"meta": {"regularMarketPrice": price}}], "error": None}}
+
+
+@respx.mock
+async def test_us_stock_price_cache_prevents_second_external_call_and_converts_to_twd(
+    redis_client: Redis,
+) -> None:
+    quote_route = respx.get("https://query1.finance.yahoo.com/v8/finance/chart/AAPL").mock(
+        return_value=httpx.Response(200, json=_yahoo_chart_body("200.00"))
+    )
+    fx_route = respx.get("https://open.er-api.com/v6/latest/USD").mock(
+        return_value=httpx.Response(
+            200, json={"result": "success", "base_code": "USD", "rates": {"TWD": 31.5}}
+        )
+    )
+    service = PricingService(redis=redis_client)
+
+    price1 = await service.get_us_stock_price("AAPL")
+    price2 = await service.get_us_stock_price("AAPL")
+
+    # ADR-0003：美股報價（USD）× USD/TWD 匯率 = TWD 市價
+    assert price1 == price2 == Decimal("200.00") * Decimal("31.5")
+    assert quote_route.call_count == 1  # 第二次命中快取，未重打外部 API
+    assert fx_route.call_count == 1  # 匯率也命中快取（跟貴金屬換算共用同一份匯率快取）
+
+    ttl = await redis_client.ttl(_us_stock_quote_key("AAPL"))
+    assert 0 < ttl <= US_STOCK_QUOTE_TTL_SECONDS
+
+
+@respx.mock
+async def test_us_stock_price_not_found_returns_404(redis_client: Redis) -> None:
+    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/ZZZZZ").mock(
+        return_value=httpx.Response(404)
+    )
+    service = PricingService(redis=redis_client)
+
+    with pytest.raises(UsStockPriceNotFoundError):
+        await service.get_us_stock_price("ZZZZZ")
 
 
 @respx.mock

@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NetWorthCard } from './NetWorthCard'
 import type { AccountResponse } from '@/lib/api/accountsApi'
+import type { NetWorthAssetItem } from '@/lib/api/assetsApi'
 
 const CASH_ACCOUNT: AccountResponse = {
   account_uid: 'a-cash',
@@ -27,9 +28,32 @@ const NET_WORTH = {
   total_assets: '150000.00',
   total_liabilities: '50000.00',
   net_worth: '100000.00',
+  assets: [] as NetWorthAssetItem[],
+}
+
+const STOCK_ASSET: NetWorthAssetItem = {
+  financial_asset_uid: 'fa-1',
+  asset_type: 'stock',
+  name: '2330',
+  market_value: '1200000.00',
+  principal_amount: '60000.00',
+  gain_percent: '1900.00',
+}
+
+const METAL_ASSET: NetWorthAssetItem = {
+  financial_asset_uid: 'fa-2',
+  asset_type: 'metal',
+  name: '黃金',
+  market_value: '20000.00',
+  principal_amount: '30000.00',
+  gain_percent: '-33.33',
 }
 
 describe('NetWorthCard', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
   it('列出帳戶餘額與淨資產彙總', () => {
     render(
       <NetWorthCard accounts={ACCOUNTS} netWorth={NET_WORTH} isLoading={false} onRetry={vi.fn()} />,
@@ -66,6 +90,31 @@ describe('NetWorthCard', () => {
   it('沒有帳戶時顯示空狀態', () => {
     render(<NetWorthCard accounts={[]} netWorth={NET_WORTH} isLoading={false} onRetry={vi.fn()} />)
     expect(screen.getByText('尚未建立任何帳戶')).toBeInTheDocument()
+  })
+
+  it('列出浮動資產市值與對比本金的漲跌幅（預設紅漲綠跌，→ usePriceColorPreference）', () => {
+    render(
+      <NetWorthCard
+        accounts={ACCOUNTS}
+        netWorth={{ ...NET_WORTH, assets: [STOCK_ASSET, METAL_ASSET] }}
+        isLoading={false}
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('浮動資產')).toBeInTheDocument()
+    expect(screen.getByText('2330')).toBeInTheDocument()
+    expect(screen.getByText('NT$1,200,000')).toBeInTheDocument()
+    expect(screen.getByText('+1900.00%')).toHaveClass('text-expense-600')
+
+    expect(screen.getByText('黃金')).toBeInTheDocument()
+    expect(screen.getByText('NT$20,000')).toBeInTheDocument()
+    expect(screen.getByText('-33.33%')).toHaveClass('text-income-600')
+  })
+
+  it('沒有浮動資產時不顯示浮動資產區塊', () => {
+    render(<NetWorthCard accounts={ACCOUNTS} netWorth={NET_WORTH} isLoading={false} onRetry={vi.fn()} />)
+    expect(screen.queryByText('浮動資產')).not.toBeInTheDocument()
   })
 
   it('載入中顯示提示，不顯示淨資產數字', () => {

@@ -1,9 +1,9 @@
 """淨資產彙總服務：帳戶餘額加總 + 金融資產市值（呼叫 task-014 `pricing_service`）－ 負債。
 
 金融資產市值 = `base_quantity`（股數 / 錢數，已由 task-013 換算完成，→
-`app/utils/unit_conversion.py` 模組頂註解）× 報價服務回傳的單位市價（股票：每股價；
-貴金屬：每錢價，`pricing_service.get_metal_price_per_mace` 已完成 troy oz → 錢的換算），
-此處不需再次換算。
+`app/utils/unit_conversion.py` 模組頂註解）× 報價服務回傳的單位市價（台股／美股：每股價，
+美股已含 USD→TWD 換算，→ ADR-0003；貴金屬：每錢價，`pricing_service.get_metal_price_per_mace`
+已完成 troy oz → 錢的換算），此處不需再次換算。
 
 貴金屬的 `financial_assets.name` 存的是品項名稱（例："黃金"），但
 `app.clients.metal_price_client.MetalSymbol` 只認 `XAU` / `XAG` 代碼；本檔維護兩者對應
@@ -32,7 +32,7 @@ from app.core.exceptions import AppError
 from app.repositories.account_repository import AccountRepository
 from app.repositories.financial_asset_repository import FinancialAssetRepository
 from app.repositories.liability_repository import LiabilityRepository
-from app.schemas.net_worth import NetWorthResponse
+from app.schemas.net_worth import NetWorthAssetItem, NetWorthResponse
 from app.services.pricing_service import PricingService
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,18 @@ _METAL_NAME_TO_SYMBOL: Final[dict[str, MetalSymbol]] = {
     "黃金": "XAU",
     "白銀": "XAG",
 }
+
+_PERCENT_PLACES: Final[Decimal] = Decimal("0.01")
+
+
+def _gain_percent(market_value: Decimal, principal_amount: Decimal | None) -> Decimal | None:
+    """漲跌幅 = (市值 - 本金) / 本金 * 100；本金為 null（舊資產列，本金功能上線前建立）或
+    0 時無法計算，回 None（→ NetWorthAssetItem 註解：None 代表不適用，不是「漲跌 0%」）。
+    """
+    if principal_amount is None or principal_amount == 0:
+        return None
+    percent = (market_value - principal_amount) / principal_amount * 100
+    return percent.quantize(_PERCENT_PLACES, rounding=ROUND_HALF_UP)
 
 
 class NetWorthPricingUnavailableError(AppError):
@@ -77,9 +89,21 @@ class NetWorthService:
         liabilities = await LiabilityRepository(self._db).list_by_user_uid(user_uid)
 
         total_assets = sum((account.balance for account in accounts), Decimal("0"))
+        asset_items: list[NetWorthAssetItem] = []
         for asset in assets:
             price = await self._get_unit_price(asset.asset_type, asset.name)
-            total_assets += asset.base_quantity * price
+            market_value = (asset.base_quantity * price).quantize(_CENTS, rounding=ROUND_HALF_UP)
+            total_assets += market_value
+            asset_items.append(
+                NetWorthAssetItem(
+                    financial_asset_uid=asset.financial_asset_uid,
+                    asset_type=asset.asset_type,
+                    name=asset.name,
+                    market_value=market_value,
+                    principal_amount=asset.principal_amount,
+                    gain_percent=_gain_percent(market_value, asset.principal_amount),
+                )
+            )
 
         total_liabilities = sum((liability.amount for liability in liabilities), Decimal("0"))
 
@@ -91,11 +115,14 @@ class NetWorthService:
             total_assets=total_assets,
             total_liabilities=total_liabilities,
             net_worth=net_worth,
+            assets=asset_items,
         )
 
     async def _get_unit_price(self, asset_type: str, name: str) -> Decimal:
         if asset_type == "stock":
             return await self._call_pricing(self._pricing_service.get_stock_price(name))
+        if asset_type == "us_stock":
+            return await self._call_pricing(self._pricing_service.get_us_stock_price(name))
         symbol = _METAL_NAME_TO_SYMBOL.get(name)
         if symbol is None:
             raise UnsupportedMetalAssetError(name)

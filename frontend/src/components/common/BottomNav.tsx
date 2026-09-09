@@ -63,7 +63,7 @@ function TabLink({ item, active }: TabLinkProps): ReactNode {
 }
 
 /**
- * 行動端底部固定導覽（design-spec §3.1：5 格 `min-h-[64px]`，中間為突出 FAB，`md:hidden`
+ * 行動端底部固定導覽（design-spec §3.1：5 格 `min-h-[80px]`，中間為突出 FAB，`md:hidden`
  * 只在 `< md` 顯示，`→ FE-063`）。「更多」不開新路由，改開 `<Dialog>` 列出次要導覽項 +
  * 外觀切換 + 登出，三處共用同一顆 `<ThemeToggle>`（`→ §2.7`）。
  */
@@ -76,7 +76,7 @@ export function BottomNav({ items, moreItems, onAddClick, onLogout }: BottomNavP
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-stretch border-t border-border bg-surface md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex h-20 items-stretch border-t border-border bg-surface md:hidden"
         aria-label="行動導覽"
       >
         {leftItems.map((item) => (

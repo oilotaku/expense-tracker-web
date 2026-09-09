@@ -7,10 +7,12 @@ import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { usePriceColorPreference } from '@/hooks/usePriceColorPreference'
 import {
   useCreateFinancialAssetMutation,
   useCreateLiabilityMutation,
   useDeleteLiabilityMutation,
+  useGetNetWorthQuery,
   useListFinancialAssetsQuery,
   useListLiabilitiesQuery,
   useUpdateFinancialAssetMutation,
@@ -20,6 +22,7 @@ import {
   type LiabilityResponse,
   type MetalUnit,
   type StockUnit,
+  type UsStockUnit,
 } from '@/lib/api/assetsApi'
 
 // 同 BudgetsPage / RecurringRulesPage（FE-029）：錯誤處理必用型別收窄，禁 `error as any`。
@@ -145,6 +148,90 @@ function StockAssetForm(): ReactNode {
         )}
         <button type="submit" disabled={isLoading} className={submitButtonClassName({ isLoading })}>
           {isLoading ? '送出中…' : '新增股票'}
+        </button>
+      </form>
+    </CurvedCard>
+  )
+}
+
+function UsStockAssetForm(): ReactNode {
+  const [createFinancialAsset, { isLoading, error }] = useCreateFinancialAssetMutation()
+
+  const [name, setName] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [principalAmount, setPrincipalAmount] = useState('')
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    try {
+      await createFinancialAsset({
+        asset_type: 'us_stock',
+        name: name.toUpperCase(),
+        input_quantity: quantity,
+        // 美股沒有「張」的整手概念，只有「股」一種單位（→ ADR-0003），不提供選單
+        input_unit: '股',
+        principal_amount: principalAmount,
+      }).unwrap()
+      setName('')
+      setQuantity('')
+      setPrincipalAmount('')
+    } catch {
+      // 錯誤已透過 createFinancialAsset() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
+    }
+  }
+
+  return (
+    <CurvedCard>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        <h2 className="text-lg font-semibold text-text-primary">新增美股持股</h2>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">美股代號</span>
+          <input
+            type="text"
+            required
+            maxLength={100}
+            placeholder="例：AAPL"
+            pattern="[A-Za-z]{1,5}(\.[A-Za-z])?"
+            title="請輸入 1-5 位英文字母代號，例如 AAPL"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <p className="-mt-2 text-xs text-text-secondary">
+          用來查報價，須為證券代號（例：AAPL），輸入公司名稱會查不到報價
+        </p>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">數量（股）</span>
+          <input
+            type="number"
+            required
+            min="0.0001"
+            step="0.0001"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">本金（新台幣）</span>
+          <input
+            type="number"
+            required
+            min="0.01"
+            step="0.01"
+            value={principalAmount}
+            onChange={(event) => setPrincipalAmount(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        {error && (
+          <p role="alert" className="text-sm text-danger-700">
+            {getErrorMessage(error)}
+          </p>
+        )}
+        <button type="submit" disabled={isLoading} className={submitButtonClassName({ isLoading })}>
+          {isLoading ? '送出中…' : '新增美股'}
         </button>
       </form>
     </CurvedCard>
@@ -315,37 +402,57 @@ function LiabilityForm(): ReactNode {
   )
 }
 
+const ASSET_TYPE_LABEL: Record<AssetType, string> = {
+  stock: '台股',
+  us_stock: '美股',
+  metal: '貴金屬',
+}
+
 function financialAssetTypeLabel(asset: FinancialAssetResponse): string {
-  return asset.asset_type === 'stock' ? '股票' : '貴金屬'
+  return ASSET_TYPE_LABEL[asset.asset_type]
 }
 
 // 單位選項依該筆資產固定的 asset_type 決定（backend/app/utils/unit_conversion.py），asset_type
-// 本身不可編輯，故編輯表單不提供 asset_type 控制項。
-function unitOptionsFor(assetType: AssetType): readonly (StockUnit | MetalUnit)[] {
-  return assetType === 'stock' ? (['張', '股'] as const) : (['兩', '錢'] as const)
+// 本身不可編輯，故編輯表單不提供 asset_type 控制項。美股沒有「張」的整手概念，只有「股」
+// （使用者確認，本次 session；→ ADR-0003）。
+function unitOptionsFor(assetType: AssetType): readonly (StockUnit | UsStockUnit | MetalUnit)[] {
+  if (assetType === 'stock') return ['張', '股'] as const
+  if (assetType === 'us_stock') return ['股'] as const
+  return ['兩', '錢'] as const
 }
 
 interface FinancialAssetRowProps {
   asset: FinancialAssetResponse
+  /** 對比本金的漲跌幅（→ useGetNetWorthQuery，同一筆 uid 比對）；報價服務暫時不可用或本金
+   * 為 null 時是 undefined/null，不顯示漲跌幅徽章，不當成 0%。 */
+  gainPercent?: string | null
 }
 
 /**
- * 金融資產清單單列，就地編輯（mirror `AccountCard.tsx` 的編輯 UX，但改用 Save/Cancel 按鈕
- * 一次送出四個欄位，而非逐欄 blur 提交）：點擊「✎」展開名稱／數量／單位／本金輸入框，
- * 「儲存」呼叫 `updateFinancialAsset`（asset_type 不可變，不在送出的欄位內）。
+ * 金融資產清單單項：讀模式一張卡；就地編輯（mirror `AccountCard.tsx` 的編輯 UX，但改用
+ * Save/Cancel 按鈕一次送出四個欄位，而非逐欄 blur 提交）：點擊「✎」展開名稱／數量／單位／本金
+ * 輸入框，「儲存」呼叫 `updateFinancialAsset`（asset_type 不可變，不在送出的欄位內）。
+ *
+ * 不用 `<table>`：編輯模式 4 個輸入框 + 下拉 + 按鈕在窄螢幕的 `<td>` 裡塞不下，`overflow-x-auto`
+ * 包在 flex 版面（`AssetsPage` 的 `<main>` 是 `flex-col`）裡因 flex item 預設
+ * `min-width: auto` 不會真的觸發，表格照樣把整頁撐寬；改用卡片（比照 `accounts/page.tsx` 的
+ * `AccountCard` 網格）在所有螢幕寬度都用同一份垂直堆疊版面，天生不會有這個問題。
  */
-function FinancialAssetRow({ asset }: FinancialAssetRowProps): ReactNode {
+function FinancialAssetRow({ asset, gainPercent }: FinancialAssetRowProps): ReactNode {
+  const { colorForGain } = usePriceColorPreference()
   const [updateFinancialAsset, { isLoading, error }] = useUpdateFinancialAssetMutation()
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName] = useState(asset.name)
   const [quantity, setQuantity] = useState(asset.input_quantity)
-  const [unit, setUnit] = useState<StockUnit | MetalUnit>(asset.input_unit as StockUnit | MetalUnit)
+  const [unit, setUnit] = useState<StockUnit | UsStockUnit | MetalUnit>(
+    asset.input_unit as StockUnit | UsStockUnit | MetalUnit,
+  )
   const [principalAmount, setPrincipalAmount] = useState(asset.principal_amount ?? '')
 
   function startEdit(): void {
     setName(asset.name)
     setQuantity(asset.input_quantity)
-    setUnit(asset.input_unit as StockUnit | MetalUnit)
+    setUnit(asset.input_unit as StockUnit | UsStockUnit | MetalUnit)
     setPrincipalAmount(asset.principal_amount ?? '')
     setIsEditing(true)
   }
@@ -367,30 +474,41 @@ function FinancialAssetRow({ asset }: FinancialAssetRowProps): ReactNode {
 
   if (!isEditing) {
     return (
-      <tr className="border-t border-border">
-        <td className="p-2 text-text-primary">{financialAssetTypeLabel(asset)}</td>
-        <td className="p-2 text-text-primary">{asset.name}</td>
-        <td className="p-2 text-text-primary">{asset.input_quantity}</td>
-        <td className="p-2 text-text-primary">{asset.input_unit}</td>
-        <td className="p-2 text-text-primary">{asset.principal_amount ?? '—'}</td>
-        <td className="p-2">
-          <button
-            type="button"
-            onClick={startEdit}
-            aria-label={`編輯 ${asset.name}`}
-            className="flex h-11 w-11 items-center justify-center text-text-secondary hover:text-text-primary md:h-8 md:w-8"
-          >
-            <span aria-hidden="true">✎</span>
-          </button>
-        </td>
-      </tr>
+      <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs text-text-secondary">{financialAssetTypeLabel(asset)}</span>
+          <span className="font-medium text-text-primary">{asset.name}</span>
+          <div className="flex flex-wrap gap-2 text-sm text-text-secondary">
+            <span>
+              {asset.input_quantity} {asset.input_unit}
+            </span>
+            <span>本金</span>
+            <span>{asset.principal_amount ?? '—'}</span>
+            {gainPercent != null && (
+              <span className={`tabular-nums ${colorForGain(Number(gainPercent) >= 0)}`}>
+                {Number(gainPercent) >= 0 ? '+' : ''}
+                {gainPercent}%
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={startEdit}
+          aria-label={`編輯 ${asset.name}`}
+          className="flex h-11 w-11 shrink-0 items-center justify-center text-text-secondary hover:text-text-primary md:h-8 md:w-8"
+        >
+          <span aria-hidden="true">✎</span>
+        </button>
+      </div>
     )
   }
 
   return (
-    <tr className="border-t border-border">
-      <td className="p-2 text-text-primary">{financialAssetTypeLabel(asset)}</td>
-      <td className="p-2">
+    <div className="flex flex-col gap-3 rounded-md border border-border p-3">
+      <span className="text-xs text-text-secondary">{financialAssetTypeLabel(asset)}</span>
+      <label className="flex flex-col gap-1">
+        <span className="text-sm text-text-secondary">名稱</span>
         <input
           type="text"
           required
@@ -400,34 +518,39 @@ function FinancialAssetRow({ asset }: FinancialAssetRowProps): ReactNode {
           onChange={(event) => setName(event.target.value)}
           className="min-h-11 w-full rounded-md border border-border bg-surface px-2 text-text-primary"
         />
-      </td>
-      <td className="p-2">
-        <input
-          type="number"
-          required
-          min="0.0001"
-          step="0.0001"
-          aria-label={`${asset.name} 數量`}
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-          className="min-h-11 w-24 rounded-md border border-border bg-surface px-2 text-text-primary"
-        />
-      </td>
-      <td className="p-2">
-        <select
-          aria-label={`${asset.name} 單位`}
-          value={unit}
-          onChange={(event) => setUnit(event.target.value as StockUnit | MetalUnit)}
-          className="min-h-11 rounded-md border border-border bg-surface px-2 text-text-primary"
-        >
-          {unitOptionsFor(asset.asset_type).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td className="p-2">
+      </label>
+      <div className="flex gap-2">
+        <label className="flex flex-1 flex-col gap-1">
+          <span className="text-sm text-text-secondary">數量</span>
+          <input
+            type="number"
+            required
+            min="0.0001"
+            step="0.0001"
+            aria-label={`${asset.name} 數量`}
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            className="min-h-11 w-full rounded-md border border-border bg-surface px-2 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">單位</span>
+          <select
+            aria-label={`${asset.name} 單位`}
+            value={unit}
+            onChange={(event) => setUnit(event.target.value as StockUnit | UsStockUnit | MetalUnit)}
+            className="min-h-11 rounded-md border border-border bg-surface px-2 text-text-primary"
+          >
+            {unitOptionsFor(asset.asset_type).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="flex flex-col gap-1">
+        <span className="text-sm text-text-secondary">本金</span>
         <input
           type="number"
           required
@@ -436,44 +559,46 @@ function FinancialAssetRow({ asset }: FinancialAssetRowProps): ReactNode {
           aria-label={`${asset.name} 本金`}
           value={principalAmount}
           onChange={(event) => setPrincipalAmount(event.target.value)}
-          className="min-h-11 w-24 rounded-md border border-border bg-surface px-2 text-text-primary"
+          className="min-h-11 w-full rounded-md border border-border bg-surface px-2 text-text-primary"
         />
-      </td>
-      <td className="p-2">
-        <div className="flex flex-col gap-1">
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isLoading}
-              aria-label={`儲存 ${asset.name}`}
-              className="min-h-11 rounded-md px-2 text-primary-600 hover:text-primary-700 disabled:pointer-events-none disabled:opacity-50 md:min-h-8"
-            >
-              {isLoading ? '儲存中…' : '儲存'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsEditing(false)}
-              aria-label={`取消編輯 ${asset.name}`}
-              className="min-h-11 rounded-md px-2 text-text-secondary hover:text-text-primary md:min-h-8"
-            >
-              取消
-            </button>
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-danger-700">
-              {getErrorMessage(error)}
-            </p>
-          )}
-        </div>
-      </td>
-    </tr>
+      </label>
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isLoading}
+          aria-label={`儲存 ${asset.name}`}
+          className="min-h-11 rounded-md px-2 text-primary-600 hover:text-primary-700 disabled:pointer-events-none disabled:opacity-50 md:min-h-8"
+        >
+          {isLoading ? '儲存中…' : '儲存'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsEditing(false)}
+          aria-label={`取消編輯 ${asset.name}`}
+          className="min-h-11 rounded-md px-2 text-text-secondary hover:text-text-primary md:min-h-8"
+        >
+          取消
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-danger-700">
+          {getErrorMessage(error)}
+        </p>
+      )}
+    </div>
   )
 }
 
 function FinancialAssetList(): ReactNode {
   const { data, isLoading, error } = useListFinancialAssetsQuery()
   const items = data?.items ?? []
+  // 漲跌幅是另一支彙總 API（會打外部報價來源，可能 424），跟資產 CRUD 分開查、失敗互不影響：
+  // 報價暫時不可用時只是不顯示漲跌幅徽章，不影響資產清單本身正常顯示（→ task-014/016 既有分工）。
+  const { data: netWorth } = useGetNetWorthQuery()
+  const gainPercentByUid = new Map(
+    (netWorth?.assets ?? []).map((item) => [item.financial_asset_uid, item.gain_percent]),
+  )
 
   return (
     <CurvedCard>
@@ -489,26 +614,14 @@ function FinancialAssetList(): ReactNode {
           <p className="text-text-secondary">尚未新增任何金融資產</p>
         )}
         {!isLoading && !error && items.length > 0 && (
-          // 編輯模式一列有 4 個輸入框 + 下拉 + 按鈕，窄螢幕塞不下；比照 TransactionList.tsx
-          // 寬內容一律包 overflow-x-auto，讓表格在自己的容器內橫向捲動，不撐爆頁面版面。
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  <th className="p-2 text-text-secondary">類型</th>
-                  <th className="p-2 text-text-secondary">名稱</th>
-                  <th className="p-2 text-text-secondary">輸入數量</th>
-                  <th className="p-2 text-text-secondary">單位</th>
-                  <th className="p-2 text-text-secondary">本金</th>
-                  <th className="p-2 text-text-secondary">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((asset) => (
-                  <FinancialAssetRow key={asset.financial_asset_uid} asset={asset} />
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-2">
+            {items.map((asset) => (
+              <FinancialAssetRow
+                key={asset.financial_asset_uid}
+                asset={asset}
+                gainPercent={gainPercentByUid.get(asset.financial_asset_uid)}
+              />
+            ))}
           </div>
         )}
       </section>
@@ -559,72 +672,70 @@ function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactN
   }
 
   return (
-    <>
-      <tr className="border-t border-border">
-        <td className="p-2 text-text-primary">{liability.name}</td>
-        {/* design-spec §2.3：金額語意色，負債會減損淨資產，語意同「支出」用 expense-700 */}
-        <td className="p-2 text-expense-700">{liability.amount}</td>
-        <td className="p-2 text-text-primary">{interestRateLabel(liability)}</td>
-        <td className="p-2">
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => setIsRepaying((current) => !current)}
-              aria-expanded={isRepaying}
-              aria-label={`還款 ${liability.name}`}
-              className="min-h-11 rounded-md px-2 text-primary-600 hover:text-primary-700 md:min-h-8"
-            >
-              還款
-            </button>
-            <button
-              type="button"
-              onClick={() => onRequestDelete(liability)}
-              aria-label={`刪除 ${liability.name}`}
-              className="flex h-11 w-11 items-center justify-center text-danger-500 hover:text-danger-700 md:h-8 md:w-8"
-            >
-              <span aria-hidden="true">✕</span>
-            </button>
+    <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium text-text-primary">{liability.name}</span>
+          <div className="flex gap-2 text-sm">
+            {/* design-spec §2.3：金額語意色，負債會減損淨資產，語意同「支出」用 expense-700 */}
+            <span className="text-expense-700">{liability.amount}</span>
+            <span className="text-text-primary">{interestRateLabel(liability)}</span>
           </div>
-        </td>
-      </tr>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button
+            type="button"
+            onClick={() => setIsRepaying((current) => !current)}
+            aria-expanded={isRepaying}
+            aria-label={`還款 ${liability.name}`}
+            className="min-h-11 rounded-md px-2 text-primary-600 hover:text-primary-700 md:min-h-8"
+          >
+            還款
+          </button>
+          <button
+            type="button"
+            onClick={() => onRequestDelete(liability)}
+            aria-label={`刪除 ${liability.name}`}
+            className="flex h-11 w-11 items-center justify-center text-danger-500 hover:text-danger-700 md:h-8 md:w-8"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
+        </div>
+      </div>
       {isRepaying && (
-        <tr className="border-t border-border">
-          <td colSpan={4} className="p-2">
-            <form onSubmit={handleRepay} className="flex flex-wrap items-end gap-2" noValidate>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm text-text-secondary">還款金額</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  aria-label={`${liability.name} 還款金額`}
-                  value={paymentAmount}
-                  onChange={(event) => setPaymentAmount(event.target.value)}
-                  className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={!isPaymentValid || isLoading}
-                className={submitButtonClassName({ isLoading })}
-              >
-                {isLoading ? '還款中…' : '確認還款'}
-              </button>
-              {hasPaymentInput && !isPaymentValid && (
-                <p role="alert" className="text-sm text-danger-700">
-                  還款金額須大於 0 且小於目前金額；全部還清請改用「刪除」
-                </p>
-              )}
-              {error && (
-                <p role="alert" className="text-sm text-danger-700">
-                  {getErrorMessage(error)}
-                </p>
-              )}
-            </form>
-          </td>
-        </tr>
+        <form onSubmit={handleRepay} className="flex flex-wrap items-end gap-2" noValidate>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">還款金額</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              aria-label={`${liability.name} 還款金額`}
+              value={paymentAmount}
+              onChange={(event) => setPaymentAmount(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={!isPaymentValid || isLoading}
+            className={submitButtonClassName({ isLoading })}
+          >
+            {isLoading ? '還款中…' : '確認還款'}
+          </button>
+          {hasPaymentInput && !isPaymentValid && (
+            <p role="alert" className="text-sm text-danger-700">
+              還款金額須大於 0 且小於目前金額；全部還清請改用「刪除」
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-danger-700">
+              {getErrorMessage(error)}
+            </p>
+          )}
+        </form>
       )}
-    </>
+    </div>
   )
 }
 
@@ -658,28 +769,14 @@ function LiabilityList(): ReactNode {
           <p className="text-text-secondary">尚未新增任何負債</p>
         )}
         {!isLoading && !error && items.length > 0 && (
-          // 還款展開列是一整個 form（金額輸入 + 按鈕 + 錯誤文字），窄螢幕塞不下；同上一張表
-          // 包 overflow-x-auto 讓表格自己橫向捲動。
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  <th className="p-2 text-text-secondary">名稱</th>
-                  <th className="p-2 text-text-secondary">金額</th>
-                  <th className="p-2 text-text-secondary">利率</th>
-                  <th className="p-2 text-text-secondary">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((liability) => (
-                  <LiabilityRow
-                    key={liability.liability_uid}
-                    liability={liability}
-                    onRequestDelete={setPendingDelete}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-2">
+            {items.map((liability) => (
+              <LiabilityRow
+                key={liability.liability_uid}
+                liability={liability}
+                onRequestDelete={setPendingDelete}
+              />
+            ))}
           </div>
         )}
       </section>
@@ -702,6 +799,7 @@ export default function AssetsPage(): ReactNode {
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 bg-bg p-6">
         <h1 className="text-2xl font-bold text-text-primary md:text-3xl">資產 / 負債</h1>
         <StockAssetForm />
+        <UsStockAssetForm />
         <MetalAssetForm />
         <LiabilityForm />
         <FinancialAssetList />

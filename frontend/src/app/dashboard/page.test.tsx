@@ -87,6 +87,7 @@ const NET_WORTH = {
   total_assets: '150000.00',
   total_liabilities: '50000.00',
   net_worth: '100000.00',
+  assets: [],
 }
 
 const ACCOUNTS = {

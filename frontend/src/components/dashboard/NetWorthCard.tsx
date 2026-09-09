@@ -6,8 +6,9 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { formatAmount } from '@/components/dashboard/StatTile'
+import { usePriceColorPreference } from '@/hooks/usePriceColorPreference'
 import type { AccountResponse } from '@/lib/api/accountsApi'
-import type { NetWorthResponse } from '@/lib/api/assetsApi'
+import type { NetWorthAssetItem, NetWorthResponse } from '@/lib/api/assetsApi'
 
 // 同 dashboard/page.tsx 等既有頁面（FE-029）：錯誤處理必用型別收窄，禁 `error as any`。
 function getErrorMessage(error: FetchBaseQueryError | SerializedError | undefined): string {
@@ -49,6 +50,35 @@ function NetWorthRow({ label, value }: NetWorthRowProps): ReactNode {
       <span className="text-sm text-text-secondary md:text-base">{label}</span>
       <span className="text-base font-semibold tabular-nums text-text-primary md:text-lg">{value}</span>
     </div>
+  )
+}
+
+interface FloatingAssetRowProps {
+  asset: NetWorthAssetItem
+}
+
+// gain_percent 為 null 代表無本金可比對（→ assetsApi.ts NetWorthAssetItem 註解），不是 0%，
+// 不顯示漲跌幅徽章；漲跌配色（紅漲綠跌／綠漲紅跌）是可調偏好，→ usePriceColorPreference。
+function FloatingAssetRow({ asset }: FloatingAssetRowProps): ReactNode {
+  const { colorForGain } = usePriceColorPreference()
+  const gainPercent = asset.gain_percent === null ? null : Number(asset.gain_percent)
+  const gainColor = gainPercent === null ? '' : colorForGain(gainPercent >= 0)
+
+  return (
+    <li className="flex items-center justify-between gap-3">
+      <span className="truncate text-sm text-text-primary md:text-base">{asset.name}</span>
+      <span className="flex shrink-0 items-baseline gap-2">
+        <span className="text-sm tabular-nums text-text-primary md:text-base">
+          {formatAmount(asset.market_value)}
+        </span>
+        {gainPercent !== null && (
+          <span className={`text-xs tabular-nums md:text-sm ${gainColor}`}>
+            {gainPercent >= 0 ? '+' : ''}
+            {asset.gain_percent}%
+          </span>
+        )}
+      </span>
+    </li>
   )
 }
 
@@ -96,6 +126,17 @@ export function NetWorthCard({ accounts, netWorth, isLoading, error, onRetry }: 
       )}
 
       {hiddenCount > 0 && <p className="text-xs text-text-muted">另有 {hiddenCount} 個帳戶未顯示</p>}
+
+      {!isLoading && !error && netWorth && netWorth.assets.length > 0 && (
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
+          <h3 className="text-sm font-semibold text-text-secondary md:text-base">浮動資產</h3>
+          <ul className="flex flex-col gap-2" role="list">
+            {netWorth.assets.map((asset) => (
+              <FloatingAssetRow key={asset.financial_asset_uid} asset={asset} />
+            ))}
+          </ul>
+        </div>
+      )}
 
       <Link
         href="/accounts"

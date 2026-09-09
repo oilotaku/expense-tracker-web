@@ -27,18 +27,23 @@ async def _register_and_login(client: AsyncClient, email: str) -> None:
 
 
 class _FakePricingService:
-    """固定回傳事先給定的股票 / 貴金屬單價，驗證彙總數字用，不含任何 I/O。"""
+    """固定回傳事先給定的台股 / 美股 / 貴金屬單價，驗證彙總數字用，不含任何 I/O。"""
 
     def __init__(
         self,
         stock_prices: dict[str, Decimal] | None = None,
+        us_stock_prices: dict[str, Decimal] | None = None,
         metal_prices: dict[MetalSymbol, Decimal] | None = None,
     ) -> None:
         self._stock_prices = stock_prices or {}
+        self._us_stock_prices = us_stock_prices or {}
         self._metal_prices = metal_prices or {}
 
     async def get_stock_price(self, ticker: str) -> Decimal:
         return self._stock_prices[ticker]
+
+    async def get_us_stock_price(self, ticker: str) -> Decimal:
+        return self._us_stock_prices[ticker]
 
     async def get_metal_price_per_mace(self, symbol: MetalSymbol) -> Decimal:
         return self._metal_prices[symbol]
@@ -48,6 +53,9 @@ class _TimeoutPricingService:
     """模擬外部報價來源逾時：任何報價呼叫都拋出 client 層的逾時例外。"""
 
     async def get_stock_price(self, ticker: str) -> Decimal:
+        raise TwseMisTimeoutError()
+
+    async def get_us_stock_price(self, ticker: str) -> Decimal:
         raise TwseMisTimeoutError()
 
     async def get_metal_price_per_mace(self, symbol: MetalSymbol) -> Decimal:
@@ -99,6 +107,20 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     assert stock_res.status_code == 201
     assert Decimal(stock_res.json()["data"]["base_quantity"]) == Decimal("2000")  # 1 張=1000 股
 
+    us_stock_res = await client.post(
+        "/api/v1/financial-assets",
+        json={
+            "asset_type": "us_stock",
+            "name": "AAPL",
+            "input_quantity": "10",
+            "input_unit": "股",
+            "principal_amount": "40000.00",
+        },
+    )
+    assert us_stock_res.status_code == 201
+    # 美股沒有「張」概念，輸入量即基本單位量，不需換算（→ ADR-0003 / unit_conversion.py）
+    assert Decimal(us_stock_res.json()["data"]["base_quantity"]) == Decimal("10")
+
     metal_res = await client.post(
         "/api/v1/financial-assets",
         json={
@@ -120,6 +142,7 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     _override_pricing(
         lambda: _FakePricingService(
             stock_prices={"2330": Decimal("600.00")},
+            us_stock_prices={"AAPL": Decimal("5000.00")},  # 已含 USD→TWD 換算（→ ADR-0003）
             metal_prices={"XAU": Decimal("8000.00")},
         )
     )
@@ -128,14 +151,35 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     assert res.status_code == 200
     body = res.json()["data"]
 
-    # 總資產 = 10000.00（帳戶）+ 2000 股 * 600.00（股票市值 1,200,000.00）
-    #        + 5 錢 * 8000.00（黃金市值 40,000.00） = 1,250,000.00
-    assert body["total_assets"] == "1250000.00"
+    # 總資產 = 10000.00（帳戶）+ 2000 股 * 600.00（台股市值 1,200,000.00）
+    #        + 10 股 * 5000.00（美股市值 50,000.00）
+    #        + 5 錢 * 8000.00（黃金市值 40,000.00） = 1,300,000.00
+    assert body["total_assets"] == "1300000.00"
     assert body["total_liabilities"] == "500000.00"
-    assert body["net_worth"] == "750000.00"
+    assert body["net_worth"] == "800000.00"
     assert Decimal(body["total_assets"]) - Decimal(body["total_liabilities"]) == Decimal(
         body["net_worth"]
     )
+
+    # 每筆資產的市值與對比本金的漲跌幅（→ NetWorthAssetItem）
+    assets_by_name = {item["name"]: item for item in body["assets"]}
+    stock_item = assets_by_name["2330"]
+    assert stock_item["market_value"] == "1200000.00"
+    assert stock_item["principal_amount"] == "60000.00"
+    # (1200000 - 60000) / 60000 * 100 = 1900.00%
+    assert stock_item["gain_percent"] == "1900.00"
+
+    us_stock_item = assets_by_name["AAPL"]
+    assert us_stock_item["market_value"] == "50000.00"
+    assert us_stock_item["principal_amount"] == "40000.00"
+    # (50000 - 40000) / 40000 * 100 = 25.00%
+    assert us_stock_item["gain_percent"] == "25.00"
+
+    metal_item = assets_by_name["黃金"]
+    assert metal_item["market_value"] == "40000.00"
+    assert metal_item["principal_amount"] == "30000.00"
+    # (40000 - 30000) / 30000 * 100 = 33.333...% → 33.33
+    assert metal_item["gain_percent"] == "33.33"
 
 
 @pytest.mark.parametrize(
@@ -163,6 +207,48 @@ async def test_create_stock_asset_rejects_non_numeric_ticker(
     assert res.json()["success"] is False
 
 
+@pytest.mark.parametrize(
+    "case,bad_ticker",
+    [("tw_style", "2330"), ("lowercase", "aapl"), ("too_long", "TOOLONG"), ("with_space", "AA PL")],
+)
+async def test_create_us_stock_asset_rejects_non_ticker_format(
+    client: AsyncClient, case: str, bad_ticker: str
+) -> None:
+    """美股代號須為 1-5 位大寫英文字母（選配 `.字母` 後綴），拒絕台股代號格式、小寫、
+    超長或含空白（→ validate_name_for_asset_type / ADR-0003）。
+    """
+    await _register_and_login(client, f"networth-bad-us-ticker-{case}@example.com")
+    res = await client.post(
+        "/api/v1/financial-assets",
+        json={
+            "asset_type": "us_stock",
+            "name": bad_ticker,
+            "input_quantity": "1",
+            "input_unit": "股",
+            "principal_amount": "1000.00",
+        },
+    )
+    assert res.status_code == 422
+    assert res.json()["success"] is False
+
+
+async def test_create_us_stock_asset_rejects_lot_unit(client: AsyncClient) -> None:
+    """美股沒有「張」的整手概念，只收「股」（→ 使用者確認，本次 session；ADR-0003）。"""
+    await _register_and_login(client, "networth-us-stock-no-lot@example.com")
+    res = await client.post(
+        "/api/v1/financial-assets",
+        json={
+            "asset_type": "us_stock",
+            "name": "AAPL",
+            "input_quantity": "1",
+            "input_unit": "張",
+            "principal_amount": "1000.00",
+        },
+    )
+    assert res.status_code == 422
+    assert res.json()["success"] is False
+
+
 async def test_net_worth_unsupported_metal_name_returns_422(client: AsyncClient) -> None:
     await _register_and_login(client, "networth-unsupported-metal@example.com")
     create_res = await client.post(
@@ -183,13 +269,15 @@ async def test_net_worth_unsupported_metal_name_returns_422(client: AsyncClient)
     assert res.json()["success"] is False
 
 
-@pytest.mark.parametrize("asset_type,name", [("stock", "2330"), ("metal", "黃金")])
+@pytest.mark.parametrize(
+    "asset_type,name", [("stock", "2330"), ("us_stock", "AAPL"), ("metal", "黃金")]
+)
 async def test_net_worth_pricing_timeout_returns_clear_non_5xx_error(
     client: AsyncClient, asset_type: str, name: str
 ) -> None:
     """外部報價來源逾時時，整個彙總請求需回傳明確錯誤（非整個服務以未預期例外崩潰成通用 500）。"""
     await _register_and_login(client, f"networth-timeout-{asset_type}@example.com")
-    unit = "股" if asset_type == "stock" else "錢"
+    unit = "錢" if asset_type == "metal" else "股"
     create_res = await client.post(
         "/api/v1/financial-assets",
         json={
