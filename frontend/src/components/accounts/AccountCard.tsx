@@ -10,6 +10,10 @@ export interface AccountCardProps {
   account: AccountResponse
   /** 只剩最後一個帳戶時刪除保護生效（`→ A4`），停用刪除按鈕並顯示提示文字。 */
   isOnlyAccount: boolean
+  /** 改名/改色/改圖示的 API 呼叫還在進行中（父層依 accountUid 精準對到「這張卡片」，
+   * 不是「全部卡片」，→ app/accounts/page.tsx savingAccountUid）。用來即時停用/淡化
+   * 名稱輸入框與色票/圖示選擇器，避免使用者誤以為點擊沒有反應而重複點擊。 */
+  isSaving?: boolean
   onNameChange: (accountUid: string, name: string) => void
   onColorChange: (accountUid: string, color: string) => void
   onIconChange: (accountUid: string, icon: string) => void
@@ -182,6 +186,7 @@ function resolveIconGlyph(icon: string): IconGlyphDefinition {
 export function AccountCard({
   account,
   isOnlyAccount,
+  isSaving = false,
   onNameChange,
   onColorChange,
   onIconChange,
@@ -260,11 +265,16 @@ export function AccountCard({
       )}
       {isEditing && (
         <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3">
+          {/* 獨立於 <label> 之外（不當它的子節點）：放進 <label> 內會被瀏覽器算進 input 的
+              accessible name，讓 getByLabelText('名稱') 在儲存中途多比對到「名稱 儲存中…」
+              而找不到元素（→ 本次會話稍早修過同一種 bug，assets/page.tsx 表單提示文字同理）。 */}
+          {isSaving && <p className="text-xs text-text-muted">儲存中…</p>}
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">名稱</span>
             <input
               type="text"
               maxLength={100}
+              disabled={isSaving}
               value={draftName}
               onChange={(event) => setDraftName(event.target.value)}
               onBlur={commitName}
@@ -274,13 +284,14 @@ export function AccountCard({
                   commitName()
                 }
               }}
-              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary disabled:opacity-50"
             />
           </label>
           <div className="flex flex-col gap-2">
             <span className="text-sm text-text-secondary">顏色</span>
             <ColorSwatchPicker
               value={account.color}
+              disabled={isSaving}
               onChange={(color) => onColorChange(account.account_uid, color)}
             />
           </div>
@@ -288,6 +299,7 @@ export function AccountCard({
             <span className="text-sm text-text-secondary">圖示</span>
             <IconPicker
               value={account.icon}
+              disabled={isSaving}
               onChange={(nextIcon) => onIconChange(account.account_uid, nextIcon)}
             />
           </div>

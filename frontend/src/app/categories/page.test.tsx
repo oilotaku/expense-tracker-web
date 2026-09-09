@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CategoriesPage from './page'
 
@@ -121,6 +121,59 @@ describe('CategoriesPage', () => {
     ])
     render(<CategoriesPage />)
     expect(screen.getByRole('alert')).toHaveTextContent('已存在同名分類')
+  })
+
+  it('改色/改圖示：CategoryChip 點色票 / 圖示即時呼叫 updateCategory', async () => {
+    render(<CategoriesPage />)
+
+    // 頁面上方常駐「+ 新增分類」表單也有一整組色票/圖示選擇器（→ design-spec §8），
+    // 用 within() 限定在這張 CategoryChip 自己的容器內查詢，避免撞到表單那組同名按鈕。
+    fireEvent.click(screen.getByLabelText('編輯 訂閱'))
+    const chip = within(screen.getByLabelText('編輯 訂閱').parentElement as HTMLElement)
+
+    // 儲存中色票/圖示會被 disabled（→ 即時回饋修復），兩次點擊之間要等第一次的
+    // updateCategory().unwrap() 真正 resolve、isSaving 解除，第二次點擊才點得到。
+    await act(async () => {
+      fireEvent.click(chip.getByRole('button', { name: '選擇顏色 #D65FA0' }))
+    })
+    expect(updateCategory).toHaveBeenCalledExactlyOnceWith({ categoryUid: 'c-subscription', color: '#D65FA0' })
+
+    await act(async () => {
+      fireEvent.click(chip.getByRole('button', { name: '信用卡' }))
+    })
+    expect(updateCategory).toHaveBeenLastCalledWith({ categoryUid: 'c-subscription', icon: 'creditCard' })
+  })
+
+  it('改色時儲存中會停用色票/圖示並顯示「儲存中…」，完成後恢復', async () => {
+    // updateCategory 是所有分類共用同一顆 mutation trigger，是「這一顆分類正在儲存」
+    // 而不是「isLoading 全站生效」（→ app/categories/page.tsx savingCategoryUid）；用一個
+    // 手動控制的 Promise 卡住 unwrap()，觀察儲存中的中間狀態，再手動 resolve 驗證恢復。
+    let resolveUpdate: (value: typeof SUBSCRIPTION_CATEGORY) => void = () => {}
+    updateCategory.mockReturnValue({
+      unwrap: () =>
+        new Promise<typeof SUBSCRIPTION_CATEGORY>((resolve) => {
+          resolveUpdate = resolve
+        }),
+    })
+
+    render(<CategoriesPage />)
+    fireEvent.click(screen.getByLabelText('編輯 訂閱'))
+    const chip = within(screen.getByLabelText('編輯 訂閱').parentElement as HTMLElement)
+
+    await act(async () => {
+      fireEvent.click(chip.getByRole('button', { name: '選擇顏色 #D65FA0' }))
+    })
+
+    expect(chip.getByText('儲存中…')).toBeInTheDocument()
+    expect(chip.getByRole('button', { name: '選擇顏色 #D65FA0' })).toBeDisabled()
+
+    await act(async () => {
+      resolveUpdate(SUBSCRIPTION_CATEGORY)
+      await Promise.resolve()
+    })
+
+    expect(chip.queryByText('儲存中…')).not.toBeInTheDocument()
+    expect(chip.getByRole('button', { name: '選擇顏色 #D65FA0' })).not.toBeDisabled()
   })
 
   it('刪除分類走 ConfirmDialog：點刪除按鈕開對話框，確認後才呼叫 deleteCategory', async () => {

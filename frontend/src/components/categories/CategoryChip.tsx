@@ -7,6 +7,10 @@ import type { CategoryResponse } from '@/lib/api/categoriesApi'
 
 export interface CategoryChipProps {
   category: CategoryResponse
+  /** 改色/改圖示的 API 呼叫還在進行中（父層依 categoryUid 精準對到「這一顆」，
+   * 不是「全部」，→ app/categories/page.tsx savingCategoryUid）。用來即時停用/淡化
+   * 色票/圖示選擇器，避免使用者誤以為點擊沒有反應而重複點擊。 */
+  isSaving?: boolean
   onColorChange: (categoryUid: string, color: string) => void
   onIconChange: (categoryUid: string, icon: string) => void
   onRequestDelete: (category: CategoryResponse) => void
@@ -179,6 +183,7 @@ const LONG_PRESS_MS = 500
  */
 export function CategoryChip({
   category,
+  isSaving = false,
   onColorChange,
   onIconChange,
   onRequestDelete,
@@ -248,11 +253,17 @@ export function CategoryChip({
       </button>
       {isEditing && (
         <div className="flex flex-col gap-3 border-t border-border pt-3">
+          {isSaving && <span className="text-xs text-text-muted">儲存中…</span>}
           <ColorSwatchPicker
             value={category.color}
+            disabled={isSaving}
             onChange={(color) => onColorChange(category.category_uid, color)}
           />
-          <IconPicker value={category.icon} onChange={(nextIcon) => onIconChange(category.category_uid, nextIcon)} />
+          <IconPicker
+            value={category.icon}
+            disabled={isSaving}
+            onChange={(nextIcon) => onIconChange(category.category_uid, nextIcon)}
+          />
         </div>
       )}
     </div>

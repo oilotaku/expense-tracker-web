@@ -163,6 +163,38 @@ describe('AccountsPage', () => {
     expect(updateAccount).toHaveBeenCalledExactlyOnceWith({ accountUid: 'a-cash', icon: 'creditCard' })
   })
 
+  it('改色時儲存中會停用名稱輸入框/色票/圖示並顯示「儲存中…」，完成後恢復', async () => {
+    // updateAccount 是所有帳戶共用同一顆 mutation trigger，是「這一張卡片正在儲存」而不是
+    // 「isLoading 全站生效」（→ app/accounts/page.tsx savingAccountUid）；用一個手動控制的
+    // Promise 卡住 unwrap()，觀察儲存中的中間狀態，再手動 resolve 驗證恢復。
+    let resolveUpdate: (value: typeof CASH_ACCOUNT) => void = () => {}
+    updateAccount.mockReturnValue({
+      unwrap: () =>
+        new Promise<typeof CASH_ACCOUNT>((resolve) => {
+          resolveUpdate = resolve
+        }),
+    })
+
+    render(<AccountsPage />)
+    fireEvent.click(screen.getByLabelText('編輯 現金'))
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '選擇顏色 #D65FA0' }))
+    })
+
+    expect(screen.getByText('儲存中…')).toBeInTheDocument()
+    expect(screen.getByLabelText('名稱')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '選擇顏色 #D65FA0' })).toBeDisabled()
+
+    await act(async () => {
+      resolveUpdate(CASH_ACCOUNT)
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('儲存中…')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('名稱')).not.toBeDisabled()
+  })
+
   it('刪除帳戶走 ConfirmDialog：點刪除按鈕開對話框並顯示既有交易警告文字，確認後才呼叫 deleteAccount', async () => {
     render(<AccountsPage />)
 

@@ -151,20 +151,39 @@ export default function AccountsPage(): ReactNode {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<AccountResponse | null>(null)
+  // updateAccount 是所有帳戶共用同一個 mutation trigger，其 isLoading 反映的是「最後一次呼叫」
+  // 而非「哪一張卡片」；改名/改色/改圖示是即時回饋（→ 使用者回報「操作回饋要更即時」），需要
+  // 精準對到「正在儲存的是哪一張卡片」，故另外自行追蹤 accountUid，不能直接用 mutation 自帶的
+  // isLoading（那樣會讓所有卡片同時顯示成儲存中）。
+  const [savingAccountUid, setSavingAccountUid] = useState<string | null>(null)
 
   const [updateAccount] = useUpdateAccountMutation()
   const [deleteAccount, { isLoading: isDeleting }] = useDeleteAccountMutation()
 
+  async function commitAccountUpdate(
+    accountUid: string,
+    patch: { name?: string; color?: string; icon?: string },
+  ): Promise<void> {
+    setSavingAccountUid(accountUid)
+    try {
+      await updateAccount({ accountUid, ...patch }).unwrap()
+    } catch {
+      // 失敗時卡片維持既有顯示值（樂觀更新非本次範圍），錯誤不額外攔截
+    } finally {
+      setSavingAccountUid((current) => (current === accountUid ? null : current))
+    }
+  }
+
   function handleNameChange(accountUid: string, name: string): void {
-    void updateAccount({ accountUid, name })
+    void commitAccountUpdate(accountUid, { name })
   }
 
   function handleColorChange(accountUid: string, color: string): void {
-    void updateAccount({ accountUid, color })
+    void commitAccountUpdate(accountUid, { color })
   }
 
   function handleIconChange(accountUid: string, icon: string): void {
-    void updateAccount({ accountUid, icon })
+    void commitAccountUpdate(accountUid, { icon })
   }
 
   async function handleConfirmDelete(): Promise<void> {
@@ -208,6 +227,7 @@ export default function AccountsPage(): ReactNode {
                   key={account.account_uid}
                   account={account}
                   isOnlyAccount={isOnlyAccount}
+                  isSaving={savingAccountUid === account.account_uid}
                   onNameChange={handleNameChange}
                   onColorChange={handleColorChange}
                   onIconChange={handleIconChange}

@@ -131,13 +131,31 @@ function CategoryGrid({ categories, isLoading, error }: CategoryGridProps): Reac
   const [updateCategory] = useUpdateCategoryMutation()
   const [deleteCategory, { isLoading: isDeleting }] = useDeleteCategoryMutation()
   const [pendingDelete, setPendingDelete] = useState<CategoryResponse | null>(null)
+  // 同 accounts/page.tsx savingAccountUid：updateCategory 是所有分類共用同一個 mutation
+  // trigger，isLoading 對不到「哪一個」分類，改色/改圖示要精準停用「正在儲存的那一張」
+  // 才是真正的即時回饋，故自行追蹤 categoryUid。
+  const [savingCategoryUid, setSavingCategoryUid] = useState<string | null>(null)
+
+  async function commitCategoryUpdate(
+    categoryUid: string,
+    patch: { color?: string; icon?: string },
+  ): Promise<void> {
+    setSavingCategoryUid(categoryUid)
+    try {
+      await updateCategory({ categoryUid, ...patch }).unwrap()
+    } catch {
+      // 失敗時卡片維持既有顯示值（樂觀更新非本次範圍），錯誤不額外攔截
+    } finally {
+      setSavingCategoryUid((current) => (current === categoryUid ? null : current))
+    }
+  }
 
   function handleColorChange(categoryUid: string, color: string): void {
-    void updateCategory({ categoryUid, color })
+    void commitCategoryUpdate(categoryUid, { color })
   }
 
   function handleIconChange(categoryUid: string, icon: string): void {
-    void updateCategory({ categoryUid, icon })
+    void commitCategoryUpdate(categoryUid, { icon })
   }
 
   async function handleConfirmDelete(): Promise<void> {
@@ -168,6 +186,7 @@ function CategoryGrid({ categories, isLoading, error }: CategoryGridProps): Reac
             <CategoryChip
               key={category.category_uid}
               category={category}
+              isSaving={savingCategoryUid === category.category_uid}
               onColorChange={handleColorChange}
               onIconChange={handleIconChange}
               onRequestDelete={setPendingDelete}
