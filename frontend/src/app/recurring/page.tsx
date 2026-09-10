@@ -7,15 +7,20 @@ import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
 import { CurvedCard } from '@/components/common/CurvedCard'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import {
   useCreateRecurringRuleMutation,
+  useDeleteRecurringRuleMutation,
   useListRecurringRulesQuery,
+  useUpdateRecurringRuleMutation,
   type RecurringIntervalUnit,
   type RecurringRuleResponse,
 } from '@/lib/api/recurringApi'
 import {
   useListAccountOptionsQuery,
   useListCategoryOptionsQuery,
+  type AccountOption,
+  type CategoryOption,
   type NonTransferType,
 } from '@/lib/api/transactionsApi'
 import { useListLiabilitiesQuery } from '@/lib/api/assetsApi'
@@ -304,35 +309,282 @@ interface RecurringRuleCardProps {
   accountName: string
   categoryName: string
   liabilityName: string | null
+  accounts: AccountOption[]
+  categories: CategoryOption[]
+  onRequestDelete: (rule: RecurringRuleResponse) => void
 }
 
+/**
+ * 就地編輯（mirror `assets/page.tsx` 的 `FinancialAssetRow`）：點「✎」展開與新增表單同一組欄位、
+ * 預填目前值，「儲存」呼叫 `updateRecurringRule`。`liability_uid` 不在編輯欄位內（連結負債只能在
+ * 資產頁「設定定期還款」時建立，這裡編輯的是既有規則的金額 / 週期等，不改變其連結對象）；若使用者
+ * 把連結負債還款的規則改成收入，後端會回 422（`liability_uid` 需搭配 expense），錯誤訊息照樣顯示。
+ */
 function RecurringRuleCard({
   rule,
   accountName,
   categoryName,
   liabilityName,
+  accounts,
+  categories,
+  onRequestDelete,
 }: RecurringRuleCardProps): ReactNode {
+  const [updateRecurringRule, { isLoading, error }] = useUpdateRecurringRuleMutation()
+  const [isEditing, setIsEditing] = useState(false)
+  const [transactionType, setTransactionType] = useState<NonTransferType>(rule.transaction_type)
+  const [categoryUid, setCategoryUid] = useState(rule.category_uid)
+  const [accountUid, setAccountUid] = useState(rule.account_uid)
+  const [description, setDescription] = useState(rule.description)
+  const [amount, setAmount] = useState(rule.amount)
+  const [paymentMethod, setPaymentMethod] = useState(rule.payment_method)
+  const [intervalUnit, setIntervalUnit] = useState<RecurringIntervalUnit>(rule.interval_unit)
+  const [intervalCount, setIntervalCount] = useState(String(rule.interval_count))
+  const [anchorDate, setAnchorDate] = useState(rule.anchor_date)
+  const [validationError, setValidationError] = useState<string | null>(null)
+
+  function startEdit(): void {
+    setTransactionType(rule.transaction_type)
+    setCategoryUid(rule.category_uid)
+    setAccountUid(rule.account_uid)
+    setDescription(rule.description)
+    setAmount(rule.amount)
+    setPaymentMethod(rule.payment_method)
+    setIntervalUnit(rule.interval_unit)
+    setIntervalCount(String(rule.interval_count))
+    setAnchorDate(rule.anchor_date)
+    setValidationError(null)
+    setIsEditing(true)
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    const intervalCountError = validateIntervalCount(intervalCount)
+    if (intervalCountError) {
+      setValidationError(intervalCountError)
+      return
+    }
+    const anchorDateError = validateAnchorDate(anchorDate)
+    if (anchorDateError) {
+      setValidationError(anchorDateError)
+      return
+    }
+    setValidationError(null)
+    try {
+      await updateRecurringRule({
+        recurring_rule_uid: rule.recurring_rule_uid,
+        account_uid: accountUid,
+        category_uid: categoryUid,
+        description,
+        amount,
+        transaction_type: transactionType,
+        payment_method: paymentMethod,
+        interval_unit: intervalUnit,
+        interval_count: Number(intervalCount),
+        anchor_date: anchorDate,
+      }).unwrap()
+      setIsEditing(false)
+    } catch {
+      // 錯誤已透過 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
+    }
+  }
+
   // 負債定期還款規則：分類文字改顯示連結的負債名稱，讓使用者一眼分辨這是還款而非一般週期支出
   const categoryLabel = liabilityName !== null ? `負債還款：${liabilityName}` : categoryName
+
+  if (!isEditing) {
+    return (
+      <CurvedCard>
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium text-text-primary">{rule.description}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs ${TRANSACTION_TYPE_BADGE_CLASSNAME[rule.transaction_type]}`}
+            >
+              {TRANSACTION_TYPE_LABEL[rule.transaction_type]}
+            </span>
+            <button
+              type="button"
+              onClick={startEdit}
+              aria-label={`編輯 ${rule.description}`}
+              className="flex h-11 w-11 items-center justify-center text-text-secondary hover:text-text-primary md:h-8 md:w-8"
+            >
+              <span aria-hidden="true">✎</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRequestDelete(rule)}
+              aria-label={`刪除 ${rule.description}`}
+              className="flex h-11 w-11 items-center justify-center text-danger-500 hover:text-danger-700 md:h-8 md:w-8"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-text-secondary">
+          {categoryLabel} · {accountName} · {rule.payment_method}
+        </p>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-sm text-text-secondary">{intervalDescription(rule)}</span>
+          <span className={`font-semibold ${TRANSACTION_TYPE_AMOUNT_CLASSNAME[rule.transaction_type]}`}>
+            {rule.amount}
+          </span>
+        </div>
+      </CurvedCard>
+    )
+  }
+
+  const displayedError = validationError ?? getErrorMessage(error)
+
   return (
     <CurvedCard>
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-text-primary">{rule.description}</span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${TRANSACTION_TYPE_BADGE_CLASSNAME[rule.transaction_type]}`}
-        >
-          {TRANSACTION_TYPE_LABEL[rule.transaction_type]}
-        </span>
-      </div>
-      <p className="mt-2 text-sm text-text-secondary">
-        {categoryLabel} · {accountName} · {rule.payment_method}
-      </p>
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-sm text-text-secondary">{intervalDescription(rule)}</span>
-        <span className={`font-semibold ${TRANSACTION_TYPE_AMOUNT_CLASSNAME[rule.transaction_type]}`}>
-          {rule.amount}
-        </span>
-      </div>
+      <form onSubmit={handleSave} className="flex flex-col gap-3" noValidate>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">收支類型</span>
+          <select
+            aria-label={`${rule.description} 收支類型`}
+            value={transactionType}
+            onChange={(event) => setTransactionType(event.target.value as NonTransferType)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          >
+            <option value="expense">支出</option>
+            <option value="income">收入</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">分類</span>
+          <select
+            required
+            aria-label={`${rule.description} 分類`}
+            value={categoryUid}
+            onChange={(event) => setCategoryUid(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          >
+            {categories.map((category) => (
+              <option key={category.category_uid} value={category.category_uid}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">帳戶</span>
+          <select
+            required
+            aria-label={`${rule.description} 帳戶`}
+            value={accountUid}
+            onChange={(event) => setAccountUid(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          >
+            {accounts.map((account) => (
+              <option key={account.account_uid} value={account.account_uid}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">說明</span>
+          <input
+            type="text"
+            required
+            maxLength={255}
+            aria-label={`${rule.description} 說明`}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">金額</span>
+          <input
+            type="number"
+            required
+            min="0.01"
+            step="0.01"
+            aria-label={`${rule.description} 金額`}
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">支付方式</span>
+          <input
+            type="text"
+            required
+            maxLength={50}
+            aria-label={`${rule.description} 支付方式`}
+            value={paymentMethod}
+            onChange={(event) => setPaymentMethod(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">週期單位</span>
+          <select
+            aria-label={`${rule.description} 週期單位`}
+            value={intervalUnit}
+            onChange={(event) => setIntervalUnit(event.target.value as RecurringIntervalUnit)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          >
+            {INTERVAL_UNIT_OPTIONS.map((unit) => (
+              <option key={unit} value={unit}>
+                {INTERVAL_UNIT_LABEL[unit]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">
+            每幾個{INTERVAL_UNIT_LABEL[intervalUnit]}執行一次（1–99）
+          </span>
+          <input
+            type="number"
+            required
+            min={MIN_INTERVAL_COUNT}
+            max={MAX_INTERVAL_COUNT}
+            step={1}
+            aria-label={`${rule.description} 間隔數`}
+            value={intervalCount}
+            onChange={(event) => setIntervalCount(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">起算日</span>
+          <input
+            type="date"
+            required
+            aria-label={`${rule.description} 起算日`}
+            value={anchorDate}
+            onChange={(event) => setAnchorDate(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        {displayedError && (
+          <p role="alert" className="text-sm text-danger-700">
+            {displayedError}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={isLoading}
+            aria-label={`儲存 ${rule.description}`}
+            className={submitButtonClassName({ isLoading })}
+          >
+            {isLoading ? '儲存中…' : '儲存'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsEditing(false)}
+            aria-label={`取消編輯 ${rule.description}`}
+            className="min-h-11 rounded-md px-4 text-text-secondary hover:text-text-primary md:min-h-8"
+          >
+            取消
+          </button>
+        </div>
+      </form>
     </CurvedCard>
   )
 }
@@ -342,13 +594,27 @@ function RecurringRuleList(): ReactNode {
   const { data: categories } = useListCategoryOptionsQuery()
   const { data: liabilities } = useListLiabilitiesQuery()
   const { data, isLoading, error } = useListRecurringRulesQuery()
+  const [deleteRecurringRule, { isLoading: isDeleting }] = useDeleteRecurringRuleMutation()
+  const [pendingDelete, setPendingDelete] = useState<RecurringRuleResponse | null>(null)
 
   const items = data?.items ?? []
-  const accountNameByUid = new Map((accounts ?? []).map((a) => [a.account_uid, a.name]))
-  const categoryNameByUid = new Map((categories ?? []).map((c) => [c.category_uid, c.name]))
+  const accountOptions = accounts ?? []
+  const categoryOptions = categories ?? []
+  const accountNameByUid = new Map(accountOptions.map((a) => [a.account_uid, a.name]))
+  const categoryNameByUid = new Map(categoryOptions.map((c) => [c.category_uid, c.name]))
   const liabilityNameByUid = new Map(
     (liabilities?.items ?? []).map((l) => [l.liability_uid, l.name]),
   )
+
+  async function handleConfirmDelete(): Promise<void> {
+    if (pendingDelete === null) return
+    try {
+      await deleteRecurringRule(pendingDelete.recurring_rule_uid).unwrap()
+    } catch {
+      // 刪除失敗維持既有清單顯示，同 assets/page.tsx 的 LiabilityList 既有慣例，不額外攔截
+    }
+    setPendingDelete(null)
+  }
 
   return (
     <section className="flex flex-col gap-4">
@@ -375,11 +641,23 @@ function RecurringRuleList(): ReactNode {
                     ? (liabilityNameByUid.get(rule.liability_uid) ?? '—')
                     : null
                 }
+                accounts={accountOptions}
+                categories={categoryOptions}
+                onRequestDelete={setPendingDelete}
               />
             </li>
           ))}
         </ul>
       )}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`刪除「${pendingDelete?.description ?? ''}」？`}
+        description="刪除後將無法復原，之後不會再依此規則自動產生交易"
+        confirmLabel={isDeleting ? '刪除中…' : '刪除'}
+        destructive
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </section>
   )
 }

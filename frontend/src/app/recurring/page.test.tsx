@@ -30,9 +30,15 @@ vi.mock('@/lib/api/authApi', () => ({
 
 const createRecurringRule = vi.fn()
 const useCreateRecurringRuleMutation = vi.fn()
+const updateRecurringRule = vi.fn()
+const useUpdateRecurringRuleMutation = vi.fn()
+const deleteRecurringRule = vi.fn()
+const useDeleteRecurringRuleMutation = vi.fn()
 const useListRecurringRulesQuery = vi.fn()
 vi.mock('@/lib/api/recurringApi', () => ({
   useCreateRecurringRuleMutation: () => useCreateRecurringRuleMutation(),
+  useUpdateRecurringRuleMutation: () => useUpdateRecurringRuleMutation(),
+  useDeleteRecurringRuleMutation: () => useDeleteRecurringRuleMutation(),
   useListRecurringRulesQuery: () => useListRecurringRulesQuery(),
 }))
 
@@ -74,6 +80,18 @@ describe('RecurringRulesPage', () => {
     })
     useCreateRecurringRuleMutation.mockReturnValue([
       createRecurringRule,
+      { isLoading: false, error: undefined },
+    ])
+    updateRecurringRule.mockReset().mockReturnValue({
+      unwrap: () => Promise.resolve({ ...MONTHLY_RULE }),
+    })
+    useUpdateRecurringRuleMutation.mockReset().mockReturnValue([
+      updateRecurringRule,
+      { isLoading: false, error: undefined },
+    ])
+    deleteRecurringRule.mockReset().mockReturnValue({ unwrap: () => Promise.resolve(undefined) })
+    useDeleteRecurringRuleMutation.mockReset().mockReturnValue([
+      deleteRecurringRule,
       { isLoading: false, error: undefined },
     ])
     useListRecurringRulesQuery.mockReturnValue({
@@ -236,5 +254,64 @@ describe('RecurringRulesPage', () => {
     ])
     render(<RecurringRulesPage />)
     expect(screen.getByRole('alert')).toHaveTextContent('帳戶不存在')
+  })
+
+  it('點編輯展開表單並預填目前值，修改金額後儲存呼叫 updateRecurringRule', async () => {
+    render(<RecurringRulesPage />)
+
+    fireEvent.click(screen.getByLabelText('編輯 房租'))
+    expect(screen.getByLabelText('房租 金額')).toHaveValue(15000)
+
+    fireEvent.change(screen.getByLabelText('房租 金額'), { target: { value: '16000' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('儲存 房租'))
+    })
+
+    expect(updateRecurringRule).toHaveBeenCalledExactlyOnceWith({
+      recurring_rule_uid: 'r1',
+      account_uid: 'a1',
+      category_uid: 'c1',
+      description: '房租',
+      amount: '16000',
+      transaction_type: 'expense',
+      payment_method: '轉帳',
+      interval_unit: 'month',
+      interval_count: 1,
+      anchor_date: '2026-08-05',
+    })
+  })
+
+  it('取消編輯不呼叫 updateRecurringRule 並收起表單', () => {
+    render(<RecurringRulesPage />)
+
+    fireEvent.click(screen.getByLabelText('編輯 房租'))
+    fireEvent.change(screen.getByLabelText('房租 金額'), { target: { value: '99999' } })
+    fireEvent.click(screen.getByLabelText('取消編輯 房租'))
+
+    expect(updateRecurringRule).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('房租 金額')).not.toBeInTheDocument()
+  })
+
+  it('刪除規則走 ConfirmDialog：點刪除按鈕開對話框，確認後才呼叫 deleteRecurringRule', async () => {
+    render(<RecurringRulesPage />)
+
+    fireEvent.click(screen.getByLabelText('刪除 房租'))
+    expect(deleteRecurringRule).not.toHaveBeenCalled()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '刪除' }))
+    })
+
+    expect(deleteRecurringRule).toHaveBeenCalledExactlyOnceWith('r1')
+  })
+
+  it('取消刪除對話框不呼叫 deleteRecurringRule', () => {
+    render(<RecurringRulesPage />)
+
+    fireEvent.click(screen.getByLabelText('刪除 房租'))
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+
+    expect(deleteRecurringRule).not.toHaveBeenCalled()
   })
 })

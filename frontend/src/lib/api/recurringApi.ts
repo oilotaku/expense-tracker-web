@@ -45,6 +45,19 @@ export interface RecurringRuleCreateRequest {
   liability_uid?: string
 }
 
+export interface RecurringRuleUpdateRequest {
+  recurring_rule_uid: string
+  account_uid?: string
+  category_uid?: string
+  description?: string
+  amount?: string
+  transaction_type?: NonTransferType
+  payment_method?: string
+  interval_unit?: RecurringIntervalUnit
+  interval_count?: number
+  anchor_date?: string
+}
+
 export interface RecurringRuleListResponse {
   items: RecurringRuleResponse[]
   total: number
@@ -70,6 +83,18 @@ const recurringApi = baseApi
         transformResponse: (res: ApiResponse<RecurringRuleResponse>) => unwrapData(res),
         invalidatesTags: [{ type: 'RecurringRule', id: 'LIST' }],
       }),
+      updateRecurringRule: build.mutation<RecurringRuleResponse, RecurringRuleUpdateRequest>({
+        query: ({ recurring_rule_uid, ...body }) => ({
+          url: `recurring-rules/${recurring_rule_uid}`,
+          method: 'PATCH',
+          body,
+        }),
+        transformResponse: (res: ApiResponse<RecurringRuleResponse>) => unwrapData(res),
+        invalidatesTags: (_result, _error, { recurring_rule_uid }) => [
+          { type: 'RecurringRule' as const, id: recurring_rule_uid },
+          { type: 'RecurringRule' as const, id: 'LIST' },
+        ],
+      }),
       deleteRecurringRule: build.mutation<void, string>({
         query: (recurring_rule_uid) => ({
           url: `recurring-rules/${recurring_rule_uid}`,
@@ -87,5 +112,6 @@ const recurringApi = baseApi
 export const {
   useListRecurringRulesQuery,
   useCreateRecurringRuleMutation,
+  useUpdateRecurringRuleMutation,
   useDeleteRecurringRuleMutation,
 } = recurringApi
