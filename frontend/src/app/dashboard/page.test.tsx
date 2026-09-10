@@ -40,8 +40,10 @@ vi.mock('@/lib/api/authApi', () => ({
 }))
 
 const useGetDashboardSummaryQuery = vi.fn()
+const useGetExchangeRatesQuery = vi.fn()
 vi.mock('@/lib/api/dashboardApi', () => ({
   useGetDashboardSummaryQuery: (args: unknown) => useGetDashboardSummaryQuery(args),
+  useGetExchangeRatesQuery: () => useGetExchangeRatesQuery(),
 }))
 
 const refetchNetWorth = vi.fn()
@@ -143,6 +145,11 @@ describe('DashboardPage', () => {
     })
     useGetDashboardSummaryQuery.mockReset()
     mockSummary()
+    useGetExchangeRatesQuery.mockReset().mockReturnValue({
+      data: { rates: { TWD: '1', USD: '31.5' } },
+      isLoading: false,
+      error: undefined,
+    })
     useGetNetWorthQuery.mockReset().mockReturnValue({
       data: NET_WORTH,
       isLoading: false,
@@ -334,5 +341,51 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('tablist', { name: '圖表類型' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: '折線' }))
     expect(screen.getByRole('tab', { name: '折線' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('分類圖表跨幣別交易換算成 TWD 後再加總，不直接把不同幣別的原始金額相加（外幣帳戶功能）', () => {
+    useListAccountsQuery.mockReturnValue({
+      data: {
+        items: [
+          ...ACCOUNTS.items,
+          {
+            account_uid: 'a-usd',
+            name: '美金帳戶',
+            balance: '500.00',
+            currency: 'USD',
+            color: '#E8834B',
+            icon: 'savings',
+          },
+        ],
+        total: 2,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    useListTransactionsQuery.mockReturnValue({
+      data: {
+        items: [
+          ...TRANSACTIONS.items,
+          {
+            transaction_uid: 't-2',
+            account_uid: 'a-usd',
+            category_uid: 'c-food',
+            transaction_date: '2026-09-04T00:00:00+08:00',
+            description: '海外餐廳',
+            amount: '10.00',
+            transaction_type: 'expense' as const,
+            payment_method: '信用卡',
+            tags: [],
+          },
+        ],
+        total: 2,
+      },
+    })
+
+    render(<DashboardPage />)
+
+    // 120 TWD + 10 USD × 31.5 = 435；若誤把不同幣別原始金額直接相加會變成 130（bug 級結果）
+    expect(screen.getByText('NT$435')).toBeInTheDocument()
+    expect(screen.queryByText('NT$130')).not.toBeInTheDocument()
   })
 })

@@ -28,6 +28,13 @@ export interface DashboardSummaryResponse {
   budget_remaining: string | null
 }
 
+// 外幣帳戶功能：分類圖表/趨勢線圖是前端就地把 useListTransactionsQuery 的原始交易加總（不像
+// 彙總卡片走後端 SQL GROUP BY 換算），要正確加總不同幣別的交易金額需要這份即時匯率。
+export interface CurrencyRatesResponse {
+  // key 為幣別代碼（對齊 accountsApi.ts SupportedCurrency），value 為對 TWD 的匯率字串
+  rates: Record<string, string>
+}
+
 const dashboardApi = baseApi
   .enhanceEndpoints({ addTagTypes: ['DashboardSummary'] })
   .injectEndpoints({
@@ -40,8 +47,14 @@ const dashboardApi = baseApi
         transformResponse: (res: ApiResponse<DashboardSummaryResponse>) => unwrapData(res),
         providesTags: [{ type: 'DashboardSummary' as const, id: 'SUMMARY' }],
       }),
+      // 匯率變動緩慢（後端快取 12 小時），這裡不特別設 providesTags/invalidate，走 RTK Query
+      // 預設快取即可。
+      getExchangeRates: build.query<CurrencyRatesResponse, void>({
+        query: () => 'dashboard/exchange-rates',
+        transformResponse: (res: ApiResponse<CurrencyRatesResponse>) => unwrapData(res),
+      }),
     }),
     overrideExisting: false,
   })
 
-export const { useGetDashboardSummaryQuery } = dashboardApi
+export const { useGetDashboardSummaryQuery, useGetExchangeRatesQuery } = dashboardApi

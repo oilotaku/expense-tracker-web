@@ -31,7 +31,7 @@ import { useListAccountsQuery } from '@/lib/api/accountsApi'
 import { useGetNetWorthQuery } from '@/lib/api/assetsApi'
 import { useGetMeQuery } from '@/lib/api/authApi'
 import { baseApi } from '@/lib/api/baseApi'
-import { useGetDashboardSummaryQuery } from '@/lib/api/dashboardApi'
+import { useGetDashboardSummaryQuery, useGetExchangeRatesQuery } from '@/lib/api/dashboardApi'
 import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
 import {
   useCreateTransactionMutation,
@@ -96,17 +96,36 @@ const PIN_REMINDER_PRIMARY_BUTTON_CLASS =
 const PIN_REMINDER_SECONDARY_BUTTON_CLASS =
   'min-h-11 rounded-md border border-border px-4 font-medium text-text-secondary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
 
+// 外幣帳戶功能：分類圖表/趨勢線圖是前端直接把 useListTransactionsQuery 回傳的原始交易加總
+// （不像 Dashboard 彙總卡片走後端 SQL 依幣別 GROUP BY 換算），若不先換算成 TWD，不同幣別的
+// 原始金額數字會被誤當同一種幣別直接相加（例如 100 USD + 5000 TWD 會變成「5100」）。
+// 匯率暫缺（GET /dashboard/exchange-rates 尚未回來或失敗）時退化為原始數字，不讓圖表整體壞掉。
+function toTwdAmount(
+  transaction: TransactionResponse,
+  accountCurrencies: ReadonlyMap<string, string>,
+  rates: Readonly<Record<string, string>>,
+): number | null {
+  const amount = Number(transaction.amount)
+  if (!Number.isFinite(amount)) return null
+  const currency = accountCurrencies.get(transaction.account_uid)
+  if (currency === undefined || currency === 'TWD') return amount
+  const rate = Number(rates[currency])
+  return Number.isFinite(rate) ? amount * rate : amount
+}
+
 function toCategorySlices(
   transactions: readonly TransactionResponse[],
   categoryNames: ReadonlyMap<string, string>,
+  accountCurrencies: ReadonlyMap<string, string>,
+  rates: Readonly<Record<string, string>>,
 ): CategorySlice[] {
   const totals = new Map<string, number>()
   for (const transaction of transactions) {
     // transaction_type !== 'expense' 已排除轉帳列（transfer 沒有分類，category_uid 恆為
     // null），但 TS 無法從 !== 'expense' 反推出 category_uid 非 null，仍需顯式收窄。
     if (transaction.transaction_type !== 'expense' || transaction.category_uid === null) continue
-    const amount = Number(transaction.amount)
-    if (!Number.isFinite(amount)) continue
+    const amount = toTwdAmount(transaction, accountCurrencies, rates)
+    if (amount === null) continue
     const categoryUid = transaction.category_uid
     totals.set(categoryUid, (totals.get(categoryUid) ?? 0) + amount)
   }
@@ -117,12 +136,16 @@ function toCategorySlices(
   }))
 }
 
-function toTrendPoints(transactions: readonly TransactionResponse[]): TrendPoint[] {
+function toTrendPoints(
+  transactions: readonly TransactionResponse[],
+  accountCurrencies: ReadonlyMap<string, string>,
+  rates: Readonly<Record<string, string>>,
+): TrendPoint[] {
   const points = new Map<string, TrendPoint>()
   for (const transaction of transactions) {
     const date = transaction.transaction_date.slice(0, 10)
-    const amount = Number(transaction.amount)
-    if (!Number.isFinite(amount)) continue
+    const amount = toTwdAmount(transaction, accountCurrencies, rates)
+    if (amount === null) continue
     const point = points.get(date) ?? { date, income: 0, expense: 0 }
     if (transaction.transaction_type === 'income') {
       point.income += amount
@@ -253,6 +276,7 @@ function DashboardContent(): ReactNode {
   const { data: recentTransactions } = useListTransactionsQuery({ limit: RECENT_TRANSACTION_LIMIT })
   const { data: categories } = useListCategoryOptionsQuery()
   const { data: accountList } = useListAccountsQuery()
+  const { data: exchangeRates } = useGetExchangeRatesQuery()
   const {
     data: netWorth,
     isLoading: isNetWorthLoading,
@@ -277,11 +301,15 @@ function DashboardContent(): ReactNode {
     () => new Map(accounts.map((account) => [account.account_uid, account.currency])),
     [accounts],
   )
+  const currencyRates = useMemo(() => exchangeRates?.rates ?? {}, [exchangeRates])
   const categorySlices = useMemo(
-    () => toCategorySlices(periodTransactions?.items ?? [], categoryNames),
-    [periodTransactions, categoryNames],
+    () => toCategorySlices(periodTransactions?.items ?? [], categoryNames, accountCurrencies, currencyRates),
+    [periodTransactions, categoryNames, accountCurrencies, currencyRates],
   )
-  const trendPoints = useMemo(() => toTrendPoints(periodTransactions?.items ?? []), [periodTransactions])
+  const trendPoints = useMemo(
+    () => toTrendPoints(periodTransactions?.items ?? [], accountCurrencies, currencyRates),
+    [periodTransactions, accountCurrencies, currencyRates],
+  )
 
   // 期間 = 年 / 自訂範圍時後端一律回 `budget_remaining: null`（→ A7），卡片改顯示灰階簡化狀態。
   const isBudgetAvailable =

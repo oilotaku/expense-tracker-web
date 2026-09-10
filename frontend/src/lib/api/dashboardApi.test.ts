@@ -5,12 +5,13 @@ import { setupServer } from 'msw/node'
 import { Provider } from 'react-redux'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { makeStore } from '@/store/store'
-import { useGetDashboardSummaryQuery } from './dashboardApi'
+import { useGetDashboardSummaryQuery, useGetExchangeRatesQuery } from './dashboardApi'
 
 // resolveApiBaseUrl()：jsdom 環境 window 已定義（非 server），且測試未設 NEXT_PUBLIC_API_URL，
 // 故落回 baseApi.ts 的 FALLBACK 常數。
 const BASE_URL = 'http://localhost:8000/api/v1'
 const SUMMARY_URL = `${BASE_URL}/dashboard/summary`
+const EXCHANGE_RATES_URL = `${BASE_URL}/dashboard/exchange-rates`
 
 const REQUEST = { period: 'month' as const, dateFrom: '2026-09-01T00:00:00+08:00', dateTo: '2026-09-30T23:59:59+08:00' }
 
@@ -24,9 +25,12 @@ const SUCCESS_DATA = {
   budget_remaining: '5000.00',
 }
 
+const RATES_DATA = { rates: { TWD: '1', USD: '31.5', JPY: '0.2' } }
+
 // FE-012：一律用 msw 攔截真實 HTTP request，禁 mock fetch / RTK hook 本身
 const server = setupServer(
   http.get(SUMMARY_URL, () => HttpResponse.json({ success: true, data: SUCCESS_DATA, detail: null, response_code: 200 })),
+  http.get(EXCHANGE_RATES_URL, () => HttpResponse.json({ success: true, data: RATES_DATA, detail: null, response_code: 200 })),
 )
 
 function renderDashboardSummaryHook(request: typeof REQUEST) {
@@ -36,6 +40,13 @@ function renderDashboardSummaryHook(request: typeof REQUEST) {
   // eslint-disable-next-line react/no-children-prop
   const wrapper = ({ children }: { children: ReactNode }) => createElement(Provider, { store, children })
   return renderHook(() => useGetDashboardSummaryQuery(request), { wrapper })
+}
+
+function renderExchangeRatesHook() {
+  const store = makeStore()
+  // eslint-disable-next-line react/no-children-prop
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(Provider, { store, children })
+  return renderHook(() => useGetExchangeRatesQuery(), { wrapper })
 }
 
 describe('dashboardApi', () => {
@@ -95,5 +106,33 @@ describe('dashboardApi', () => {
     const error = result.current.error
     expect(error && 'status' in error && error.status).toBe(401)
     expect(error && 'data' in error && (error.data as { detail: string }).detail).toBe('未登入')
+  })
+
+  // 外幣帳戶功能：Dashboard 分類圖表/趨勢線圖需要這份即時匯率才能正確換算跨幣別交易
+  // （→ dashboard/page.tsx toTwdAmount）。
+  it('exchange-rates：成功時回傳 unwrap 後的匯率表', async () => {
+    const { result } = renderExchangeRatesHook()
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual(RATES_DATA)
+  })
+
+  it('exchange-rates：424（匯率服務不可用）時 hook 回報對應錯誤狀態', async () => {
+    server.use(
+      http.get(EXCHANGE_RATES_URL, () =>
+        HttpResponse.json(
+          { success: false, data: null, detail: '匯率服務暫時無法使用', response_code: 424 },
+          { status: 424 },
+        ),
+      ),
+    )
+
+    const { result } = renderExchangeRatesHook()
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    const error = result.current.error
+    expect(error && 'status' in error && error.status).toBe(424)
   })
 })

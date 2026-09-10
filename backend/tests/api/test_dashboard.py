@@ -12,6 +12,7 @@ from decimal import Decimal
 from httpx import AsyncClient
 
 from app.api.deps import get_pricing_service
+from app.clients.stock_price_client import TwseMisTimeoutError
 from app.main import app
 
 _PASSWORD = "correct horse battery"
@@ -27,6 +28,13 @@ class _FakePricingService:
         if base == quote:
             return Decimal(1)
         return self._exchange_rates[(base, quote)]
+
+
+class _TimeoutPricingService:
+    """模擬外部匯率來源逾時：驗證 /dashboard/exchange-rates 對外回 424 而非未攔截的例外。"""
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+        raise TwseMisTimeoutError()
 
 
 def _override_pricing(factory: Callable[[], object]) -> None:
@@ -382,3 +390,59 @@ async def test_dashboard_budget_remaining_converts_foreign_currency_spending(
     )
     # 1000 - (200 + 10 * 31.5) = 1000 - 515 = 485.00
     assert body["budget_remaining"] == "485.00"
+
+
+async def test_dashboard_exchange_rates_returns_all_supported_currencies(
+    client: AsyncClient,
+) -> None:
+    """供前端圖表換算多幣別交易用（→ dashboard_service.py get_currency_rates 頂註解）：
+    固定 10 種支援幣別皆須有匯率，TWD 固定 1 且不觸發假匯率服務（未在 exchange_rates 給值）。"""
+    await _register_and_login(client, "dashboard-exchange-rates@example.com")
+    _override_pricing(
+        lambda: _FakePricingService(
+            exchange_rates={
+                ("USD", "TWD"): Decimal("31.5"),
+                ("JPY", "TWD"): Decimal("0.2"),
+                ("EUR", "TWD"): Decimal("34.2"),
+                ("CNY", "TWD"): Decimal("4.3"),
+                ("HKD", "TWD"): Decimal("4.0"),
+                ("GBP", "TWD"): Decimal("40.0"),
+                ("AUD", "TWD"): Decimal("21.0"),
+                ("KRW", "TWD"): Decimal("0.023"),
+                ("THB", "TWD"): Decimal("0.9"),
+            }
+        )
+    )
+
+    res = await client.get("/api/v1/dashboard/exchange-rates")
+
+    assert res.status_code == 200
+    rates = res.json()["data"]["rates"]
+    assert rates == {
+        "TWD": "1",
+        "USD": "31.5",
+        "JPY": "0.2",
+        "EUR": "34.2",
+        "CNY": "4.3",
+        "HKD": "4.0",
+        "GBP": "40.0",
+        "AUD": "21.0",
+        "KRW": "0.023",
+        "THB": "0.9",
+    }
+
+
+async def test_dashboard_exchange_rates_pricing_unavailable_returns_424(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "dashboard-exchange-rates-424@example.com")
+    _override_pricing(lambda: _TimeoutPricingService())
+
+    res = await client.get("/api/v1/dashboard/exchange-rates")
+
+    assert res.status_code == 424
+
+
+async def test_dashboard_exchange_rates_without_jwt_returns_401(client: AsyncClient) -> None:
+    res = await client.get("/api/v1/dashboard/exchange-rates")
+    assert res.status_code == 401

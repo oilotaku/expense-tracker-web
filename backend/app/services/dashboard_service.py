@@ -25,6 +25,7 @@ from app.models.budget import Budget, BudgetPeriodType
 from app.models.transaction import Transaction, TransactionType
 from app.schemas.dashboard import DashboardSummaryResponse
 from app.services.pricing_service import PricingService
+from app.utils.currency import SupportedCurrency
 
 _CENTS = Decimal("0.01")
 
@@ -54,6 +55,15 @@ class DashboardService:
         except AppError as e:
             raise DashboardPricingUnavailableError() from e
         return amount * rate
+
+    async def get_currency_rates(self) -> dict[SupportedCurrency, Decimal]:
+        """固定 10 種支援幣別對 TWD 的即時匯率，供前端圖表換算多幣別交易用（→ 前端
+        dashboard/page.tsx 的分類圖表/趨勢線圖不能像本服務的 SQL 彙總那樣先分幣別 GROUP BY，
+        因為圖表資料是既有的 useListTransactionsQuery 原始交易清單，改成前端算）。"""
+        rates: dict[SupportedCurrency, Decimal] = {}
+        for currency in SupportedCurrency:
+            rates[currency] = await self._to_twd(Decimal(1), currency.value)
+        return rates
 
     async def get_summary(
         self, user_uid: UUID, period: str, date_from: datetime, date_to: datetime

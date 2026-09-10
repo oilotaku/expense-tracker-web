@@ -79,4 +79,4 @@ docker compose exec backend alembic revision -m "描述"
 
 ## 授權
 
-個人專案，尚未附加開源授權條款。
+僅供個人使用，未開放授權。
