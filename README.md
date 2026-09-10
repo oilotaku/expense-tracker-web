@@ -2,6 +2,39 @@
 
 個人記帳網站：收支記錄、多帳戶（含外幣）、分類統計、預算追蹤、固定收支、資產淨值總覽。
 
+![總覽 Dashboard](docs/assets/dashboard-desktop.jpg)
+
+> 以下所有畫面皆依實際介面設計系統與各頁元件結構（`design-spec` tokens／`AppShell`／`CurvedCard`／
+> `StatTile` 等）重繪的示意畫面，資料為示例、非真實帳務內容。
+
+## 畫面預覽
+
+### 桌機
+
+| 交易 | 週期性交易 |
+|---|---|
+| ![交易](docs/assets/transactions-desktop.jpg) | ![週期性交易](docs/assets/recurring-desktop.jpg) |
+
+| 預算 | 資產 / 負債 |
+|---|---|
+| ![預算](docs/assets/budgets-desktop.jpg) | ![資產 / 負債](docs/assets/assets-desktop.jpg) |
+
+| 分類管理 | 帳戶管理 | 設定 |
+|---|---|---|
+| ![分類管理](docs/assets/categories-desktop.jpg) | ![帳戶管理](docs/assets/accounts-desktop.jpg) | ![設定](docs/assets/settings-desktop.jpg) |
+
+### 行動端
+
+行動端為單欄堆疊 + 底部 5 格導覽（中央 FAB 快速新增交易），總覽的「結餘」卡在手機上會放大為 Hero 並置頂。
+
+| 總覽 | 交易 | 週期性交易 | 預算 |
+|---|---|---|---|
+| ![總覽](docs/assets/dashboard-mobile.jpg) | ![交易](docs/assets/transactions-mobile.jpg) | ![週期性交易](docs/assets/recurring-mobile.jpg) | ![預算](docs/assets/budgets-mobile.jpg) |
+
+| 資產 / 負債 | 分類管理 | 帳戶管理 | 設定 |
+|---|---|---|---|
+| ![資產 / 負債](docs/assets/assets-mobile.jpg) | ![分類管理](docs/assets/categories-mobile.jpg) | ![帳戶管理](docs/assets/accounts-mobile.jpg) | ![設定](docs/assets/settings-mobile.jpg) |
+
 ## 技術棧
 
 - **前端**：Next.js 16（App Router）+ React 19 + TypeScript（strict）+ Redux Toolkit / RTK Query + Tailwind CSS v4
