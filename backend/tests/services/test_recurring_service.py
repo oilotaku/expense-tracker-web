@@ -17,6 +17,7 @@ from app.models.recurring_rule import RecurringIntervalUnit, RecurringRule
 from app.models.transaction import TransactionType
 from app.repositories.account_repository import AccountRepository
 from app.repositories.category_repository import CategoryRepository
+from app.repositories.liability_repository import LiabilityRepository
 from app.repositories.recurring_rule_repository import RecurringRuleRepository
 from app.repositories.transaction_repository import TransactionRepository
 from app.repositories.user_repository import UserRepository
@@ -53,6 +54,7 @@ async def _make_rule(
     interval_unit: RecurringIntervalUnit = RecurringIntervalUnit.MONTH,
     interval_count: int = 1,
     amount: Decimal = Decimal("100.00"),
+    liability_uid: UUID | None = None,
 ) -> UUID:
     """`day_of_month` 為既有測試的相容捷徑：換算成 2020-01-<day> 的 `anchor_date`（早於所有測試
     的 `as_of`），`month`/1 的到期判斷只看日部分，故不影響既有案例的既有行為。
@@ -70,8 +72,16 @@ async def _make_rule(
         interval_count=interval_count,
         anchor_date=resolved_anchor,
         created_by=user_uid,
+        liability_uid=liability_uid,
     )
     return rule.recurring_rule_uid
+
+
+async def _make_liability(db: AsyncSession, user_uid: UUID, amount: Decimal) -> UUID:
+    liability = await LiabilityRepository(db).create(
+        user_uid=user_uid, name="測試負債", amount=amount, interest_rate=None, created_by=user_uid
+    )
+    return liability.liability_uid
 
 
 class TestClampDayOfMonth:
@@ -282,3 +292,92 @@ class TestGenerateDueTransactions:
 
         assert off_cycle == []
         assert len(on_cycle) == 1
+
+
+class TestGenerateDueTransactionsWithLiability:
+    async def test_partial_repayment_decreases_liability_and_keeps_rule_active(
+        self, db: AsyncSession
+    ) -> None:
+        user_uid = await _make_user(db, "recurring-liability-1@example.com")
+        account_uid = await _make_account(db, user_uid)
+        category_uid = await _make_category(db, user_uid)
+        liability_uid = await _make_liability(db, user_uid, Decimal("1000.00"))
+        rule_uid = await _make_rule(
+            db,
+            user_uid=user_uid,
+            account_uid=account_uid,
+            category_uid=category_uid,
+            day_of_month=15,
+            amount=Decimal("300.00"),
+            liability_uid=liability_uid,
+        )
+
+        service = RecurringService(db)
+        generated = await service.generate_due_transactions(as_of=date(2026, 9, 15))
+
+        assert len(generated) == 1
+        assert generated[0].amount == Decimal("300.00")
+
+        liability = await LiabilityRepository(db).find_by_liability_uid(liability_uid, user_uid)
+        assert liability is not None
+        assert liability.amount == Decimal("700.00")
+
+        rule = await RecurringRuleRepository(db).find_by_recurring_rule_uid(rule_uid, user_uid)
+        assert rule is not None
+        assert rule.is_deleted is False
+
+    async def test_final_payment_pays_off_liability_and_deactivates_rule(
+        self, db: AsyncSession
+    ) -> None:
+        user_uid = await _make_user(db, "recurring-liability-2@example.com")
+        account_uid = await _make_account(db, user_uid)
+        category_uid = await _make_category(db, user_uid)
+        # 規則金額（500）大於負債剩餘（300）：模擬使用者中途手動額外還款過，最後一期應對齊剩餘餘額
+        liability_uid = await _make_liability(db, user_uid, Decimal("300.00"))
+        rule_uid = await _make_rule(
+            db,
+            user_uid=user_uid,
+            account_uid=account_uid,
+            category_uid=category_uid,
+            day_of_month=15,
+            amount=Decimal("500.00"),
+            liability_uid=liability_uid,
+        )
+
+        service = RecurringService(db)
+        generated = await service.generate_due_transactions(as_of=date(2026, 9, 15))
+
+        assert len(generated) == 1
+        # 實際入帳金額對齊剩餘負債（300），不是規則設定的 500
+        assert generated[0].amount == Decimal("300.00")
+
+        liability = await LiabilityRepository(db).find_by_liability_uid(liability_uid, user_uid)
+        assert liability is None  # 已軟刪（還清）
+
+        rule = await RecurringRuleRepository(db).find_by_recurring_rule_uid(rule_uid, user_uid)
+        assert rule is None  # 已軟刪（避免還清後繼續嘗試產生）
+
+    async def test_orphaned_rule_after_manual_liability_deletion_is_deactivated(
+        self, db: AsyncSession
+    ) -> None:
+        user_uid = await _make_user(db, "recurring-liability-3@example.com")
+        account_uid = await _make_account(db, user_uid)
+        category_uid = await _make_category(db, user_uid)
+        liability_uid = await _make_liability(db, user_uid, Decimal("1000.00"))
+        rule_uid = await _make_rule(
+            db,
+            user_uid=user_uid,
+            account_uid=account_uid,
+            category_uid=category_uid,
+            day_of_month=15,
+            amount=Decimal("300.00"),
+            liability_uid=liability_uid,
+        )
+        # 繞過 API 層的連動軟刪，模擬規則在負債已消失後仍存在的邊界情況
+        await LiabilityRepository(db).soft_delete(liability_uid, user_uid)
+
+        service = RecurringService(db)
+        await service.generate_due_transactions(as_of=date(2026, 9, 15))
+
+        rule = await RecurringRuleRepository(db).find_by_recurring_rule_uid(rule_uid, user_uid)
+        assert rule is None  # 已軟刪，不會繼續每期嘗試產生

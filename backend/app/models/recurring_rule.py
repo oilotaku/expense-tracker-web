@@ -71,9 +71,17 @@ class RecurringRule(BaseModel):
     anchor_date: Mapped[date] = mapped_column(Date, nullable=False)
     # None = 尚未產生過任何交易；產生成功後寫入該次的 "YYYY-MM"（冪等判斷用，見 RecurringService）
     last_generated_year_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    # 連結負債定期還款（→ RecurringService）；None = 一般收支週期性交易
+    liability_uid: Mapped[UUID | None] = mapped_column(
+        ForeignKey("liabilities.liability_uid", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     __table_args__ = (
         # 短標籤：naming_convention 會自組 ck_recurring_rules_day_of_month_range（見 task 操作備註）
         CheckConstraint("day_of_month BETWEEN 1 AND 31", name="day_of_month_range"),
         CheckConstraint("interval_count BETWEEN 1 AND 99", name="interval_count_range"),
+        CheckConstraint(
+            "liability_uid IS NULL OR transaction_type = 'expense'",
+            name="liability_requires_expense",
+        ),
     )

@@ -28,6 +28,8 @@ export interface RecurringRuleResponse {
   // 錨點日期（YYYY-MM-DD），下一次執行日由此起算（design-spec §7.2）
   anchor_date: string
   last_generated_year_month: string | null
+  // 連結負債定期還款（null = 一般收支週期性交易）；→ backend RecurringService
+  liability_uid: string | null
 }
 
 export interface RecurringRuleCreateRequest {
@@ -40,6 +42,7 @@ export interface RecurringRuleCreateRequest {
   interval_unit: RecurringIntervalUnit
   interval_count: number
   anchor_date: string
+  liability_uid?: string
 }
 
 export interface RecurringRuleListResponse {
@@ -67,8 +70,22 @@ const recurringApi = baseApi
         transformResponse: (res: ApiResponse<RecurringRuleResponse>) => unwrapData(res),
         invalidatesTags: [{ type: 'RecurringRule', id: 'LIST' }],
       }),
+      deleteRecurringRule: build.mutation<void, string>({
+        query: (recurring_rule_uid) => ({
+          url: `recurring-rules/${recurring_rule_uid}`,
+          method: 'DELETE',
+        }),
+        invalidatesTags: (_result, _error, recurring_rule_uid) => [
+          { type: 'RecurringRule' as const, id: recurring_rule_uid },
+          { type: 'RecurringRule' as const, id: 'LIST' },
+        ],
+      }),
     }),
     overrideExisting: false,
   })
 
-export const { useListRecurringRulesQuery, useCreateRecurringRuleMutation } = recurringApi
+export const {
+  useListRecurringRulesQuery,
+  useCreateRecurringRuleMutation,
+  useDeleteRecurringRuleMutation,
+} = recurringApi

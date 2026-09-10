@@ -43,6 +43,11 @@ vi.mock('@/lib/api/transactionsApi', () => ({
   useListCategoryOptionsQuery: () => useListCategoryOptionsQuery(),
 }))
 
+const useListLiabilitiesQuery = vi.fn()
+vi.mock('@/lib/api/assetsApi', () => ({
+  useListLiabilitiesQuery: () => useListLiabilitiesQuery(),
+}))
+
 // 既有月規則資料（task-003 回填策略，design-spec §12.3）：interval_unit=month、interval_count=1，
 // 維持升級前「每月第 N 天」語意（task-022 Acceptance）。
 const MONTHLY_RULE = {
@@ -82,6 +87,7 @@ describe('RecurringRulesPage', () => {
     useListCategoryOptionsQuery.mockReturnValue({
       data: [{ category_uid: 'c1', name: '居住' }],
     })
+    useListLiabilitiesQuery.mockReturnValue({ data: { items: [], total: 0 } })
   })
 
   function fillValidForm(): void {

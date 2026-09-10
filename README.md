@@ -19,6 +19,8 @@
 - **預算追蹤**：依分類設定月度預算上限，即時顯示剩餘額度（跨幣別支出自動換算成 TWD 計算）
 - **資產總覽**：股票、貴金屬等浮動資產報價（TWSE、Yahoo Finance、gold-api），外幣帳戶餘額即時
   換算成 TWD 計入總資產/淨資產
+- **負債管理**：登記負債金額與利率，支援一次性還款與設定定期還款（到期自動產生支出交易並
+  減少負債餘額，還清自動歸檔）
 - **統計分析**：分類圓餅圖/長條圖、收支趨勢線圖、日/週/月/年區間彙總
 - **帳號安全**：Email + 密碼登入，支援 PIN 快速登入
 
@@ -87,6 +89,44 @@ curl http://localhost:8000/api/v1/health
 `APP_ENV=production` 會自動關閉 `/api/docs`、`/api/openapi.json`；正式環境**不要**額外跑
 `docker compose watch`（那是開發用的檔案監看自動重建）。對外網域建議在前面加一層反向代理
 （Nginx / Caddy）處理 TLS 與網域轉發，本 repo 未內建。
+
+### 排程設定（週期性交易 / 負債定期還款）
+
+一般收支的週期性交易與負債定期還款都需要**每日至少觸發一次** `POST /internal/recurring/run`
+才會實際產生交易；這支 API 本身不會自動被呼叫，比照本專案排程慣例（host 端 cron / systemd
+timer，不經 CI），部署主機上需另外設定：
+
+```bash
+# systemd timer（建議）：
+# /etc/systemd/system/expense-tracker-recurring.service
+[Unit]
+Description=Expense Tracker: trigger recurring transaction generation
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -fsS -X POST http://localhost:8000/api/v1/internal/recurring/run \
+  -H "X-Internal-Secret: ${INTERNAL_TRIGGER_SECRET}"
+
+# /etc/systemd/system/expense-tracker-recurring.timer
+[Unit]
+Description=Daily trigger for expense-tracker recurring transactions
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now expense-tracker-recurring.timer
+```
+
+`INTERNAL_TRIGGER_SECRET` 取 `.env` 裡的值（`openssl rand -hex 32` 產生，**不可**沿用
+`.env.*.example` 的佔位字串，非 development 環境沿用預設值會啟動失敗）。也可以改用傳統 cron
+達到同樣效果（`0 1 * * * curl ...`），效果等價，本 repo 沒有強制指定工具。
 
 ### 更新既有部署
 

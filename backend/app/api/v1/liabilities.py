@@ -9,6 +9,7 @@ from app.core.exceptions import NotFoundError
 from app.core.response import success
 from app.models.user import User
 from app.repositories.liability_repository import LiabilityRepository
+from app.repositories.recurring_rule_repository import RecurringRuleRepository
 from app.schemas.liability import (
     LiabilityCreateRequest,
     LiabilityListResponse,
@@ -109,4 +110,8 @@ async def delete_liability(
     deleted = await LiabilityRepository(db).soft_delete(liability_uid, current_user.user_uid)
     if not deleted:
         raise NotFoundError(_NOT_FOUND_DETAIL)
+    # 連動軟刪其定期還款規則，避免規則失去對應負債後仍繼續嘗試產生交易
+    await RecurringRuleRepository(db).soft_delete_by_liability_uid(
+        liability_uid, current_user.user_uid
+    )
     return success(data=None)
