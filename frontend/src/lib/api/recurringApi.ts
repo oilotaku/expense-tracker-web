@@ -30,6 +30,8 @@ export interface RecurringRuleResponse {
   last_generated_year_month: string | null
   // 連結負債定期還款（null = 一般收支週期性交易）；→ backend RecurringService
   liability_uid: string | null
+  // 使用者暫停/恢復：false 時服務層跳過產生，規則仍保留（與刪除不同，→ backend RecurringRuleRepository）
+  is_active: boolean
 }
 
 export interface RecurringRuleCreateRequest {
@@ -56,6 +58,7 @@ export interface RecurringRuleUpdateRequest {
   interval_unit?: RecurringIntervalUnit
   interval_count?: number
   anchor_date?: string
+  is_active?: boolean
 }
 
 export interface RecurringRuleListResponse {

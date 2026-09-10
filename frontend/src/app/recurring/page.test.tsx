@@ -68,6 +68,7 @@ const MONTHLY_RULE = {
   interval_count: 1,
   anchor_date: '2026-08-05',
   last_generated_year_month: null,
+  is_active: true,
 }
 
 describe('RecurringRulesPage', () => {
@@ -313,5 +314,38 @@ describe('RecurringRulesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
 
     expect(deleteRecurringRule).not.toHaveBeenCalled()
+  })
+
+  it('點暫停呼叫 updateRecurringRule 帶 is_active:false', async () => {
+    render(<RecurringRulesPage />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('暫停 房租'))
+    })
+
+    expect(updateRecurringRule).toHaveBeenCalledExactlyOnceWith({
+      recurring_rule_uid: 'r1',
+      is_active: false,
+    })
+  })
+
+  it('已暫停的規則顯示「已暫停」標籤且按鈕改為恢復，點擊帶 is_active:true', async () => {
+    useListRecurringRulesQuery.mockReturnValue({
+      data: { items: [{ ...MONTHLY_RULE, is_active: false }], total: 1 },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<RecurringRulesPage />)
+
+    expect(screen.getByText('已暫停')).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('恢復 房租'))
+    })
+
+    expect(updateRecurringRule).toHaveBeenCalledExactlyOnceWith({
+      recurring_rule_uid: 'r1',
+      is_active: true,
+    })
   })
 })

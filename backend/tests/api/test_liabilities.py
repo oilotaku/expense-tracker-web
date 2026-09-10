@@ -155,3 +155,105 @@ async def test_amount_and_interest_rate_columns_are_numeric(db: AsyncSession) ->
     assert rows["interest_rate"].data_type == "numeric"
     assert rows["interest_rate"].numeric_precision == 5
     assert rows["interest_rate"].numeric_scale == 2
+
+
+async def _make_account_and_category(client: AsyncClient) -> tuple[str, str]:
+    account_res = await client.post(
+        "/api/v1/accounts",
+        json={"name": "現金", "balance": "0.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
+    category_res = await client.post(
+        "/api/v1/categories",
+        json={"name": "還款", "color": "#E8834B", "icon": "bell"},
+    )
+    return account_res.json()["data"]["account_uid"], category_res.json()["data"]["category_uid"]
+
+
+async def test_repay_liability_creates_expense_transaction_and_decreases_amount(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "liability-repay-1@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    created = await client.post(
+        "/api/v1/liabilities", json={"name": "信用卡", "amount": "10000.00"}
+    )
+    liability_uid = created.json()["data"]["liability_uid"]
+
+    res = await client.post(
+        f"/api/v1/liabilities/{liability_uid}/repay",
+        json={
+            "amount": "3000.00",
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "payment_method": "轉帳",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["data"]["amount"] == "7000.00"
+
+    transactions_res = await client.get("/api/v1/transactions")
+    items = transactions_res.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["amount"] == "3000.00"
+    assert items[0]["transaction_type"] == "expense"
+    assert items[0]["description"] == "信用卡 還款"
+
+
+async def test_repay_liability_amount_greater_than_or_equal_returns_422(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "liability-repay-2@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    created = await client.post(
+        "/api/v1/liabilities", json={"name": "信用卡", "amount": "10000.00"}
+    )
+    liability_uid = created.json()["data"]["liability_uid"]
+
+    res = await client.post(
+        f"/api/v1/liabilities/{liability_uid}/repay",
+        json={
+            "amount": "10000.00",
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "payment_method": "轉帳",
+        },
+    )
+    assert res.status_code == 422
+
+    transactions_res = await client.get("/api/v1/transactions")
+    assert transactions_res.json()["data"]["items"] == []
+
+
+async def test_repay_liability_with_others_account_returns_404(client: AsyncClient) -> None:
+    await _register_and_login(client, "liability-repay-owner@example.com")
+    other_account_uid, other_category_uid = await _make_account_and_category(client)
+
+    await _register_and_login(client, "liability-repay-attacker@example.com")
+    created = await client.post(
+        "/api/v1/liabilities", json={"name": "信用卡", "amount": "10000.00"}
+    )
+    liability_uid = created.json()["data"]["liability_uid"]
+
+    res = await client.post(
+        f"/api/v1/liabilities/{liability_uid}/repay",
+        json={
+            "amount": "1000.00",
+            "account_uid": other_account_uid,
+            "category_uid": other_category_uid,
+            "payment_method": "轉帳",
+        },
+    )
+    assert res.status_code == 404
+
+
+async def test_repay_liability_without_jwt_returns_401(client: AsyncClient) -> None:
+    res = await client.post(
+        "/api/v1/liabilities/nonexistent/repay",
+        json={
+            "amount": "100.00",
+            "account_uid": "00000000-0000-0000-0000-000000000000",
+            "category_uid": "00000000-0000-0000-0000-000000000000",
+            "payment_method": "轉帳",
+        },
+    )
+    assert res.status_code in (401, 422)

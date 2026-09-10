@@ -16,8 +16,8 @@ import {
   useGetNetWorthQuery,
   useListFinancialAssetsQuery,
   useListLiabilitiesQuery,
+  useRepayLiabilityMutation,
   useUpdateFinancialAssetMutation,
-  useUpdateLiabilityMutation,
   type AssetType,
   type FinancialAssetResponse,
   type LiabilityResponse,
@@ -746,7 +746,8 @@ function LiabilityRecurringSection({ liability }: { liability: LiabilityResponse
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface p-2 text-sm">
         <span className="text-text-secondary">
-          定期還款中：{activeRule.amount} · {activeAccountName ?? '—'} ·{' '}
+          {activeRule.is_active ? '定期還款中' : '定期還款（已暫停）'}：{activeRule.amount} ·{' '}
+          {activeAccountName ?? '—'} ·{' '}
           {activeRule.interval_count === 1 ? '每' : `每 ${activeRule.interval_count} `}
           {INTERVAL_UNIT_NOUN[activeRule.interval_unit]}
         </span>
@@ -856,25 +857,38 @@ const INTERVAL_UNIT_NOUN: Record<RecurringFieldsetValue['intervalUnit'], string>
 }
 
 function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactNode {
-  const [updateLiability, { isLoading, error }] = useUpdateLiabilityMutation()
+  const { data: accounts } = useListAccountOptionsQuery()
+  const { data: categories } = useListCategoryOptionsQuery()
+  const [repayLiability, { isLoading, error }] = useRepayLiabilityMutation()
   const [isRepaying, setIsRepaying] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState('')
+  const [accountUid, setAccountUid] = useState('')
+  const [categoryUid, setCategoryUid] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('')
 
   const currentAmount = Number(liability.amount)
   const payment = Number(paymentAmount)
   const hasPaymentInput = paymentAmount.trim() !== ''
-  const isPaymentValid =
+  const isAmountValid =
     hasPaymentInput && Number.isFinite(payment) && payment > 0 && payment < currentAmount
+  const isPaymentValid =
+    isAmountValid && accountUid !== '' && categoryUid !== '' && paymentMethod.trim() !== ''
 
   async function handleRepay(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     if (!isPaymentValid) return
-    // amount 為字串線上傳輸（DB-038），此處是使用者輸入的一次性差額計算（非顯示用途），
-    // 用 Number 相減後格式化回 2 位小數字串再送出屬本 repo 既有慣例可接受範圍。
-    const newAmount = (currentAmount - payment).toFixed(2)
     try {
-      await updateLiability({ liability_uid: liability.liability_uid, amount: newAmount }).unwrap()
+      // 還款會建立一筆真實的支出交易（→ backend LiabilityService.record_manual_repayment），
+      // 需要帳戶/分類/支付方式才能入帳，不再只是前端算好新金額直接 PATCH（→ 與定期還款行為一致）
+      await repayLiability({
+        liability_uid: liability.liability_uid,
+        amount: paymentAmount,
+        account_uid: accountUid,
+        category_uid: categoryUid,
+        payment_method: paymentMethod,
+      }).unwrap()
       setPaymentAmount('')
+      setPaymentMethod('')
       setIsRepaying(false)
     } catch {
       // 錯誤已透過 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
@@ -926,6 +940,50 @@ function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactN
               className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
             />
           </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">扣款帳戶</span>
+            <select
+              aria-label={`${liability.name} 扣款帳戶`}
+              value={accountUid}
+              onChange={(event) => setAccountUid(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            >
+              <option value="">請選擇帳戶</option>
+              {(accounts ?? []).map((account) => (
+                <option key={account.account_uid} value={account.account_uid}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">分類</span>
+            <select
+              aria-label={`${liability.name} 分類`}
+              value={categoryUid}
+              onChange={(event) => setCategoryUid(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            >
+              <option value="">請選擇分類</option>
+              {(categories ?? []).map((category) => (
+                <option key={category.category_uid} value={category.category_uid}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">支付方式</span>
+            <input
+              type="text"
+              maxLength={50}
+              placeholder="轉帳 / 信用卡…"
+              aria-label={`${liability.name} 支付方式`}
+              value={paymentMethod}
+              onChange={(event) => setPaymentMethod(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            />
+          </label>
           <button
             type="submit"
             disabled={!isPaymentValid || isLoading}
@@ -933,7 +991,7 @@ function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactN
           >
             {isLoading ? '還款中…' : '確認還款'}
           </button>
-          {hasPaymentInput && !isPaymentValid && (
+          {hasPaymentInput && !isAmountValid && (
             <p role="alert" className="text-sm text-danger-700">
               還款金額須大於 0 且小於目前金額；全部還清請改用「刪除」
             </p>

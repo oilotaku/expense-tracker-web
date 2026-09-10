@@ -38,3 +38,15 @@ class LiabilityResponse(ApiSchema):
 class LiabilityListResponse(ApiSchema):
     items: list[LiabilityResponse]
     total: int
+
+
+class LiabilityRepayRequest(ApiInput):
+    """一次性手動還款：金額必須嚴格小於目前負債金額，全部還清請改用刪除（同既有前端 UI 慣例，
+
+    負債 `amount` 欄位 `gt=0` 不可設為 0）。
+    """
+
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+    account_uid: UUID
+    category_uid: UUID
+    payment_method: str = Field(min_length=1, max_length=50)

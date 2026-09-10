@@ -381,3 +381,40 @@ class TestGenerateDueTransactionsWithLiability:
 
         rule = await RecurringRuleRepository(db).find_by_recurring_rule_uid(rule_uid, user_uid)
         assert rule is None  # 已軟刪，不會繼續每期嘗試產生
+
+
+class TestGenerateDueTransactionsSkipsInactiveRules:
+    async def test_paused_rule_is_skipped_even_when_due(self, db: AsyncSession) -> None:
+        user_uid = await _make_user(db, "recurring-paused@example.com")
+        account_uid = await _make_account(db, user_uid)
+        category_uid = await _make_category(db, user_uid)
+        rule_uid = await _make_rule(
+            db,
+            user_uid=user_uid,
+            account_uid=account_uid,
+            category_uid=category_uid,
+            day_of_month=15,
+        )
+        rule = await RecurringRuleRepository(db).find_by_recurring_rule_uid(rule_uid, user_uid)
+        assert rule is not None
+        await RecurringRuleRepository(db).update_fields(
+            rule,
+            account_uid=None,
+            category_uid=None,
+            description=None,
+            amount=None,
+            transaction_type=None,
+            payment_method=None,
+            interval_unit=None,
+            interval_count=None,
+            anchor_date=None,
+            updated_by=user_uid,
+            is_active=False,
+        )
+
+        service = RecurringService(db)
+        generated = await service.generate_due_transactions(as_of=date(2026, 9, 15))
+
+        assert generated == []
+        _, total = await TransactionRepository(db).list_by_user_uid(user_uid)
+        assert total == 0

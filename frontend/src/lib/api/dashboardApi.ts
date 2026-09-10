@@ -35,6 +35,32 @@ export interface CurrencyRatesResponse {
   rates: Record<string, string>
 }
 
+export interface DashboardDateRangeRequest {
+  dateFrom: string
+  dateTo: string
+}
+
+export interface CategoryBreakdownItem {
+  category_uid: string
+  // Decimal 由後端 field_serializer 轉字串（DB-038），已在後端換算成 TWD 加總完畢
+  amount: string
+}
+
+export interface CategoryBreakdownResponse {
+  items: CategoryBreakdownItem[]
+}
+
+export interface DashboardTrendPoint {
+  // 本地日曆日（Settings.API_TZ，非 UTC），"YYYY-MM-DD"
+  date: string
+  income: string
+  expense: string
+}
+
+export interface DashboardTrendResponse {
+  items: DashboardTrendPoint[]
+}
+
 const dashboardApi = baseApi
   .enhanceEndpoints({ addTagTypes: ['DashboardSummary'] })
   .injectEndpoints({
@@ -53,8 +79,32 @@ const dashboardApi = baseApi
         query: () => 'dashboard/exchange-rates',
         transformResponse: (res: ApiResponse<CurrencyRatesResponse>) => unwrapData(res),
       }),
+      // 取代舊版前端吃 useListTransactionsQuery(limit=100) 自算分類/趨勢的做法（→
+      // dashboard/page.tsx 既有註解，交易數超過 100 筆時資料不完整）；跟 getDashboardSummary
+      // 共用 DashboardSummary/SUMMARY tag，交易異動時一併失效重新查詢。
+      getCategoryBreakdown: build.query<CategoryBreakdownResponse, DashboardDateRangeRequest>({
+        query: ({ dateFrom, dateTo }) => ({
+          url: 'dashboard/category-breakdown',
+          params: { date_from: dateFrom, date_to: dateTo },
+        }),
+        transformResponse: (res: ApiResponse<CategoryBreakdownResponse>) => unwrapData(res),
+        providesTags: [{ type: 'DashboardSummary' as const, id: 'SUMMARY' }],
+      }),
+      getDashboardTrend: build.query<DashboardTrendResponse, DashboardDateRangeRequest>({
+        query: ({ dateFrom, dateTo }) => ({
+          url: 'dashboard/trend',
+          params: { date_from: dateFrom, date_to: dateTo },
+        }),
+        transformResponse: (res: ApiResponse<DashboardTrendResponse>) => unwrapData(res),
+        providesTags: [{ type: 'DashboardSummary' as const, id: 'SUMMARY' }],
+      }),
     }),
     overrideExisting: false,
   })
 
-export const { useGetDashboardSummaryQuery, useGetExchangeRatesQuery } = dashboardApi
+export const {
+  useGetDashboardSummaryQuery,
+  useGetExchangeRatesQuery,
+  useGetCategoryBreakdownQuery,
+  useGetDashboardTrendQuery,
+} = dashboardApi

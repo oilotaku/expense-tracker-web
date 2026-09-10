@@ -12,7 +12,7 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, CheckConstraint, Date, Enum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel, public_uid
@@ -74,6 +74,11 @@ class RecurringRule(BaseModel):
     # 連結負債定期還款（→ RecurringService）；None = 一般收支週期性交易
     liability_uid: Mapped[UUID | None] = mapped_column(
         ForeignKey("liabilities.liability_uid", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 使用者暫停/恢復（與 is_deleted 語意不同：暫停仍保留規則、清單可見，只是服務層跳過產生；
+    # is_deleted 是刪除，兩者互相獨立）
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
 
     __table_args__ = (

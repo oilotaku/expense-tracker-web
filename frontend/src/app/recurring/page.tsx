@@ -341,6 +341,18 @@ function RecurringRuleCard({
   const [intervalCount, setIntervalCount] = useState(String(rule.interval_count))
   const [anchorDate, setAnchorDate] = useState(rule.anchor_date)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [toggleActive, { isLoading: isToggling }] = useUpdateRecurringRuleMutation()
+
+  async function handleToggleActive(): Promise<void> {
+    try {
+      await toggleActive({
+        recurring_rule_uid: rule.recurring_rule_uid,
+        is_active: !rule.is_active,
+      }).unwrap()
+    } catch {
+      // 錯誤不額外攔截，同本檔其餘 mutation 既有慣例（見 handleSave/handleConfirmDelete）
+    }
+  }
 
   function startEdit(): void {
     setTransactionType(rule.transaction_type)
@@ -394,40 +406,58 @@ function RecurringRuleCard({
   if (!isEditing) {
     return (
       <CurvedCard>
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-text-primary">{rule.description}</span>
-          <div className="flex shrink-0 items-center gap-2">
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs ${TRANSACTION_TYPE_BADGE_CLASSNAME[rule.transaction_type]}`}
-            >
-              {TRANSACTION_TYPE_LABEL[rule.transaction_type]}
-            </span>
-            <button
-              type="button"
-              onClick={startEdit}
-              aria-label={`編輯 ${rule.description}`}
-              className="flex h-11 w-11 items-center justify-center text-text-secondary hover:text-text-primary md:h-8 md:w-8"
-            >
-              <span aria-hidden="true">✎</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onRequestDelete(rule)}
-              aria-label={`刪除 ${rule.description}`}
-              className="flex h-11 w-11 items-center justify-center text-danger-500 hover:text-danger-700 md:h-8 md:w-8"
-            >
-              <span aria-hidden="true">✕</span>
-            </button>
+        <div className={rule.is_active ? undefined : 'opacity-60'}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium text-text-primary">{rule.description}</span>
+            <div className="flex shrink-0 items-center gap-2">
+              {!rule.is_active && (
+                <span className="rounded-full bg-text-secondary/20 px-2 py-0.5 text-xs text-text-secondary">
+                  已暫停
+                </span>
+              )}
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${TRANSACTION_TYPE_BADGE_CLASSNAME[rule.transaction_type]}`}
+              >
+                {TRANSACTION_TYPE_LABEL[rule.transaction_type]}
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleActive}
+                disabled={isToggling}
+                aria-label={rule.is_active ? `暫停 ${rule.description}` : `恢復 ${rule.description}`}
+                className="flex h-11 w-11 items-center justify-center text-text-secondary hover:text-text-primary disabled:pointer-events-none disabled:opacity-50 md:h-8 md:w-8"
+              >
+                <span aria-hidden="true">{rule.is_active ? '⏸' : '▶'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={startEdit}
+                aria-label={`編輯 ${rule.description}`}
+                className="flex h-11 w-11 items-center justify-center text-text-secondary hover:text-text-primary md:h-8 md:w-8"
+              >
+                <span aria-hidden="true">✎</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onRequestDelete(rule)}
+                aria-label={`刪除 ${rule.description}`}
+                className="flex h-11 w-11 items-center justify-center text-danger-500 hover:text-danger-700 md:h-8 md:w-8"
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
+            </div>
           </div>
-        </div>
-        <p className="mt-2 text-sm text-text-secondary">
-          {categoryLabel} · {accountName} · {rule.payment_method}
-        </p>
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm text-text-secondary">{intervalDescription(rule)}</span>
-          <span className={`font-semibold ${TRANSACTION_TYPE_AMOUNT_CLASSNAME[rule.transaction_type]}`}>
-            {rule.amount}
-          </span>
+          <p className="mt-2 text-sm text-text-secondary">
+            {categoryLabel} · {accountName} · {rule.payment_method}
+          </p>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-sm text-text-secondary">{intervalDescription(rule)}</span>
+            <span
+              className={`font-semibold ${TRANSACTION_TYPE_AMOUNT_CLASSNAME[rule.transaction_type]}`}
+            >
+              {rule.amount}
+            </span>
+          </div>
         </div>
       </CurvedCard>
     )

@@ -8,15 +8,19 @@ from app.api.deps import get_current_user, get_db
 from app.core.exceptions import NotFoundError
 from app.core.response import success
 from app.models.user import User
+from app.repositories.account_repository import AccountRepository
+from app.repositories.category_repository import CategoryRepository
 from app.repositories.liability_repository import LiabilityRepository
 from app.repositories.recurring_rule_repository import RecurringRuleRepository
 from app.schemas.liability import (
     LiabilityCreateRequest,
     LiabilityListResponse,
+    LiabilityRepayRequest,
     LiabilityResponse,
     LiabilityUpdateRequest,
 )
 from app.schemas.response import ApiResponse
+from app.services.liability_service import LiabilityService
 
 router = APIRouter(prefix="/liabilities")
 
@@ -24,6 +28,20 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 _NOT_FOUND_DETAIL = "負債不存在"
+_ACCOUNT_NOT_FOUND_DETAIL = "帳戶不存在"
+_CATEGORY_NOT_FOUND_DETAIL = "分類不存在"
+
+
+async def _ensure_account_owned(db: AsyncSession, account_uid: UUID, user_uid: UUID) -> None:
+    account = await AccountRepository(db).find_by_account_uid(account_uid, user_uid)
+    if account is None:
+        raise NotFoundError(_ACCOUNT_NOT_FOUND_DETAIL)
+
+
+async def _ensure_category_owned(db: AsyncSession, category_uid: UUID, user_uid: UUID) -> None:
+    category = await CategoryRepository(db).find_by_category_uid(user_uid, category_uid)
+    if category is None:
+        raise NotFoundError(_CATEGORY_NOT_FOUND_DETAIL)
 
 
 @router.post(
@@ -95,6 +113,30 @@ async def update_liability(
         amount=payload.amount,
         interest_rate=payload.interest_rate,
         updated_by=current_user.user_uid,
+    )
+    return success(data=LiabilityResponse.model_validate(liability))
+
+
+@router.post(
+    "/{liability_uid}/repay",
+    response_model=ApiResponse[LiabilityResponse],
+    summary="負債一次性還款（產生支出交易並扣減負債）",
+)
+async def repay_liability(
+    liability_uid: UUID,
+    payload: LiabilityRepayRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[LiabilityResponse]:
+    await _ensure_account_owned(db, payload.account_uid, current_user.user_uid)
+    await _ensure_category_owned(db, payload.category_uid, current_user.user_uid)
+    liability, _transaction = await LiabilityService(db).record_manual_repayment(
+        liability_uid=liability_uid,
+        user_uid=current_user.user_uid,
+        amount=payload.amount,
+        account_uid=payload.account_uid,
+        category_uid=payload.category_uid,
+        payment_method=payload.payment_method,
     )
     return success(data=LiabilityResponse.model_validate(liability))
 

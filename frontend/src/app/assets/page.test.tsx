@@ -45,8 +45,8 @@ const useUpdateFinancialAssetMutation = vi.fn()
 const useListFinancialAssetsQuery = vi.fn()
 const createLiability = vi.fn()
 const useCreateLiabilityMutation = vi.fn()
-const updateLiability = vi.fn()
-const useUpdateLiabilityMutation = vi.fn()
+const repayLiability = vi.fn()
+const useRepayLiabilityMutation = vi.fn()
 const deleteLiability = vi.fn()
 const useDeleteLiabilityMutation = vi.fn()
 const useListLiabilitiesQuery = vi.fn()
@@ -56,7 +56,7 @@ vi.mock('@/lib/api/assetsApi', () => ({
   useUpdateFinancialAssetMutation: () => useUpdateFinancialAssetMutation(),
   useListFinancialAssetsQuery: () => useListFinancialAssetsQuery(),
   useCreateLiabilityMutation: () => useCreateLiabilityMutation(),
-  useUpdateLiabilityMutation: () => useUpdateLiabilityMutation(),
+  useRepayLiabilityMutation: () => useRepayLiabilityMutation(),
   useDeleteLiabilityMutation: () => useDeleteLiabilityMutation(),
   useListLiabilitiesQuery: () => useListLiabilitiesQuery(),
   useGetNetWorthQuery: () => useGetNetWorthQuery(),
@@ -142,11 +142,11 @@ describe('AssetsPage', () => {
       createLiability,
       { isLoading: false, error: undefined },
     ])
-    updateLiability.mockReset().mockReturnValue({
+    repayLiability.mockReset().mockReturnValue({
       unwrap: () => Promise.resolve({ ...LIABILITY, amount: '1900000.00' }),
     })
-    useUpdateLiabilityMutation.mockReset().mockReturnValue([
-      updateLiability,
+    useRepayLiabilityMutation.mockReset().mockReturnValue([
+      repayLiability,
       { isLoading: false, error: undefined },
     ])
     deleteLiability.mockReset().mockReturnValue({
@@ -370,19 +370,27 @@ describe('AssetsPage', () => {
     expect(screen.queryByLabelText('台積電 數量')).not.toBeInTheDocument()
   })
 
-  it('負債還款：輸入小於目前金額的還款金額，呼叫 updateLiability 帶扣減後金額', async () => {
+  it('負債還款：輸入小於目前金額的還款金額並選帳戶/分類，呼叫 repayLiability', async () => {
+    useListAccountOptionsQuery.mockReturnValue({ data: [{ account_uid: 'acc1', name: '銀行帳戶' }] })
+    useListCategoryOptionsQuery.mockReturnValue({ data: [{ category_uid: 'cat1', name: '還款' }] })
     render(<AssetsPage />)
 
     fireEvent.click(screen.getByLabelText('還款 房貸'))
     fireEvent.change(screen.getByLabelText('房貸 還款金額'), { target: { value: '100000' } })
+    fireEvent.change(screen.getByLabelText('房貸 扣款帳戶'), { target: { value: 'acc1' } })
+    fireEvent.change(screen.getByLabelText('房貸 分類'), { target: { value: 'cat1' } })
+    fireEvent.change(screen.getByLabelText('房貸 支付方式'), { target: { value: '轉帳' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '確認還款' }))
     })
 
-    expect(updateLiability).toHaveBeenCalledExactlyOnceWith({
+    expect(repayLiability).toHaveBeenCalledExactlyOnceWith({
       liability_uid: 'l1',
-      amount: '1900000.00',
+      amount: '100000',
+      account_uid: 'acc1',
+      category_uid: 'cat1',
+      payment_method: '轉帳',
     })
   })
 
@@ -396,7 +404,7 @@ describe('AssetsPage', () => {
     expect(
       screen.getByText('還款金額須大於 0 且小於目前金額；全部還清請改用「刪除」'),
     ).toBeInTheDocument()
-    expect(updateLiability).not.toHaveBeenCalled()
+    expect(repayLiability).not.toHaveBeenCalled()
   })
 
   it('刪除負債走 ConfirmDialog：點刪除按鈕開對話框，確認後才呼叫 deleteLiability', async () => {
@@ -474,6 +482,7 @@ describe('AssetsPage', () => {
             anchor_date: '2026-09-15',
             last_generated_year_month: null,
             liability_uid: 'l1',
+            is_active: true,
           },
         ],
         total: 1,

@@ -50,14 +50,20 @@ class LiabilityRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def get_for_update(self, liability_uid: UUID) -> Liability | None:
-        """定期還款產生交易時鎖列讀取，避免同一負債被併發扣款算出錯誤餘額。"""
-        stmt = (
-            select(Liability)
-            .where(Liability.liability_uid == liability_uid, Liability.is_deleted.is_(False))
-            .with_for_update()
+    async def get_for_update(
+        self, liability_uid: UUID, user_uid: UUID | None = None
+    ) -> Liability | None:
+        """還款（定期／手動一次性）產生交易時鎖列讀取，避免同一負債被併發扣款算出錯誤餘額。
+
+        `user_uid` 為 None 時不收斂擁有者（`RecurringService` 走排程觸發，規則本身已綁定
+        使用者，不經使用者請求）；手動還款經 API 觸發，呼叫端會傳入 `user_uid` 做擁有者檢查。
+        """
+        stmt = select(Liability).where(
+            Liability.liability_uid == liability_uid, Liability.is_deleted.is_(False)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        if user_uid is not None:
+            stmt = stmt.where(Liability.user_uid == user_uid)
+        return (await self.db.execute(stmt.with_for_update())).scalar_one_or_none()
 
     async def apply_repayment(
         self, liability: Liability, payment: Decimal, updated_by: UUID

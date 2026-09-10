@@ -7,6 +7,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field, field_serializer, model_validator
 
@@ -26,6 +27,48 @@ class DashboardSummaryFilter(ApiInput):
         if self.date_to < self.date_from:
             raise ValueError("date_to 必須大於等於 date_from")
         return self
+
+
+class DashboardDateRangeFilter(ApiInput):
+    """分類彙總 / 趨勢彙總共用：不像 `DashboardSummaryFilter` 有 `period`（budget_remaining 只在
+    period=month 才有意義），這兩支彙總只需要日期範圍。"""
+
+    date_from: datetime
+    date_to: datetime
+
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> DashboardDateRangeFilter:
+        if self.date_to < self.date_from:
+            raise ValueError("date_to 必須大於等於 date_from")
+        return self
+
+
+class CategoryBreakdownItem(ApiSchema):
+    category_uid: UUID
+    amount: Decimal
+
+    @field_serializer("amount", when_used="json")
+    def _amount_to_str(self, v: Decimal) -> str:
+        return str(v)
+
+
+class CategoryBreakdownResponse(ApiSchema):
+    items: list[CategoryBreakdownItem]
+
+
+class DashboardTrendPoint(ApiSchema):
+    # 本地日曆日（`Settings.API_TZ`，非 UTC，→ CORE-041），"YYYY-MM-DD"
+    date: str
+    income: Decimal
+    expense: Decimal
+
+    @field_serializer("income", "expense", when_used="json")
+    def _amounts_to_str(self, v: Decimal) -> str:
+        return str(v)
+
+
+class DashboardTrendResponse(ApiSchema):
+    items: list[DashboardTrendPoint]
 
 
 class DashboardSummaryResponse(ApiSchema):

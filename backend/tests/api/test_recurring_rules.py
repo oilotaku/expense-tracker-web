@@ -275,3 +275,53 @@ async def test_deleting_liability_soft_deletes_its_recurring_rule(client: AsyncC
 
     get_res = await client.get(f"/api/v1/recurring-rules/{recurring_rule_uid}")
     assert get_res.status_code == 404
+
+
+async def test_new_rule_defaults_to_active(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-active-1@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "訂閱",
+            "amount": "199.00",
+            "transaction_type": "expense",
+            "payment_method": "信用卡",
+            "anchor_date": "2026-09-01",
+        },
+    )
+    assert res.json()["data"]["is_active"] is True
+
+
+async def test_pause_and_resume_rule_via_patch(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-active-2@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    created = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "訂閱",
+            "amount": "199.00",
+            "transaction_type": "expense",
+            "payment_method": "信用卡",
+            "anchor_date": "2026-09-01",
+        },
+    )
+    recurring_rule_uid = created.json()["data"]["recurring_rule_uid"]
+
+    pause_res = await client.patch(
+        f"/api/v1/recurring-rules/{recurring_rule_uid}", json={"is_active": False}
+    )
+    assert pause_res.status_code == 200
+    assert pause_res.json()["data"]["is_active"] is False
+
+    resume_res = await client.patch(
+        f"/api/v1/recurring-rules/{recurring_rule_uid}", json={"is_active": True}
+    )
+    assert resume_res.status_code == 200
+    assert resume_res.json()["data"]["is_active"] is True
