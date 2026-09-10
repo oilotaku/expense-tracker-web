@@ -52,3 +52,6 @@ docs/Tasks/*/workflow/
 # Claude Code 個人層級設定 / 本機自動化腳本（僅這台機器，不隨版控分發）
 .claude/settings.local.json
 .claude/local/
+
+# 個人筆記範本檔,非專案內容
+記帳表單.nmbtemplate
