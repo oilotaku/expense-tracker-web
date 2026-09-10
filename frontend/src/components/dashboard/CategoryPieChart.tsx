@@ -97,7 +97,7 @@ export interface CategoryPieChartProps {
 const defaultFormatValue = (amount: number): string => amount.toLocaleString('zh-Hant-TW')
 const RADIAN = Math.PI / 180
 
-function renderPercentLabel(props: PieLabelRenderProps): ReactNode {
+export function renderPercentLabel(props: PieLabelRenderProps): ReactNode {
   const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props
   if (
     typeof cx !== 'number' ||
@@ -117,8 +117,16 @@ function renderPercentLabel(props: PieLabelRenderProps): ReactNode {
     <text
       x={x}
       y={y}
-      fill="var(--color-text-secondary)"
+      fill="var(--color-text-inverse)"
+      // 標籤疊在切片本身的色塊上（不是白底），`--color-text-secondary` 對飽和的圖表色
+      // 對比度不足（使用者回報「%字不明顯」）。改用白字 + 半透明深色描邊做成不受切片顏色
+      // 影響的 halo 效果，跟切片本身用哪個 --color-chart-* 色票無關，深/淺色都看得清楚。
+      stroke="rgba(0, 0, 0, 0.55)"
+      strokeWidth={3}
+      strokeLinejoin="round"
+      paintOrder="stroke"
       fontSize={12}
+      fontWeight={600}
       textAnchor="middle"
       dominantBaseline="central"
     >
