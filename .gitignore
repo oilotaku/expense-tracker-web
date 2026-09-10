@@ -55,3 +55,6 @@ docs/Tasks/*/workflow/
 
 # 個人筆記範本檔,非專案內容
 記帳表單.nmbtemplate
+
+# Harness 框架本體(獨立 repo,巢狀放置方便 HARNESS_HOME 自動偵測,不隨此專案版控)
+/harness-engineering-services/
