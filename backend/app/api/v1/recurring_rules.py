@@ -72,6 +72,7 @@ def _to_response(rule: RecurringRule) -> RecurringRuleResponse:
         anchor_date=rule.anchor_date,
         last_generated_year_month=rule.last_generated_year_month,
         liability_uid=rule.liability_uid,
+        is_active=rule.is_active,
     )
 
 
@@ -181,6 +182,7 @@ async def update_recurring_rule(
         anchor_date=payload.anchor_date,
         updated_by=current_user.user_uid,
         liability_uid=payload.liability_uid,
+        is_active=payload.is_active,
     )
     return success(data=_to_response(rule))
 

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import DashboardPage, { toTrendPoints } from './page'
+import DashboardPage from './page'
 import { defaultPeriodSelection, toPeriodRange } from '@/components/dashboard/PeriodSelector'
 import type { DashboardSummaryResponse } from '@/lib/api/dashboardApi'
 
@@ -40,10 +40,12 @@ vi.mock('@/lib/api/authApi', () => ({
 }))
 
 const useGetDashboardSummaryQuery = vi.fn()
-const useGetExchangeRatesQuery = vi.fn()
+const useGetCategoryBreakdownQuery = vi.fn()
+const useGetDashboardTrendQuery = vi.fn()
 vi.mock('@/lib/api/dashboardApi', () => ({
   useGetDashboardSummaryQuery: (args: unknown) => useGetDashboardSummaryQuery(args),
-  useGetExchangeRatesQuery: () => useGetExchangeRatesQuery(),
+  useGetCategoryBreakdownQuery: (args: unknown) => useGetCategoryBreakdownQuery(args),
+  useGetDashboardTrendQuery: (args: unknown) => useGetDashboardTrendQuery(args),
 }))
 
 const refetchNetWorth = vi.fn()
@@ -145,8 +147,13 @@ describe('DashboardPage', () => {
     })
     useGetDashboardSummaryQuery.mockReset()
     mockSummary()
-    useGetExchangeRatesQuery.mockReset().mockReturnValue({
-      data: { rates: { TWD: '1', USD: '31.5' } },
+    useGetCategoryBreakdownQuery.mockReset().mockReturnValue({
+      data: { items: [{ category_uid: 'c-food', amount: '120.00' }] },
+      isLoading: false,
+      error: undefined,
+    })
+    useGetDashboardTrendQuery.mockReset().mockReturnValue({
+      data: { items: [{ date: '2026-09-03', income: '0.00', expense: '120.00' }] },
       isLoading: false,
       error: undefined,
     })
@@ -343,118 +350,19 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('tab', { name: '折線' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('分類圖表跨幣別交易換算成 TWD 後再加總，不直接把不同幣別的原始金額相加（外幣帳戶功能）', () => {
-    useListAccountsQuery.mockReturnValue({
-      data: {
-        items: [
-          ...ACCOUNTS.items,
-          {
-            account_uid: 'a-usd',
-            name: '美金帳戶',
-            balance: '500.00',
-            currency: 'USD',
-            color: '#E8834B',
-            icon: 'savings',
-          },
-        ],
-        total: 2,
-      },
+  it('分類圖表直接使用後端彙總 API 回傳、已換算成 TWD 的金額（外幣換算邏輯已搬到後端）', () => {
+    // 後端 GET /dashboard/category-breakdown 已把跨幣別交易換算成 TWD 加總完畢
+    // （→ backend/app/services/dashboard_service.py get_category_breakdown，對應後端測試
+    // test_category_breakdown_converts_foreign_currency_to_twd），前端只需把字串轉數字餵給圖表。
+    useGetCategoryBreakdownQuery.mockReturnValue({
+      data: { items: [{ category_uid: 'c-food', amount: '435.00' }] },
       isLoading: false,
       error: undefined,
-    })
-    useListTransactionsQuery.mockReturnValue({
-      data: {
-        items: [
-          ...TRANSACTIONS.items,
-          {
-            transaction_uid: 't-2',
-            account_uid: 'a-usd',
-            category_uid: 'c-food',
-            transaction_date: '2026-09-04T00:00:00+08:00',
-            description: '海外餐廳',
-            amount: '10.00',
-            transaction_type: 'expense' as const,
-            payment_method: '信用卡',
-            tags: [],
-          },
-        ],
-        total: 2,
-      },
     })
 
     render(<DashboardPage />)
 
-    // 120 TWD + 10 USD × 31.5 = 435；若誤把不同幣別原始金額直接相加會變成 130（bug 級結果）
     expect(screen.getByText('NT$435')).toBeInTheDocument()
     expect(screen.queryByText('NT$130')).not.toBeInTheDocument()
-  })
-})
-
-describe('toTrendPoints', () => {
-  const RATES = { TWD: '1', USD: '31.5' }
-
-  it('轉帳列不計入收支趨勢（兩邊帳戶互相抵銷，不是真正的收入或支出）', () => {
-    const points = toTrendPoints(
-      [
-        {
-          transaction_uid: 't-transfer-out',
-          account_uid: 'a-cash',
-          category_uid: null,
-          transaction_date: '2026-09-03T00:00:00+08:00',
-          description: '轉帳',
-          amount: '500.00',
-          transaction_type: 'transfer',
-          payment_method: '轉帳',
-          tags: [],
-          transfer_group_uid: 'g-1',
-          transfer_direction: 'out',
-          transfer_counterpart_account_uid: 'a-bank',
-        },
-        {
-          transaction_uid: 't-income',
-          account_uid: 'a-cash',
-          category_uid: 'c-salary',
-          transaction_date: '2026-09-03T00:00:00+08:00',
-          description: '薪資',
-          amount: '1000.00',
-          transaction_type: 'income',
-          payment_method: '轉帳',
-          tags: [],
-          transfer_group_uid: null,
-          transfer_direction: null,
-          transfer_counterpart_account_uid: null,
-        },
-      ],
-      new Map([['a-cash', 'TWD']]),
-      RATES,
-    )
-
-    expect(points).toEqual([{ date: '2026-09-03', income: 1000, expense: 0 }])
-  })
-
-  it('外幣帳戶交易依匯率換算成 TWD 後才加總進趨勢資料', () => {
-    const points = toTrendPoints(
-      [
-        {
-          transaction_uid: 't-expense-usd',
-          account_uid: 'a-usd',
-          category_uid: 'c-food',
-          transaction_date: '2026-09-03T00:00:00+08:00',
-          description: '海外餐廳',
-          amount: '10.00',
-          transaction_type: 'expense',
-          payment_method: '信用卡',
-          tags: [],
-          transfer_group_uid: null,
-          transfer_direction: null,
-          transfer_counterpart_account_uid: null,
-        },
-      ],
-      new Map([['a-usd', 'USD']]),
-      RATES,
-    )
-
-    // 10 USD × 31.5 = 315
-    expect(points).toEqual([{ date: '2026-09-03', income: 0, expense: 315 }])
   })
 })

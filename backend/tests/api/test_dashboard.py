@@ -446,3 +446,216 @@ async def test_dashboard_exchange_rates_pricing_unavailable_returns_424(
 async def test_dashboard_exchange_rates_without_jwt_returns_401(client: AsyncClient) -> None:
     res = await client.get("/api/v1/dashboard/exchange-rates")
     assert res.status_code == 401
+
+
+async def test_category_breakdown_without_jwt_returns_401(client: AsyncClient) -> None:
+    res = await client.get(
+        "/api/v1/dashboard/category-breakdown",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    assert res.status_code == 401
+
+
+async def test_category_breakdown_sums_expense_by_category_excludes_income_and_transfer(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "dashboard-breakdown-1@example.com")
+    account_uid = await _create_account(client)
+    other_account_uid = await _create_account(client, "另一帳戶")
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+    transport_uid = categories["交通"]
+
+    await _create_transaction(
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-05T12:00:00+08:00"),
+        "300.00",
+        "expense",
+    )
+    await _create_transaction(
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-10T12:00:00+08:00"),
+        "200.00",
+        "expense",
+    )
+    await _create_transaction(
+        client,
+        account_uid,
+        transport_uid,
+        datetime.fromisoformat("2026-01-12T12:00:00+08:00"),
+        "150.00",
+        "expense",
+    )
+    # 收入不應計入分類支出彙總
+    await _create_transaction(
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-13T12:00:00+08:00"),
+        "5000.00",
+        "income",
+    )
+    # 轉帳不應計入
+    await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "from_account_uid": account_uid,
+            "to_account_uid": other_account_uid,
+            "transaction_date": "2026-01-14T12:00:00+08:00",
+            "description": "轉帳",
+            "amount": "1000.00",
+            "payment_method": "轉帳",
+        },
+    )
+
+    res = await client.get(
+        "/api/v1/dashboard/category-breakdown",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    assert res.status_code == 200
+    items = {item["category_uid"]: item["amount"] for item in res.json()["data"]["items"]}
+    assert items[food_uid] == "500.00"
+    assert items[transport_uid] == "150.00"
+
+
+async def test_category_breakdown_converts_foreign_currency_to_twd(client: AsyncClient) -> None:
+    await _register_and_login(client, "dashboard-breakdown-2@example.com")
+    _override_pricing(lambda: _FakePricingService(exchange_rates={("USD", "TWD"): Decimal("31.5")}))
+    usd_account = await _create_account(client, "美金帳戶", currency="USD")
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    await _create_transaction(
+        client,
+        usd_account,
+        food_uid,
+        datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
+        "10.00",
+        "expense",
+    )
+
+    res = await client.get(
+        "/api/v1/dashboard/category-breakdown",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    items = {item["category_uid"]: item["amount"] for item in res.json()["data"]["items"]}
+    assert items[food_uid] == "315.00"
+
+
+async def test_category_breakdown_not_limited_to_100_transactions(client: AsyncClient) -> None:
+    """回歸測試：舊做法吃 `GET /transactions?limit=100`，期間超過 100 筆交易時圖表資料不完整
+    （→ v1.1.0 fixed.md §6）。這支彙總 API 不該有同樣的上限。"""
+    await _register_and_login(client, "dashboard-breakdown-3@example.com")
+    account_uid = await _create_account(client)
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    for day in range(1, 32):
+        await _create_transaction(
+            client,
+            account_uid,
+            food_uid,
+            datetime.fromisoformat(f"2026-01-{day:02d}T12:00:00+08:00"),
+            "10.00",
+            "expense",
+        )
+    # 31 天各建 4 筆，總共 124 筆，超過舊版 limit=100
+    for day in range(1, 32):
+        for _ in range(3):
+            await _create_transaction(
+                client,
+                account_uid,
+                food_uid,
+                datetime.fromisoformat(f"2026-01-{day:02d}T13:00:00+08:00"),
+                "10.00",
+                "expense",
+            )
+
+    res = await client.get(
+        "/api/v1/dashboard/category-breakdown",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    items = {item["category_uid"]: item["amount"] for item in res.json()["data"]["items"]}
+    # 124 筆 * 10.00 = 1240.00；若還受 limit=100 影響會少於這個數字
+    assert items[food_uid] == "1240.00"
+
+
+async def test_trend_without_jwt_returns_401(client: AsyncClient) -> None:
+    res = await client.get(
+        "/api/v1/dashboard/trend",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    assert res.status_code == 401
+
+
+async def test_trend_groups_by_local_date_excludes_transfer(client: AsyncClient) -> None:
+    await _register_and_login(client, "dashboard-trend-1@example.com")
+    account_uid = await _create_account(client)
+    other_account_uid = await _create_account(client, "另一帳戶")
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    await _create_transaction(
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-05T09:00:00+08:00"),
+        "300.00",
+        "expense",
+    )
+    await _create_transaction(
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-01-05T20:00:00+08:00"),
+        "5000.00",
+        "income",
+    )
+    await client.post(
+        "/api/v1/transactions/transfer",
+        json={
+            "from_account_uid": account_uid,
+            "to_account_uid": other_account_uid,
+            "transaction_date": "2026-01-05T12:00:00+08:00",
+            "description": "轉帳",
+            "amount": "1000.00",
+            "payment_method": "轉帳",
+        },
+    )
+
+    res = await client.get(
+        "/api/v1/dashboard/trend",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    assert res.status_code == 200
+    items = {item["date"]: item for item in res.json()["data"]["items"]}
+    assert items["2026-01-05"]["income"] == "5000.00"
+    assert items["2026-01-05"]["expense"] == "300.00"
+
+
+async def test_trend_converts_foreign_currency_to_twd(client: AsyncClient) -> None:
+    await _register_and_login(client, "dashboard-trend-2@example.com")
+    _override_pricing(lambda: _FakePricingService(exchange_rates={("USD", "TWD"): Decimal("31.5")}))
+    usd_account = await _create_account(client, "美金帳戶", currency="USD")
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    await _create_transaction(
+        client,
+        usd_account,
+        food_uid,
+        datetime.fromisoformat("2026-01-15T12:00:00+08:00"),
+        "10.00",
+        "expense",
+    )
+
+    res = await client.get(
+        "/api/v1/dashboard/trend",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
+    )
+    items = {item["date"]: item for item in res.json()["data"]["items"]}
+    assert items["2026-01-15"]["expense"] == "315.00"

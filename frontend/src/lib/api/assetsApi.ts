@@ -73,6 +73,14 @@ export interface LiabilityUpdateRequest {
   interest_rate?: string | null
 }
 
+export interface LiabilityRepayRequest {
+  liability_uid: string
+  amount: string
+  account_uid: string
+  category_uid: string
+  payment_method: string
+}
+
 export interface NetWorthAssetItem {
   financial_asset_uid: string
   asset_type: AssetType
@@ -92,7 +100,7 @@ export interface NetWorthResponse {
 }
 
 const assetsApi = baseApi
-  .enhanceEndpoints({ addTagTypes: ['FinancialAsset', 'Liability', 'NetWorth'] })
+  .enhanceEndpoints({ addTagTypes: ['FinancialAsset', 'Liability', 'NetWorth', 'Transaction'] })
   .injectEndpoints({
     endpoints: (build) => ({
       listFinancialAssets: build.query<FinancialAssetListResponse, void>({
@@ -161,6 +169,22 @@ const assetsApi = baseApi
           { type: 'NetWorth' as const, id: 'SUMMARY' },
         ],
       }),
+      repayLiability: build.mutation<LiabilityResponse, LiabilityRepayRequest>({
+        query: ({ liability_uid, ...body }) => ({
+          url: `liabilities/${liability_uid}/repay`,
+          method: 'POST',
+          body,
+        }),
+        transformResponse: (res: ApiResponse<LiabilityResponse>) => unwrapData(res),
+        // 還款會建立一筆交易並改動 amount，一併 invalidate Transaction LIST（讓交易頁/Dashboard
+        // 反映這筆還款）與 NetWorth SUMMARY（同 updateLiability 既有慣例）
+        invalidatesTags: (_result, _error, { liability_uid }) => [
+          { type: 'Liability' as const, id: liability_uid },
+          { type: 'Liability' as const, id: 'LIST' },
+          { type: 'NetWorth' as const, id: 'SUMMARY' },
+          { type: 'Transaction' as const, id: 'LIST' },
+        ],
+      }),
       // 刪除成功回應為 ApiResponse[None]（data 恆為 null），與「data 為 null 視為錯誤」的
       // unwrapData 語意衝突（→ accountsApi.ts deleteAccount 同寫法），不經 unwrapData。
       deleteLiability: build.mutation<void, string>({
@@ -190,6 +214,7 @@ export const {
   useListLiabilitiesQuery,
   useCreateLiabilityMutation,
   useUpdateLiabilityMutation,
+  useRepayLiabilityMutation,
   useDeleteLiabilityMutation,
   useGetNetWorthQuery,
 } = assetsApi

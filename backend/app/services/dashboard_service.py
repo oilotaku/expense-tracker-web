@@ -23,9 +23,16 @@ from app.core.exceptions import AppError
 from app.models.account import Account
 from app.models.budget import Budget, BudgetPeriodType
 from app.models.transaction import Transaction, TransactionType
-from app.schemas.dashboard import DashboardSummaryResponse
+from app.schemas.dashboard import (
+    CategoryBreakdownItem,
+    CategoryBreakdownResponse,
+    DashboardSummaryResponse,
+    DashboardTrendPoint,
+    DashboardTrendResponse,
+)
 from app.services.pricing_service import PricingService
 from app.utils.currency import SupportedCurrency
+from app.utils.datetime import to_api_tz
 
 _CENTS = Decimal("0.01")
 
@@ -167,3 +174,98 @@ class DashboardService:
             Decimal("0"),
         )
         return total.quantize(_CENTS)
+
+    async def get_category_breakdown(
+        self, user_uid: UUID, date_from: datetime, date_to: datetime
+    ) -> CategoryBreakdownResponse:
+        """依分類彙總期間內支出（→ Dashboard 分類圓餅圖/長條圖），取代舊版前端吃
+        `GET /transactions?limit=100` 自算的做法（該做法交易數超過 100 筆時資料不完整）。
+
+        SQL 端先依 (category_uid, currency) GROUP BY 加總，只有少數子總額需要在 Python 端呼叫
+        `PricingService` 換算 TWD（同 `_sum_income_expense` 既有模式，→ BE-089）。
+        """
+        stmt = (
+            select(
+                Transaction.category_uid,
+                Account.currency,
+                func.coalesce(func.sum(Transaction.amount), 0),
+            )
+            .join(Account, Account.account_uid == Transaction.account_uid)
+            .where(
+                Transaction.user_uid == user_uid,
+                Transaction.is_deleted.is_(False),
+                Transaction.transaction_type == TransactionType.EXPENSE,
+                Transaction.transaction_date >= date_from,
+                Transaction.transaction_date <= date_to,
+            )
+            .group_by(Transaction.category_uid, Account.currency)
+        )
+        rows = (await self._db.execute(stmt)).all()
+
+        totals: dict[UUID, Decimal] = {}
+        for category_uid, currency, subtotal in rows:
+            converted = await self._to_twd(Decimal(subtotal), currency)
+            totals[category_uid] = totals.get(category_uid, Decimal("0")) + converted
+
+        return CategoryBreakdownResponse(
+            items=[
+                CategoryBreakdownItem(category_uid=category_uid, amount=amount.quantize(_CENTS))
+                for category_uid, amount in totals.items()
+            ]
+        )
+
+    async def get_trend(
+        self, user_uid: UUID, date_from: datetime, date_to: datetime
+    ) -> DashboardTrendResponse:
+        """依日期彙總收支（→ Dashboard 收支趨勢線圖），取代舊版前端吃
+        `GET /transactions?limit=100` 自算的做法（同 `get_category_breakdown` 動機）。
+
+        分桶用的「日期」是 `Settings.API_TZ` 的本地日曆日，不是 UTC（→ CORE-041）；本 repo 目前
+        沒有 SQL 層級時區轉換的既有寫法（無 `AT TIME ZONE`/`date_trunc` 前例），改成 SQL 只依
+        (transaction_type, currency) 排除轉帳後撈出，Python 端用既有 `to_api_tz()` 分桶——
+        `PricingService` 呼叫次數跟「不重複的 (日期, 幣別, 收支類型) 組合數」成正比，不是逐筆
+        交易（→ BE-089 精神不變，只是分桶點從 SQL 移到 Python）。
+        """
+        stmt = (
+            select(
+                Transaction.transaction_date,
+                Transaction.transaction_type,
+                Account.currency,
+                Transaction.amount,
+            )
+            .join(Account, Account.account_uid == Transaction.account_uid)
+            .where(
+                Transaction.user_uid == user_uid,
+                Transaction.is_deleted.is_(False),
+                Transaction.transaction_type != TransactionType.TRANSFER,
+                Transaction.transaction_date >= date_from,
+                Transaction.transaction_date <= date_to,
+            )
+        )
+        rows = (await self._db.execute(stmt)).all()
+
+        subtotals: dict[tuple[str, str, TransactionType], Decimal] = {}
+        for transaction_date, transaction_type, currency, amount in rows:
+            local_date = to_api_tz(transaction_date).date().isoformat()
+            key = (local_date, currency, transaction_type)
+            subtotals[key] = subtotals.get(key, Decimal("0")) + amount
+
+        points: dict[str, dict[str, Decimal]] = {}
+        for (local_date, currency, transaction_type), subtotal in subtotals.items():
+            converted = await self._to_twd(subtotal, currency)
+            point = points.setdefault(local_date, {"income": Decimal("0"), "expense": Decimal("0")})
+            if transaction_type == TransactionType.INCOME:
+                point["income"] += converted
+            else:
+                point["expense"] += converted
+
+        return DashboardTrendResponse(
+            items=[
+                DashboardTrendPoint(
+                    date=date_str,
+                    income=values["income"].quantize(_CENTS),
+                    expense=values["expense"].quantize(_CENTS),
+                )
+                for date_str, values in sorted(points.items(), key=lambda item: item[0])
+            ]
+        )

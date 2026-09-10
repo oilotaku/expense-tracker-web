@@ -5,15 +5,23 @@ import { setupServer } from 'msw/node'
 import { Provider } from 'react-redux'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { makeStore } from '@/store/store'
-import { useGetDashboardSummaryQuery, useGetExchangeRatesQuery } from './dashboardApi'
+import {
+  useGetCategoryBreakdownQuery,
+  useGetDashboardSummaryQuery,
+  useGetDashboardTrendQuery,
+  useGetExchangeRatesQuery,
+} from './dashboardApi'
 
 // resolveApiBaseUrl()：jsdom 環境 window 已定義（非 server），且測試未設 NEXT_PUBLIC_API_URL，
 // 故落回 baseApi.ts 的 FALLBACK 常數。
 const BASE_URL = 'http://localhost:8000/api/v1'
 const SUMMARY_URL = `${BASE_URL}/dashboard/summary`
 const EXCHANGE_RATES_URL = `${BASE_URL}/dashboard/exchange-rates`
+const CATEGORY_BREAKDOWN_URL = `${BASE_URL}/dashboard/category-breakdown`
+const TREND_URL = `${BASE_URL}/dashboard/trend`
 
 const REQUEST = { period: 'month' as const, dateFrom: '2026-09-01T00:00:00+08:00', dateTo: '2026-09-30T23:59:59+08:00' }
+const RANGE_REQUEST = { dateFrom: '2026-09-01T00:00:00+08:00', dateTo: '2026-09-30T23:59:59+08:00' }
 
 const SUCCESS_DATA = {
   period: 'month',
@@ -26,11 +34,19 @@ const SUCCESS_DATA = {
 }
 
 const RATES_DATA = { rates: { TWD: '1', USD: '31.5', JPY: '0.2' } }
+const CATEGORY_BREAKDOWN_DATA = { items: [{ category_uid: 'c-food', amount: '500.00' }] }
+const TREND_DATA = { items: [{ date: '2026-09-03', income: '0.00', expense: '120.00' }] }
 
 // FE-012：一律用 msw 攔截真實 HTTP request，禁 mock fetch / RTK hook 本身
 const server = setupServer(
   http.get(SUMMARY_URL, () => HttpResponse.json({ success: true, data: SUCCESS_DATA, detail: null, response_code: 200 })),
   http.get(EXCHANGE_RATES_URL, () => HttpResponse.json({ success: true, data: RATES_DATA, detail: null, response_code: 200 })),
+  http.get(CATEGORY_BREAKDOWN_URL, () =>
+    HttpResponse.json({ success: true, data: CATEGORY_BREAKDOWN_DATA, detail: null, response_code: 200 }),
+  ),
+  http.get(TREND_URL, () =>
+    HttpResponse.json({ success: true, data: TREND_DATA, detail: null, response_code: 200 }),
+  ),
 )
 
 function renderDashboardSummaryHook(request: typeof REQUEST) {
@@ -47,6 +63,20 @@ function renderExchangeRatesHook() {
   // eslint-disable-next-line react/no-children-prop
   const wrapper = ({ children }: { children: ReactNode }) => createElement(Provider, { store, children })
   return renderHook(() => useGetExchangeRatesQuery(), { wrapper })
+}
+
+function renderCategoryBreakdownHook(request: typeof RANGE_REQUEST) {
+  const store = makeStore()
+  // eslint-disable-next-line react/no-children-prop
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(Provider, { store, children })
+  return renderHook(() => useGetCategoryBreakdownQuery(request), { wrapper })
+}
+
+function renderTrendHook(request: typeof RANGE_REQUEST) {
+  const store = makeStore()
+  // eslint-disable-next-line react/no-children-prop
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(Provider, { store, children })
+  return renderHook(() => useGetDashboardTrendQuery(request), { wrapper })
 }
 
 describe('dashboardApi', () => {
@@ -108,8 +138,6 @@ describe('dashboardApi', () => {
     expect(error && 'data' in error && (error.data as { detail: string }).detail).toBe('未登入')
   })
 
-  // 外幣帳戶功能：Dashboard 分類圖表/趨勢線圖需要這份即時匯率才能正確換算跨幣別交易
-  // （→ dashboard/page.tsx toTwdAmount）。
   it('exchange-rates：成功時回傳 unwrap 後的匯率表', async () => {
     const { result } = renderExchangeRatesHook()
 
@@ -134,5 +162,76 @@ describe('dashboardApi', () => {
 
     const error = result.current.error
     expect(error && 'status' in error && error.status).toBe(424)
+  })
+
+  it('category-breakdown：成功時回傳 unwrap 後的分類彙總，並帶正確 query string', async () => {
+    let capturedUrl: URL | undefined
+    server.use(
+      http.get(CATEGORY_BREAKDOWN_URL, ({ request }) => {
+        capturedUrl = new URL(request.url)
+        return HttpResponse.json({
+          success: true,
+          data: CATEGORY_BREAKDOWN_DATA,
+          detail: null,
+          response_code: 200,
+        })
+      }),
+    )
+
+    const { result } = renderCategoryBreakdownHook(RANGE_REQUEST)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual(CATEGORY_BREAKDOWN_DATA)
+    expect(capturedUrl?.searchParams.get('date_from')).toBe(RANGE_REQUEST.dateFrom)
+    expect(capturedUrl?.searchParams.get('date_to')).toBe(RANGE_REQUEST.dateTo)
+  })
+
+  it('category-breakdown：401（未登入）時 hook 回報對應錯誤狀態', async () => {
+    server.use(
+      http.get(CATEGORY_BREAKDOWN_URL, () =>
+        HttpResponse.json({ success: false, data: null, detail: '未登入', response_code: 401 }, { status: 401 }),
+      ),
+    )
+
+    const { result } = renderCategoryBreakdownHook(RANGE_REQUEST)
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    const error = result.current.error
+    expect(error && 'status' in error && error.status).toBe(401)
+  })
+
+  it('trend：成功時回傳 unwrap 後的趨勢資料，並帶正確 query string', async () => {
+    let capturedUrl: URL | undefined
+    server.use(
+      http.get(TREND_URL, ({ request }) => {
+        capturedUrl = new URL(request.url)
+        return HttpResponse.json({ success: true, data: TREND_DATA, detail: null, response_code: 200 })
+      }),
+    )
+
+    const { result } = renderTrendHook(RANGE_REQUEST)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual(TREND_DATA)
+    expect(capturedUrl?.searchParams.get('date_from')).toBe(RANGE_REQUEST.dateFrom)
+    expect(capturedUrl?.searchParams.get('date_to')).toBe(RANGE_REQUEST.dateTo)
+  })
+
+  it('trend：401（未登入）時 hook 回報對應錯誤狀態', async () => {
+    server.use(
+      http.get(TREND_URL, () =>
+        HttpResponse.json({ success: false, data: null, detail: '未登入', response_code: 401 }, { status: 401 }),
+      ),
+    )
+
+    const { result } = renderTrendHook(RANGE_REQUEST)
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    const error = result.current.error
+    expect(error && 'status' in error && error.status).toBe(401)
   })
 })

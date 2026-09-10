@@ -47,6 +47,7 @@ class RecurringRuleUpdateRequest(ApiInput):
     liability_uid: UUID | None = Field(
         default=None, description="連結負債定期還款；設定時 transaction_type 必須是 expense"
     )
+    is_active: bool | None = Field(default=None, description="暫停（false）/恢復（true）此規則")
 
 
 class RecurringRuleResponse(ApiSchema):
@@ -62,6 +63,7 @@ class RecurringRuleResponse(ApiSchema):
     anchor_date: date
     last_generated_year_month: str | None
     liability_uid: UUID | None
+    is_active: bool
 
     @field_serializer("amount", when_used="json")
     def _amount_to_str(self, v: Decimal) -> str:

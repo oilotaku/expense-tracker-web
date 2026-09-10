@@ -31,7 +31,11 @@ import { useListAccountsQuery } from '@/lib/api/accountsApi'
 import { useGetNetWorthQuery } from '@/lib/api/assetsApi'
 import { useGetMeQuery } from '@/lib/api/authApi'
 import { baseApi } from '@/lib/api/baseApi'
-import { useGetDashboardSummaryQuery, useGetExchangeRatesQuery } from '@/lib/api/dashboardApi'
+import {
+  useGetCategoryBreakdownQuery,
+  useGetDashboardSummaryQuery,
+  useGetDashboardTrendQuery,
+} from '@/lib/api/dashboardApi'
 import { useCreateRecurringRuleMutation } from '@/lib/api/recurringApi'
 import {
   useCreateTransactionMutation,
@@ -60,12 +64,10 @@ function getErrorMessage(error: FetchBaseQueryError | SerializedError | undefine
   return error.message ?? '發生錯誤，請稍後再試'
 }
 
-// 四張卡片與期間切換吃 `GET /dashboard/summary`（→ design-spec §9.2 資料源決議 / A14），但圖表
-// 區的「分類佔比」與「收支趨勢」目前沒有對應的後端彙總 endpoint，只能沿用既有
-// `GET /transactions`（`TransactionListFilter.limit` 上限 100，backend/app/schemas/transaction.py）
-// 在期間內抓一頁交易後於前端加總。期間交易超過 100 筆時圖表僅涵蓋最新 100 筆 —— 已知限制，
-// 需後端補一支分類/趨勢彙總 API 才能根治（不在 task-016 的 affected_files 範圍）。
-const CHART_TRANSACTION_LIMIT = 100
+// 四張卡片與期間切換吃 `GET /dashboard/summary`（→ design-spec §9.2 資料源決議 / A14），圖表區的
+// 「分類佔比」與「收支趨勢」吃 `GET /dashboard/category-breakdown` / `GET /dashboard/trend`
+// （後端 SQL 彙總 + 換算 TWD，沒有 `GET /transactions` 那種 limit 上限，取代舊版前端吃
+// `useListTransactionsQuery(limit=100)` 自算、超過 100 筆交易時資料不完整的做法）。
 const RECENT_TRANSACTION_LIMIT = 5
 
 // PIN 快速登入提醒：只在「註冊後的首次登入」（登入頁帶來的 `?justRegistered=1`）出現，且同一
@@ -96,69 +98,10 @@ const PIN_REMINDER_PRIMARY_BUTTON_CLASS =
 const PIN_REMINDER_SECONDARY_BUTTON_CLASS =
   'min-h-11 rounded-md border border-border px-4 font-medium text-text-secondary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
 
-// 外幣帳戶功能：分類圖表/趨勢線圖是前端直接把 useListTransactionsQuery 回傳的原始交易加總
-// （不像 Dashboard 彙總卡片走後端 SQL 依幣別 GROUP BY 換算），若不先換算成 TWD，不同幣別的
-// 原始金額數字會被誤當同一種幣別直接相加（例如 100 USD + 5000 TWD 會變成「5100」）。
-// 匯率暫缺（GET /dashboard/exchange-rates 尚未回來或失敗）時退化為原始數字，不讓圖表整體壞掉。
-export function toTwdAmount(
-  transaction: TransactionResponse,
-  accountCurrencies: ReadonlyMap<string, string>,
-  rates: Readonly<Record<string, string>>,
-): number | null {
-  const amount = Number(transaction.amount)
-  if (!Number.isFinite(amount)) return null
-  const currency = accountCurrencies.get(transaction.account_uid)
-  if (currency === undefined || currency === 'TWD') return amount
-  const rate = Number(rates[currency])
-  return Number.isFinite(rate) ? amount * rate : amount
-}
-
-export function toCategorySlices(
-  transactions: readonly TransactionResponse[],
-  categoryNames: ReadonlyMap<string, string>,
-  accountCurrencies: ReadonlyMap<string, string>,
-  rates: Readonly<Record<string, string>>,
-): CategorySlice[] {
-  const totals = new Map<string, number>()
-  for (const transaction of transactions) {
-    // transaction_type !== 'expense' 已排除轉帳列（transfer 沒有分類，category_uid 恆為
-    // null），但 TS 無法從 !== 'expense' 反推出 category_uid 非 null，仍需顯式收窄。
-    if (transaction.transaction_type !== 'expense' || transaction.category_uid === null) continue
-    const amount = toTwdAmount(transaction, accountCurrencies, rates)
-    if (amount === null) continue
-    const categoryUid = transaction.category_uid
-    totals.set(categoryUid, (totals.get(categoryUid) ?? 0) + amount)
-  }
-  return [...totals].map(([categoryUid, amount]) => ({
-    id: categoryUid,
-    label: categoryNames.get(categoryUid) ?? '未分類',
-    amount,
-  }))
-}
-
-export function toTrendPoints(
-  transactions: readonly TransactionResponse[],
-  accountCurrencies: ReadonlyMap<string, string>,
-  rates: Readonly<Record<string, string>>,
-): TrendPoint[] {
-  const points = new Map<string, TrendPoint>()
-  for (const transaction of transactions) {
-    // 轉帳兩邊帳戶互相抵銷、不是真正的收入或支出（→ TransactionList.tsx transferAccountsLabel
-    // 同一慣例），排除後才能用 `else` 安全地把非 income 一律當 expense。
-    if (transaction.transaction_type === 'transfer') continue
-    const date = transaction.transaction_date.slice(0, 10)
-    const amount = toTwdAmount(transaction, accountCurrencies, rates)
-    if (amount === null) continue
-    const point = points.get(date) ?? { date, income: 0, expense: 0 }
-    if (transaction.transaction_type === 'income') {
-      point.income += amount
-    } else {
-      point.expense += amount
-    }
-    points.set(date, point)
-  }
-  return [...points.values()].sort((a, b) => a.date.localeCompare(b.date))
-}
+// 分類佔比/收支趨勢圖表資料由後端彙總 API 直接算好並換算成 TWD（→ GET /dashboard/category-breakdown
+// / GET /dashboard/trend，backend/app/services/dashboard_service.py），前端只需把字串金額轉成
+// number 餵給圖表元件（`categorySlices`/`trendPoints`，見 DashboardContent），不再需要在前端
+// 逐筆加總或換算幣別。
 
 // transaction_date 為帶 offset 的 ISO 8601（後端已序列化為 API_TZ，→ CORE-041），前端不再轉換，
 // 直接取字串的月/日呈現（design-spec §9.2 wireframe 的 `09/03`）。
@@ -271,15 +214,17 @@ function DashboardContent(): ReactNode {
     dateTo: range.dateTo,
   })
 
-  const { data: periodTransactions } = useListTransactionsQuery({
-    date_from: range.dateFrom,
-    date_to: range.dateTo,
-    limit: CHART_TRANSACTION_LIMIT,
+  const { data: categoryBreakdown } = useGetCategoryBreakdownQuery({
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+  })
+  const { data: trend } = useGetDashboardTrendQuery({
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
   })
   const { data: recentTransactions } = useListTransactionsQuery({ limit: RECENT_TRANSACTION_LIMIT })
   const { data: categories } = useListCategoryOptionsQuery()
   const { data: accountList } = useListAccountsQuery()
-  const { data: exchangeRates } = useGetExchangeRatesQuery()
   const {
     data: netWorth,
     isLoading: isNetWorthLoading,
@@ -304,14 +249,23 @@ function DashboardContent(): ReactNode {
     () => new Map(accounts.map((account) => [account.account_uid, account.currency])),
     [accounts],
   )
-  const currencyRates = useMemo(() => exchangeRates?.rates ?? {}, [exchangeRates])
   const categorySlices = useMemo(
-    () => toCategorySlices(periodTransactions?.items ?? [], categoryNames, accountCurrencies, currencyRates),
-    [periodTransactions, categoryNames, accountCurrencies, currencyRates],
+    (): CategorySlice[] =>
+      (categoryBreakdown?.items ?? []).map((item) => ({
+        id: item.category_uid,
+        label: categoryNames.get(item.category_uid) ?? '未分類',
+        amount: Number(item.amount),
+      })),
+    [categoryBreakdown, categoryNames],
   )
   const trendPoints = useMemo(
-    () => toTrendPoints(periodTransactions?.items ?? [], accountCurrencies, currencyRates),
-    [periodTransactions, accountCurrencies, currencyRates],
+    (): TrendPoint[] =>
+      (trend?.items ?? []).map((point) => ({
+        date: point.date,
+        income: Number(point.income),
+        expense: Number(point.expense),
+      })),
+    [trend],
   )
 
   // 期間 = 年 / 自訂範圍時後端一律回 `budget_remaining: null`（→ A7），卡片改顯示灰階簡化狀態。

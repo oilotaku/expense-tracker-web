@@ -82,6 +82,7 @@ class RecurringRuleRepository:
         anchor_date: date | None,
         updated_by: UUID,
         liability_uid: UUID | None = None,
+        is_active: bool | None = None,
     ) -> RecurringRule:
         if account_uid is not None:
             rule.account_uid = account_uid
@@ -103,6 +104,8 @@ class RecurringRuleRepository:
             rule.anchor_date = anchor_date
         if liability_uid is not None:
             rule.liability_uid = liability_uid
+        if is_active is not None:
+            rule.is_active = is_active
         rule.updated_by = updated_by
         await self.db.flush()
         return rule
@@ -124,9 +127,11 @@ class RecurringRuleRepository:
         await self.db.flush()
 
     async def list_pending_for_year_month(self, year_month: str) -> Sequence[RecurringRule]:
-        """回傳尚未於該年月產生過交易的規則（含從未產生過）；是否到期（含月底夾日）交給呼叫端判斷。"""
+        """回傳尚未於該年月產生過交易、且未被使用者暫停的規則（含從未產生過）；
+        是否到期（含月底夾日）交給呼叫端判斷。"""
         stmt = select(RecurringRule).where(
             RecurringRule.is_deleted.is_(False),
+            RecurringRule.is_active.is_(True),
             or_(
                 RecurringRule.last_generated_year_month.is_(None),
                 RecurringRule.last_generated_year_month != year_month,
