@@ -57,6 +57,45 @@ docker compose exec frontend sh -c "npm run lint && npm run typecheck && npm run
 docker compose exec backend alembic revision -m "描述"
 ```
 
+## 部署到正式環境
+
+需求：一台裝了 Docker + Docker Compose 的伺服器（Linux）。
+
+```bash
+# 1. 下載原始碼
+git clone https://github.com/oilotaku/expense-tracker-web.git
+cd expense-tracker-web
+
+# 2. 建立正式環境變數（機密值必須現場產生，勿沿用範例值或沿用開發環境的 .env）
+cp .env.production.example .env
+# 手動編輯 .env：
+#   - POSTGRES_PASSWORD / JWT_SECRET_KEY：openssl rand -hex 32 產生
+#   - DATABASE_URL 裡的密碼要跟 POSTGRES_PASSWORD 一致
+#   - CORS_ORIGINS / NEXT_PUBLIC_API_URL：改成實際對外網域（https://...）
+
+# 3. 建置並在背景啟動
+docker compose up -d --build
+
+# 4. 套用資料庫 migration（每次部署新版本都要重跑一次）
+docker compose exec backend alembic upgrade head
+
+# 5. 確認服務健康
+docker compose ps
+curl http://localhost:8000/api/v1/health
+```
+
+`APP_ENV=production` 會自動關閉 `/api/docs`、`/api/openapi.json`；正式環境**不要**額外跑
+`docker compose watch`（那是開發用的檔案監看自動重建）。對外網域建議在前面加一層反向代理
+（Nginx / Caddy）處理 TLS 與網域轉發，本 repo 未內建。
+
+### 更新既有部署
+
+```bash
+git pull
+docker compose up -d --build
+docker compose exec backend alembic upgrade head
+```
+
 ## 專案結構
 
 ```
