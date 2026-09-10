@@ -50,6 +50,32 @@ class LiabilityRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_for_update(self, liability_uid: UUID) -> Liability | None:
+        """定期還款產生交易時鎖列讀取，避免同一負債被併發扣款算出錯誤餘額。"""
+        stmt = (
+            select(Liability)
+            .where(Liability.liability_uid == liability_uid, Liability.is_deleted.is_(False))
+            .with_for_update()
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def apply_repayment(
+        self, liability: Liability, payment: Decimal, updated_by: UUID
+    ) -> bool:
+        """套用一筆還款金額；呼叫端保證 `0 < payment <= liability.amount`。
+
+        還清（`payment == liability.amount`）時軟刪負債（`amount` 欄位 `gt=0` 不可設為 0，
+        比照既有手動還款 UI 慣例：全部還清改用刪除）。回傳是否已還清。
+        """
+        paid_off = payment == liability.amount
+        if paid_off:
+            liability.is_deleted = True
+        else:
+            liability.amount -= payment
+        liability.updated_by = updated_by
+        await self.db.flush()
+        return paid_off
+
     async def update_fields(
         self,
         liability: Liability,

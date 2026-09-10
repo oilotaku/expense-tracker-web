@@ -171,3 +171,107 @@ async def test_list_recurring_rules_reflects_interval_fields(client: AsyncClient
     assert items[0]["interval_unit"] == "month"
     assert items[0]["interval_count"] == 1
     assert items[0]["anchor_date"] == "2026-05-31"
+
+
+async def _make_liability(client: AsyncClient, amount: str = "1000.00") -> str:
+    res = await client.post(
+        "/api/v1/liabilities", json={"name": "測試負債", "amount": amount, "interest_rate": None}
+    )
+    return res.json()["data"]["liability_uid"]
+
+
+async def test_create_recurring_rule_with_liability_uid(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-liability-1@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    liability_uid = await _make_liability(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "房貸還款",
+            "amount": "10000.00",
+            "transaction_type": "expense",
+            "payment_method": "轉帳",
+            "anchor_date": "2026-09-15",
+            "liability_uid": liability_uid,
+        },
+    )
+    assert res.status_code == 201
+    assert res.json()["data"]["liability_uid"] == liability_uid
+
+
+async def test_create_recurring_rule_with_liability_uid_requires_expense(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "recur-liability-2@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    liability_uid = await _make_liability(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "錯誤示範",
+            "amount": "100.00",
+            "transaction_type": "income",
+            "payment_method": "轉帳",
+            "anchor_date": "2026-09-15",
+            "liability_uid": liability_uid,
+        },
+    )
+    assert res.status_code == 422
+
+
+async def test_create_recurring_rule_with_others_liability_uid_returns_404(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "recur-liability-owner@example.com")
+    other_liability_uid = await _make_liability(client)
+
+    await _register_and_login(client, "recur-liability-attacker@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "測試",
+            "amount": "100.00",
+            "transaction_type": "expense",
+            "payment_method": "轉帳",
+            "anchor_date": "2026-09-15",
+            "liability_uid": other_liability_uid,
+        },
+    )
+    assert res.status_code == 404
+
+
+async def test_deleting_liability_soft_deletes_its_recurring_rule(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-liability-3@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    liability_uid = await _make_liability(client)
+
+    created = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "房貸還款",
+            "amount": "10000.00",
+            "transaction_type": "expense",
+            "payment_method": "轉帳",
+            "anchor_date": "2026-09-15",
+            "liability_uid": liability_uid,
+        },
+    )
+    recurring_rule_uid = created.json()["data"]["recurring_rule_uid"]
+
+    delete_res = await client.delete(f"/api/v1/liabilities/{liability_uid}")
+    assert delete_res.status_code == 200
+
+    get_res = await client.get(f"/api/v1/recurring-rules/{recurring_rule_uid}")
+    assert get_res.status_code == 404

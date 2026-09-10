@@ -25,6 +25,17 @@ import {
   type StockUnit,
   type UsStockUnit,
 } from '@/lib/api/assetsApi'
+import {
+  useCreateRecurringRuleMutation,
+  useDeleteRecurringRuleMutation,
+  useListRecurringRulesQuery,
+} from '@/lib/api/recurringApi'
+import { useListAccountOptionsQuery, useListCategoryOptionsQuery } from '@/lib/api/transactionsApi'
+import {
+  RecurringFieldset,
+  type RecurringFieldsetErrors,
+  type RecurringFieldsetValue,
+} from '@/components/transactions/RecurringFieldset'
 
 // 同 BudgetsPage / RecurringRulesPage（FE-029）：錯誤處理必用型別收窄，禁 `error as any`。
 function getErrorMessage(error: FetchBaseQueryError | SerializedError | undefined): string {
@@ -646,6 +657,204 @@ interface LiabilityRowProps {
  * 「刪除」處理已還清的負債。「刪除」比照 accounts/page.tsx 走共用 `<ConfirmDialog>`（父層擁有
  * 對話框與 useDeleteLiabilityMutation，本列只負責觸發 onRequestDelete）。
  */
+// 定期還款設定表單的週期欄位範圍同 recurring/page.tsx（backend Field(ge=1, le=99)）。
+const RECURRING_INTERVAL_COUNT_MIN = 1
+const RECURRING_INTERVAL_COUNT_MAX = 99
+
+function validateRecurringFieldset(value: RecurringFieldsetValue): RecurringFieldsetErrors {
+  const errors: RecurringFieldsetErrors = {}
+  if (
+    !Number.isInteger(value.intervalCount) ||
+    value.intervalCount < RECURRING_INTERVAL_COUNT_MIN ||
+    value.intervalCount > RECURRING_INTERVAL_COUNT_MAX
+  ) {
+    errors.intervalCount = `間隔數必須介於 ${RECURRING_INTERVAL_COUNT_MIN} 到 ${RECURRING_INTERVAL_COUNT_MAX} 之間`
+  }
+  if (value.anchorDate.trim() === '') {
+    errors.anchorDate = '請選擇起算日'
+  }
+  return errors
+}
+
+/**
+ * 負債列的「設定定期還款」：建立一筆 `liability_uid` 指向本負債的 `recurring_rules`（transaction_type
+ * 固定 expense），到期由後端 `RecurringService` 自動產生支出交易並扣減負債餘額（→ backend
+ * task「負債定期還款」）。與下方手動「還款」互為獨立入口，互不影響。
+ */
+function LiabilityRecurringSection({ liability }: { liability: LiabilityResponse }): ReactNode {
+  const { data: accounts } = useListAccountOptionsQuery()
+  const { data: categories } = useListCategoryOptionsQuery()
+  const { data: recurringRules } = useListRecurringRulesQuery()
+  const [createRecurringRule, { isLoading: isCreating, error: createError }] =
+    useCreateRecurringRuleMutation()
+  const [deleteRecurringRule, { isLoading: isCanceling }] = useDeleteRecurringRuleMutation()
+
+  const [isSettingUp, setIsSettingUp] = useState(false)
+  const [accountUid, setAccountUid] = useState('')
+  const [categoryUid, setCategoryUid] = useState('')
+  const [amount, setAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [fieldset, setFieldset] = useState<RecurringFieldsetValue>({
+    intervalUnit: 'month',
+    intervalCount: 1,
+    anchorDate: '',
+  })
+  const [fieldsetErrors, setFieldsetErrors] = useState<RecurringFieldsetErrors>({})
+
+  const activeRule = (recurringRules?.items ?? []).find(
+    (rule) => rule.liability_uid === liability.liability_uid,
+  )
+  const activeAccountName =
+    activeRule && (accounts ?? []).find((a) => a.account_uid === activeRule.account_uid)?.name
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    const errors = validateRecurringFieldset(fieldset)
+    setFieldsetErrors(errors)
+    if (Object.keys(errors).length > 0) return
+    try {
+      await createRecurringRule({
+        account_uid: accountUid,
+        category_uid: categoryUid,
+        description: `${liability.name} 定期還款`,
+        amount,
+        transaction_type: 'expense',
+        payment_method: paymentMethod,
+        interval_unit: fieldset.intervalUnit,
+        interval_count: fieldset.intervalCount,
+        anchor_date: fieldset.anchorDate,
+        liability_uid: liability.liability_uid,
+      }).unwrap()
+      setIsSettingUp(false)
+      setAmount('')
+      setPaymentMethod('')
+    } catch {
+      // 錯誤已透過 createRecurringRule() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
+    }
+  }
+
+  async function handleCancel(): Promise<void> {
+    if (!activeRule) return
+    try {
+      await deleteRecurringRule(activeRule.recurring_rule_uid).unwrap()
+    } catch {
+      // 取消失敗維持既有顯示，同 LiabilityList 刪除的既有慣例，不額外攔截
+    }
+  }
+
+  if (activeRule) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface p-2 text-sm">
+        <span className="text-text-secondary">
+          定期還款中：{activeRule.amount} · {activeAccountName ?? '—'} ·{' '}
+          {activeRule.interval_count === 1 ? '每' : `每 ${activeRule.interval_count} `}
+          {INTERVAL_UNIT_NOUN[activeRule.interval_unit]}
+        </span>
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={isCanceling}
+          className="min-h-11 rounded-md px-2 text-danger-500 hover:text-danger-700 md:min-h-8"
+        >
+          {isCanceling ? '取消中…' : '取消定期還款'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => setIsSettingUp((current) => !current)}
+        aria-expanded={isSettingUp}
+        className="self-start text-sm text-primary-600 hover:text-primary-700"
+      >
+        設定定期還款
+      </button>
+      {isSettingUp && (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-md border border-border p-3" noValidate>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">扣款帳戶</span>
+            <select
+              required
+              value={accountUid}
+              onChange={(event) => setAccountUid(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            >
+              <option value="">請選擇帳戶</option>
+              {(accounts ?? []).map((account) => (
+                <option key={account.account_uid} value={account.account_uid}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">分類</span>
+            <select
+              required
+              value={categoryUid}
+              onChange={(event) => setCategoryUid(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            >
+              <option value="">請選擇分類</option>
+              {(categories ?? []).map((category) => (
+                <option key={category.category_uid} value={category.category_uid}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">每期還款金額</span>
+            <input
+              type="number"
+              required
+              min="0.01"
+              step="0.01"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">支付方式</span>
+            <input
+              type="text"
+              required
+              maxLength={50}
+              placeholder="轉帳 / 信用卡…"
+              value={paymentMethod}
+              onChange={(event) => setPaymentMethod(event.target.value)}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+            />
+          </label>
+          <RecurringFieldset value={fieldset} onChange={setFieldset} errors={fieldsetErrors} />
+          {createError && (
+            <p role="alert" className="text-sm text-danger-700">
+              {getErrorMessage(createError)}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={isCreating}
+            className={submitButtonClassName({ isLoading: isCreating })}
+          >
+            {isCreating ? '設定中…' : '確認設定'}
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+const INTERVAL_UNIT_NOUN: Record<RecurringFieldsetValue['intervalUnit'], string> = {
+  week: '週',
+  month: '月',
+  year: '年',
+}
+
 function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactNode {
   const [updateLiability, { isLoading, error }] = useUpdateLiabilityMutation()
   const [isRepaying, setIsRepaying] = useState(false)
@@ -736,6 +945,7 @@ function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactN
           )}
         </form>
       )}
+      <LiabilityRecurringSection liability={liability} />
     </div>
   )
 }

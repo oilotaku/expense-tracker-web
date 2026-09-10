@@ -28,6 +28,7 @@ class RecurringRuleRepository:
         interval_count: int,
         anchor_date: date,
         created_by: UUID,
+        liability_uid: UUID | None = None,
     ) -> RecurringRule:
         rule = RecurringRule(
             user_uid=user_uid,
@@ -42,6 +43,7 @@ class RecurringRuleRepository:
             anchor_date=anchor_date,
             created_by=created_by,
             updated_by=created_by,
+            liability_uid=liability_uid,
         )
         self.db.add(rule)
         await self.db.flush()
@@ -79,6 +81,7 @@ class RecurringRuleRepository:
         interval_count: int | None,
         anchor_date: date | None,
         updated_by: UUID,
+        liability_uid: UUID | None = None,
     ) -> RecurringRule:
         if account_uid is not None:
             rule.account_uid = account_uid
@@ -98,6 +101,8 @@ class RecurringRuleRepository:
             rule.interval_count = interval_count
         if anchor_date is not None:
             rule.anchor_date = anchor_date
+        if liability_uid is not None:
+            rule.liability_uid = liability_uid
         rule.updated_by = updated_by
         await self.db.flush()
         return rule
@@ -105,6 +110,17 @@ class RecurringRuleRepository:
     async def soft_delete(self, rule: RecurringRule, deleted_by: UUID) -> None:
         rule.is_deleted = True
         rule.updated_by = deleted_by
+        await self.db.flush()
+
+    async def soft_delete_by_liability_uid(self, liability_uid: UUID, deleted_by: UUID) -> None:
+        """負債刪除時連動軟刪其還款規則，避免規則失去對應負債後仍繼續嘗試產生交易。"""
+        stmt = select(RecurringRule).where(
+            RecurringRule.liability_uid == liability_uid, RecurringRule.is_deleted.is_(False)
+        )
+        rules = (await self.db.execute(stmt)).scalars().all()
+        for rule in rules:
+            rule.is_deleted = True
+            rule.updated_by = deleted_by
         await self.db.flush()
 
     async def list_pending_for_year_month(self, year_month: str) -> Sequence[RecurringRule]:

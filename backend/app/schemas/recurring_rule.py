@@ -25,6 +25,9 @@ class RecurringRuleCreateRequest(ApiInput):
     )
     interval_count: int = Field(default=1, ge=1, le=99, description="每幾個 interval_unit 觸發一次")
     anchor_date: date = Field(description="錨點日期，下一次執行日由此起算")
+    liability_uid: UUID | None = Field(
+        default=None, description="連結負債定期還款；設定時 transaction_type 必須是 expense"
+    )
 
 
 class RecurringRuleUpdateRequest(ApiInput):
@@ -41,6 +44,9 @@ class RecurringRuleUpdateRequest(ApiInput):
         default=None, ge=1, le=99, description="每幾個 interval_unit 觸發一次"
     )
     anchor_date: date | None = Field(default=None, description="錨點日期，下一次執行日由此起算")
+    liability_uid: UUID | None = Field(
+        default=None, description="連結負債定期還款；設定時 transaction_type 必須是 expense"
+    )
 
 
 class RecurringRuleResponse(ApiSchema):
@@ -55,6 +61,7 @@ class RecurringRuleResponse(ApiSchema):
     interval_count: int
     anchor_date: date
     last_generated_year_month: str | None
+    liability_uid: UUID | None
 
     @field_serializer("amount", when_used="json")
     def _amount_to_str(self, v: Decimal) -> str:

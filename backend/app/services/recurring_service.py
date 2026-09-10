@@ -11,6 +11,9 @@
   `last_generated_date`。
 - 「當月」以 `Settings.API_TZ`（使用者日曆）認定，不是 UTC（→ CORE-041）；跨表寫入（transactions +
   recurring_rules）包在同一個 transaction 邊界內（→ BE-038）。
+- `liability_uid` 有值的規則（負債定期還款）：交易金額改為 `min(rule.amount, liability.amount)`，
+  讀取負債時 `SELECT ... FOR UPDATE` 鎖列避免併發扣款算錯餘額；還清（金額等於負債剩餘金額）時
+  比照既有手動還款 UI 慣例軟刪負債與本規則（負債 `amount` 欄位 `gt=0` 不可設為 0）。
 """
 
 from calendar import isleap, monthrange
@@ -18,8 +21,10 @@ from datetime import date, datetime, time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.liability import Liability
 from app.models.recurring_rule import RecurringIntervalUnit, RecurringRule
 from app.models.transaction import Transaction
+from app.repositories.liability_repository import LiabilityRepository
 from app.repositories.recurring_rule_repository import RecurringRuleRepository
 from app.repositories.transaction_repository import TransactionRepository
 from app.utils.datetime import API_TZ, now_utc, to_api_tz, to_utc
@@ -75,6 +80,7 @@ class RecurringService:
         self.db = db
         self.repo = RecurringRuleRepository(db)
         self.transaction_repo = TransactionRepository(db)
+        self.liability_repo = LiabilityRepository(db)
 
     async def generate_due_transactions(self, *, as_of: date | None = None) -> list[Transaction]:
         """對所有到期規則各產生一筆當月交易；本月已產生過的規則跳過（冪等）。
@@ -100,19 +106,38 @@ class RecurringService:
 
         atomic = self.db.begin_nested() if self.db.in_transaction() else self.db.begin()
         async with atomic:
+            liability: Liability | None = None
+            if rule.liability_uid is not None:
+                liability = await self.liability_repo.get_for_update(rule.liability_uid)
+
+            amount = min(rule.amount, liability.amount) if liability is not None else rule.amount
+
             transaction, _tags = await self.transaction_repo.create(
                 user_uid=rule.user_uid,
                 account_uid=rule.account_uid,
                 category_uid=rule.category_uid,
                 transaction_date=transaction_date,
                 description=rule.description,
-                amount=rule.amount,
+                amount=amount,
                 transaction_type=rule.transaction_type,
                 payment_method=rule.payment_method,
                 tag_names=[],
                 created_by=rule.user_uid,
             )
             rule.last_generated_year_month = year_month
+
+            if liability is not None:
+                paid_off = await self.liability_repo.apply_repayment(
+                    liability, amount, rule.user_uid
+                )
+                if paid_off:
+                    rule.is_deleted = True
+                    rule.updated_by = rule.user_uid
+            elif rule.liability_uid is not None:
+                # 負債已被使用者手動刪除但規則還在：規則失去意義，停止之後再嘗試產生
+                rule.is_deleted = True
+                rule.updated_by = rule.user_uid
+
             await self.db.flush()
         return transaction
 

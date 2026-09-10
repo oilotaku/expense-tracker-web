@@ -62,6 +62,25 @@ vi.mock('@/lib/api/assetsApi', () => ({
   useGetNetWorthQuery: () => useGetNetWorthQuery(),
 }))
 
+// LiabilityRecurringSection（負債定期還款）用到的 hooks，同上一律直接 mock 回傳值
+const useListAccountOptionsQuery = vi.fn()
+const useListCategoryOptionsQuery = vi.fn()
+vi.mock('@/lib/api/transactionsApi', () => ({
+  useListAccountOptionsQuery: () => useListAccountOptionsQuery(),
+  useListCategoryOptionsQuery: () => useListCategoryOptionsQuery(),
+}))
+
+const createRecurringRule = vi.fn()
+const useCreateRecurringRuleMutation = vi.fn()
+const deleteRecurringRule = vi.fn()
+const useDeleteRecurringRuleMutation = vi.fn()
+const useListRecurringRulesQuery = vi.fn()
+vi.mock('@/lib/api/recurringApi', () => ({
+  useCreateRecurringRuleMutation: () => useCreateRecurringRuleMutation(),
+  useDeleteRecurringRuleMutation: () => useDeleteRecurringRuleMutation(),
+  useListRecurringRulesQuery: () => useListRecurringRulesQuery(),
+}))
+
 const STOCK_ASSET = {
   financial_asset_uid: 'a1',
   asset_type: 'stock',
@@ -143,6 +162,24 @@ describe('AssetsPage', () => {
       error: undefined,
     })
     useGetNetWorthQuery.mockReset().mockReturnValue({ data: undefined, isLoading: false, error: undefined })
+
+    useListAccountOptionsQuery.mockReset().mockReturnValue({ data: [] })
+    useListCategoryOptionsQuery.mockReset().mockReturnValue({ data: [] })
+    createRecurringRule.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({}) })
+    useCreateRecurringRuleMutation.mockReset().mockReturnValue([
+      createRecurringRule,
+      { isLoading: false, error: undefined },
+    ])
+    deleteRecurringRule.mockReset().mockReturnValue({ unwrap: () => Promise.resolve(undefined) })
+    useDeleteRecurringRuleMutation.mockReset().mockReturnValue([
+      deleteRecurringRule,
+      { isLoading: false, error: undefined },
+    ])
+    useListRecurringRulesQuery.mockReset().mockReturnValue({
+      data: { items: [], total: 0 },
+      isLoading: false,
+      error: undefined,
+    })
   })
 
   it('送出股票表單觸發 createFinancialAsset mutation（asset_type: stock）', async () => {
@@ -387,5 +424,72 @@ describe('AssetsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(deleteLiability).not.toHaveBeenCalled()
+  })
+
+  it('設定定期還款：填寫表單送出後呼叫 createRecurringRule 帶 liability_uid', async () => {
+    useListAccountOptionsQuery.mockReturnValue({ data: [{ account_uid: 'acc1', name: '銀行帳戶' }] })
+    useListCategoryOptionsQuery.mockReturnValue({ data: [{ category_uid: 'cat1', name: '居住' }] })
+    render(<AssetsPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: '設定定期還款' }))
+    fireEvent.change(screen.getByLabelText('扣款帳戶'), { target: { value: 'acc1' } })
+    fireEvent.change(screen.getByLabelText('分類'), { target: { value: 'cat1' } })
+    fireEvent.change(screen.getByLabelText('每期還款金額'), { target: { value: '30000' } })
+    fireEvent.change(screen.getByLabelText('支付方式'), { target: { value: '轉帳' } })
+    fireEvent.change(screen.getByLabelText('起算日'), { target: { value: '2026-09-15' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '確認設定' }))
+    })
+
+    expect(createRecurringRule).toHaveBeenCalledExactlyOnceWith({
+      account_uid: 'acc1',
+      category_uid: 'cat1',
+      description: '房貸 定期還款',
+      amount: '30000',
+      transaction_type: 'expense',
+      payment_method: '轉帳',
+      interval_unit: 'month',
+      interval_count: 1,
+      anchor_date: '2026-09-15',
+      liability_uid: 'l1',
+    })
+  })
+
+  it('已有定期還款規則時顯示摘要並可取消，呼叫 deleteRecurringRule', async () => {
+    useListAccountOptionsQuery.mockReturnValue({ data: [{ account_uid: 'acc1', name: '銀行帳戶' }] })
+    useListRecurringRulesQuery.mockReturnValue({
+      data: {
+        items: [
+          {
+            recurring_rule_uid: 'r1',
+            account_uid: 'acc1',
+            category_uid: 'cat1',
+            description: '房貸 定期還款',
+            amount: '30000.00',
+            transaction_type: 'expense',
+            payment_method: '轉帳',
+            interval_unit: 'month',
+            interval_count: 1,
+            anchor_date: '2026-09-15',
+            last_generated_year_month: null,
+            liability_uid: 'l1',
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<AssetsPage />)
+
+    expect(screen.getByText(/定期還款中：/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '設定定期還款' })).not.toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '取消定期還款' }))
+    })
+
+    expect(deleteRecurringRule).toHaveBeenCalledExactlyOnceWith('r1')
   })
 })

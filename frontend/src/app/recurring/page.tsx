@@ -18,6 +18,7 @@ import {
   useListCategoryOptionsQuery,
   type NonTransferType,
 } from '@/lib/api/transactionsApi'
+import { useListLiabilitiesQuery } from '@/lib/api/assetsApi'
 
 const MIN_INTERVAL_COUNT = 1
 const MAX_INTERVAL_COUNT = 99
@@ -302,9 +303,17 @@ interface RecurringRuleCardProps {
   rule: RecurringRuleResponse
   accountName: string
   categoryName: string
+  liabilityName: string | null
 }
 
-function RecurringRuleCard({ rule, accountName, categoryName }: RecurringRuleCardProps): ReactNode {
+function RecurringRuleCard({
+  rule,
+  accountName,
+  categoryName,
+  liabilityName,
+}: RecurringRuleCardProps): ReactNode {
+  // 負債定期還款規則：分類文字改顯示連結的負債名稱，讓使用者一眼分辨這是還款而非一般週期支出
+  const categoryLabel = liabilityName !== null ? `負債還款：${liabilityName}` : categoryName
   return (
     <CurvedCard>
       <div className="flex items-center justify-between">
@@ -316,7 +325,7 @@ function RecurringRuleCard({ rule, accountName, categoryName }: RecurringRuleCar
         </span>
       </div>
       <p className="mt-2 text-sm text-text-secondary">
-        {categoryName} · {accountName} · {rule.payment_method}
+        {categoryLabel} · {accountName} · {rule.payment_method}
       </p>
       <div className="mt-2 flex items-center justify-between">
         <span className="text-sm text-text-secondary">{intervalDescription(rule)}</span>
@@ -331,11 +340,15 @@ function RecurringRuleCard({ rule, accountName, categoryName }: RecurringRuleCar
 function RecurringRuleList(): ReactNode {
   const { data: accounts } = useListAccountOptionsQuery()
   const { data: categories } = useListCategoryOptionsQuery()
+  const { data: liabilities } = useListLiabilitiesQuery()
   const { data, isLoading, error } = useListRecurringRulesQuery()
 
   const items = data?.items ?? []
   const accountNameByUid = new Map((accounts ?? []).map((a) => [a.account_uid, a.name]))
   const categoryNameByUid = new Map((categories ?? []).map((c) => [c.category_uid, c.name]))
+  const liabilityNameByUid = new Map(
+    (liabilities?.items ?? []).map((l) => [l.liability_uid, l.name]),
+  )
 
   return (
     <section className="flex flex-col gap-4">
@@ -357,6 +370,11 @@ function RecurringRuleList(): ReactNode {
                 rule={rule}
                 accountName={accountNameByUid.get(rule.account_uid) ?? '—'}
                 categoryName={categoryNameByUid.get(rule.category_uid) ?? '—'}
+                liabilityName={
+                  rule.liability_uid != null
+                    ? (liabilityNameByUid.get(rule.liability_uid) ?? '—')
+                    : null
+                }
               />
             </li>
           ))}
