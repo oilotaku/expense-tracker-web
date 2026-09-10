@@ -511,13 +511,16 @@ export function TransactionList(): ReactNode {
         <button
           type="button"
           onClick={() => setIsMobileFilterOpen(true)}
-          className="min-h-11 rounded-md border border-border px-4 text-text-secondary md:hidden"
+          className="min-h-11 rounded-md border border-border px-4 text-text-secondary lg:hidden"
         >
           篩選
         </button>
       </div>
 
-      <div className="hidden flex-wrap gap-4 md:flex">
+      {/* 桌機橫排篩選 / 表格檢視綁 `lg` 而非 `md`：`md` 起 <Sidebar> 佔 240px，平板直向
+          （768–1023px）內容區僅約 530px，七欄表格只能靠橫向捲動閱讀；該區間改用行動端
+          卡片 + 篩選對話框（→ 同一組修正見 dashboard/page.tsx、StatTile.tsx）。 */}
+      <div className="hidden flex-wrap gap-4 lg:flex">
         <FilterFields
           value={filters}
           categories={categories ?? []}
@@ -549,7 +552,7 @@ export function TransactionList(): ReactNode {
 
       {!isLoading && !listError && items.length > 0 && (
         <>
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden overflow-x-auto lg:block">
             <table className="w-full text-left text-base">
               <thead>
                 <tr className="border-b border-border text-text-secondary">
@@ -578,7 +581,7 @@ export function TransactionList(): ReactNode {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 md:hidden">
+          <div className="flex flex-col gap-3 lg:hidden">
             {items.map((transaction) => (
               <TransactionCard
                 key={transaction.transaction_uid}

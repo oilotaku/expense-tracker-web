@@ -36,7 +36,7 @@ describe('StatTile', () => {
 
     const value = screen.getByText('+NT$17,000')
     expect(value).toHaveClass('text-3xl')
-    expect(value).toHaveClass('md:text-4xl')
+    expect(value).toHaveClass('lg:text-4xl')
   })
 
   it('unavailable 時顯示灰階佔位與說明，不顯示估算數字（→ A7）', () => {

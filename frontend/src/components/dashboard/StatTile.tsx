@@ -38,8 +38,10 @@ const statValueClassName = cva('font-semibold tabular-nums', {
     },
     hero: {
       // design-spec §2.5：Dashboard Hero 數字 mobile `text-3xl` / desktop `text-4xl`。
-      true: 'text-3xl md:text-4xl',
-      false: 'text-2xl md:text-3xl',
+      // 放大綁 `lg` 而非 `md`：`md`–`lg` 之間（平板直向）<Sidebar> 已佔 240px，
+      // 卡片寬度不足以容納放大後的金額，會被截斷（→ dashboard/page.tsx 期間彙總同一組修正）。
+      true: 'text-3xl lg:text-4xl',
+      false: 'text-2xl lg:text-3xl',
     },
   },
   defaultVariants: { tone: 'neutral', hero: false },

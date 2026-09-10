@@ -207,17 +207,17 @@ describe('DashboardPage', () => {
     expect(screen.getByText('NT$3,200')).toBeInTheDocument()
   })
 
-  it('卡片區桌機 grid-cols-4、行動端結餘跨欄置頂成 Hero（→ §9.2 RWD 對應）', () => {
+  it('卡片區桌機 grid-cols-4、平板/行動端結餘跨欄置頂成 Hero（→ §9.2 RWD 對應）', () => {
     render(<DashboardPage />)
 
     const section = screen.getByLabelText('期間彙總')
     expect(section).toHaveClass('grid-cols-2')
-    expect(section).toHaveClass('md:grid-cols-4')
+    expect(section).toHaveClass('lg:grid-cols-4')
 
     const heroTile = screen.getByText('+NT$17,000').closest('div')
     expect(heroTile).toHaveClass('order-first')
     expect(heroTile).toHaveClass('col-span-2')
-    expect(heroTile).toHaveClass('md:col-span-1')
+    expect(heroTile).toHaveClass('lg:col-span-1')
   })
 
   it('切換期間為「年」時以整年範圍重新查詢，且預算結餘卡顯示簡化狀態（→ A7）', () => {

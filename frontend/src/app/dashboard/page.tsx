@@ -352,7 +352,9 @@ function DashboardContent(): ReactNode {
           {!isSummaryLoading && !summaryError && (
             // 行動端垂直堆疊、結餘拉大成 Hero 並置頂（order-first）；桌機 grid-cols-4 四張並排
             // （design-spec §9.2 RWD 對應）。切版全部走 Tailwind class，無 JS 判斷（→ FE-063）。
-            <section aria-label="期間彙總" className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
+            // 四欄並排改綁 `lg`（非 `md`）：`md` 起 <Sidebar> 佔掉 240px，平板直向（768–1023px）
+            // 內容區只剩約 530px，四欄各約 120px 放不下 text-3xl/4xl 金額會被截斷；平板維持兩欄。
+            <section aria-label="期間彙總" className="grid grid-cols-2 gap-4 md:gap-6 lg:grid-cols-4">
               <StatTile label="收入" value={summary?.income ?? '0'} tone="income" />
               <StatTile label="支出" value={summary?.expense ?? '0'} tone="expense" />
               <StatTile
@@ -361,7 +363,7 @@ function DashboardContent(): ReactNode {
                 tone="neutral"
                 signed
                 hero
-                className="order-first col-span-2 md:order-none md:col-span-1"
+                className="order-first col-span-2 lg:order-none lg:col-span-1"
               />
               <StatTile
                 label="預算結餘"
@@ -369,7 +371,7 @@ function DashboardContent(): ReactNode {
                 tone="warning"
                 unavailable={!isBudgetAvailable}
                 hint={isBudgetAvailable ? undefined : '預算僅支援月度檢視'}
-                className="col-span-2 md:col-span-1"
+                className="col-span-2 lg:col-span-1"
               />
             </section>
           )}
