@@ -100,7 +100,7 @@ const PIN_REMINDER_SECONDARY_BUTTON_CLASS =
 // （不像 Dashboard 彙總卡片走後端 SQL 依幣別 GROUP BY 換算），若不先換算成 TWD，不同幣別的
 // 原始金額數字會被誤當同一種幣別直接相加（例如 100 USD + 5000 TWD 會變成「5100」）。
 // 匯率暫缺（GET /dashboard/exchange-rates 尚未回來或失敗）時退化為原始數字，不讓圖表整體壞掉。
-function toTwdAmount(
+export function toTwdAmount(
   transaction: TransactionResponse,
   accountCurrencies: ReadonlyMap<string, string>,
   rates: Readonly<Record<string, string>>,
@@ -113,7 +113,7 @@ function toTwdAmount(
   return Number.isFinite(rate) ? amount * rate : amount
 }
 
-function toCategorySlices(
+export function toCategorySlices(
   transactions: readonly TransactionResponse[],
   categoryNames: ReadonlyMap<string, string>,
   accountCurrencies: ReadonlyMap<string, string>,
@@ -136,13 +136,16 @@ function toCategorySlices(
   }))
 }
 
-function toTrendPoints(
+export function toTrendPoints(
   transactions: readonly TransactionResponse[],
   accountCurrencies: ReadonlyMap<string, string>,
   rates: Readonly<Record<string, string>>,
 ): TrendPoint[] {
   const points = new Map<string, TrendPoint>()
   for (const transaction of transactions) {
+    // 轉帳兩邊帳戶互相抵銷、不是真正的收入或支出（→ TransactionList.tsx transferAccountsLabel
+    // 同一慣例），排除後才能用 `else` 安全地把非 income 一律當 expense。
+    if (transaction.transaction_type === 'transfer') continue
     const date = transaction.transaction_date.slice(0, 10)
     const amount = toTwdAmount(transaction, accountCurrencies, rates)
     if (amount === null) continue
