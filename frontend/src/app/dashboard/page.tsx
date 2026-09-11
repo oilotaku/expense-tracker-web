@@ -268,9 +268,10 @@ function DashboardContent(): ReactNode {
     [trend],
   )
 
-  // 期間 = 年 / 自訂範圍時後端一律回 `budget_remaining: null`（→ A7），卡片改顯示灰階簡化狀態。
+  // 期間 = 自訂範圍時後端一律回 `budget_remaining: null`（→ A7，區間不對齊月份邊界會失真），
+  // 卡片改顯示灰階簡化狀態；月 / 年視圖後端皆會回傳估算後的數字。
   const isBudgetAvailable =
-    selection.period === 'month' && summary?.budget_remaining !== null && summary?.budget_remaining !== undefined
+    selection.period !== 'custom' && summary?.budget_remaining !== null && summary?.budget_remaining !== undefined
 
   const openForm = useCallback((): void => setIsFormOpen(true), [])
 
@@ -370,7 +371,7 @@ function DashboardContent(): ReactNode {
                 value={summary?.budget_remaining ?? '0'}
                 tone="warning"
                 unavailable={!isBudgetAvailable}
-                hint={isBudgetAvailable ? undefined : '預算僅支援月度檢視'}
+                hint={isBudgetAvailable ? undefined : '預算僅支援月／年度檢視'}
                 className="col-span-2 lg:col-span-1"
               />
             </section>

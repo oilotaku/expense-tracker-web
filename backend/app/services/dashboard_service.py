@@ -10,6 +10,10 @@
 Python 端呼叫一次 `PricingService.get_exchange_rate()` 換算成 TWD，不會退化成逐筆交易的 N+1；
 預算金額本身固定以 TWD 計價（`Budget.limit_amount` 沒有幣別欄位），花費計算把該分類底下所有
 幣別的交易都換算成 TWD 再跟預算比較，維持「一個分類一個預算上限」的既有語意。
+
+`period == "year"` 時 `budget_remaining` 用「月度預算 × 期間涵蓋的月份數」估算（依 `Settings.API_TZ`
+本地日曆月計算，年視圖固定 12 個月），取代原本一律回 `null` 的作法（使用者需求變更，取代舊決策
+`design-spec.md` A7）；`period == "custom"` 因區間不對齊月份邊界、估算會失真，維持回 `null`。
 """
 
 from datetime import datetime
@@ -79,7 +83,7 @@ class DashboardService:
         balance = (income - expense).quantize(_CENTS)
         budget_remaining = (
             await self._sum_budget_remaining(user_uid, date_from, date_to)
-            if period == "month"
+            if period in ("month", "year")
             else None
         )
         return DashboardSummaryResponse(
@@ -125,12 +129,21 @@ class DashboardService:
             # 任何一支），維持既有「轉帳不計入收支」的行為，不需要額外過濾條件。
         return income.quantize(_CENTS), expense.quantize(_CENTS)
 
+    @staticmethod
+    def _count_months(date_from: datetime, date_to: datetime) -> int:
+        """依 `Settings.API_TZ` 本地日曆月計算區間涵蓋的月份數（月視圖固定回 1，維持既有行為；
+        年視圖為整年 Jan–Dec 固定回 12）。"""
+        local_from = to_api_tz(date_from)
+        local_to = to_api_tz(date_to)
+        return (local_to.year - local_from.year) * 12 + (local_to.month - local_from.month) + 1
+
     async def _sum_budget_remaining(
         self, user_uid: UUID, date_from: datetime, date_to: datetime
     ) -> Decimal:
         # 原本是「一次 SQL 用相關子查詢算完」，但換算幣別需要 Python 端呼叫匯率服務，沒辦法在
         # 純 SQL 內完成，改成兩個查詢（budgets 本身 + 依 category/currency 分組的花費子總額）；
         # 查詢數量固定是 2，不是逐一 budget 迴圈，仍避免 BE-089 要防的 N+1。
+        months = self._count_months(date_from, date_to)
         budgets_stmt = select(Budget.category_uid, Budget.limit_amount).where(
             Budget.user_uid == user_uid,
             Budget.period_type == BudgetPeriodType.MONTHLY,
@@ -168,7 +181,7 @@ class DashboardService:
 
         total = sum(
             (
-                limit_amount - spent_by_category.get(category_uid, Decimal("0"))
+                limit_amount * months - spent_by_category.get(category_uid, Decimal("0"))
                 for category_uid, limit_amount in budgets
             ),
             Decimal("0"),

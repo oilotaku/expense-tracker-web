@@ -31,7 +31,7 @@ class DashboardSummaryFilter(ApiInput):
 
 class DashboardDateRangeFilter(ApiInput):
     """分類彙總 / 趨勢彙總共用：不像 `DashboardSummaryFilter` 有 `period`（budget_remaining 只在
-    period=month 才有意義），這兩支彙總只需要日期範圍。"""
+    period=month/year 才有意義），這兩支彙總只需要日期範圍。"""
 
     date_from: datetime
     date_to: datetime
@@ -78,8 +78,9 @@ class DashboardSummaryResponse(ApiSchema):
     income: Decimal
     expense: Decimal
     balance: Decimal
-    # period != "month" 時一律 null（對齊 Budget.period_type=monthly 的限制，→ A7）；
-    # period == "month" 且未設定任何月度預算時為 0.00（非 null，區分「不適用」與「有查、目前是 0」）
+    # period == "custom" 時一律 null（區間不對齊月份邊界，估算會失真）；period == "month" /
+    # "year" 為「月度預算 × 涵蓋月份數 − 已花費」的加總（年視圖固定 12 個月，取代舊決策 A7 的
+    # 一律 null 作法）；未設定任何月度預算時為 0.00（非 null，區分「不適用」與「有查、目前是 0」）
     budget_remaining: Decimal | None
 
     @field_serializer("income", "expense", "balance", when_used="json")

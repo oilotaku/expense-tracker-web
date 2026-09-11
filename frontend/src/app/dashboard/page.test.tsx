@@ -220,10 +220,10 @@ describe('DashboardPage', () => {
     expect(heroTile).toHaveClass('lg:col-span-1')
   })
 
-  it('切換期間為「年」時以整年範圍重新查詢，且預算結餘卡顯示簡化狀態（→ A7）', () => {
+  it('切換期間為「年」時以整年範圍重新查詢，且預算結餘卡顯示後端估算後的數字（→ A7 2026-09-11 修訂）', () => {
     render(<DashboardPage />)
 
-    mockSummary({ period: 'year', budget_remaining: null })
+    mockSummary({ period: 'year', budget_remaining: '38400.00' })
     fireEvent.change(screen.getByLabelText('期間'), { target: { value: 'year' } })
 
     const expected = toPeriodRange({ ...defaultPeriodSelection(), period: 'year' })
@@ -232,11 +232,11 @@ describe('DashboardPage', () => {
       dateFrom: expected.dateFrom,
       dateTo: expected.dateTo,
     })
-    expect(screen.getByText('預算僅支援月度檢視')).toBeInTheDocument()
-    expect(screen.queryByText('NT$3,200')).not.toBeInTheDocument()
+    expect(screen.queryByText('預算僅支援月／年度檢視')).not.toBeInTheDocument()
+    expect(screen.getByText('NT$38,400')).toBeInTheDocument()
   })
 
-  it('切換期間為「自訂範圍」時同樣顯示預算簡化狀態（→ A7）', () => {
+  it('切換期間為「自訂範圍」時顯示預算簡化狀態（→ A7，區間不對齊月份邊界會失真）', () => {
     render(<DashboardPage />)
 
     mockSummary({ period: 'custom', budget_remaining: null })
@@ -245,7 +245,7 @@ describe('DashboardPage', () => {
     expect(useGetDashboardSummaryQuery).toHaveBeenLastCalledWith(
       expect.objectContaining({ period: 'custom' }),
     )
-    expect(screen.getByText('預算僅支援月度檢視')).toBeInTheDocument()
+    expect(screen.getByText('預算僅支援月／年度檢視')).toBeInTheDocument()
   })
 
   it('行動端 FAB 開啟新增交易表單（→ A12，非路由）', () => {
