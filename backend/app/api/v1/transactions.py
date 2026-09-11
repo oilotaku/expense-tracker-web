@@ -156,10 +156,10 @@ async def list_transactions(
         limit=filters.limit,
         offset=filters.offset,
     )
-    items = [
-        _to_response(t, list(await repo.list_tags_for_transaction_uid(t.transaction_uid)))
-        for t in transactions
-    ]
+    tags_by_uid = await repo.list_tags_by_transaction_uids(
+        [t.transaction_uid for t in transactions]
+    )
+    items = [_to_response(t, tags_by_uid[t.transaction_uid]) for t in transactions]
     return success(data=TransactionListResponse(items=items, total=total))
 
 

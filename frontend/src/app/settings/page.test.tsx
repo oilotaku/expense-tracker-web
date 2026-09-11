@@ -24,6 +24,8 @@ const changePin = vi.fn()
 const useChangePinMutation = vi.fn()
 const deletePin = vi.fn()
 const useDeletePinMutation = vi.fn()
+const logout = vi.fn()
+const useLogoutMutation = vi.fn()
 vi.mock('@/lib/api/authApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/authApi')>('@/lib/api/authApi')
   return {
@@ -32,6 +34,7 @@ vi.mock('@/lib/api/authApi', async () => {
     useSetPinMutation: () => useSetPinMutation(),
     useChangePinMutation: () => useChangePinMutation(),
     useDeletePinMutation: () => useDeletePinMutation(),
+    useLogoutMutation: () => useLogoutMutation(),
   }
 })
 
@@ -96,6 +99,9 @@ describe('SettingsPage', () => {
 
     deletePin.mockReset()
     useDeletePinMutation.mockReset().mockReturnValue([deletePin, { isLoading: false }])
+
+    logout.mockReset().mockReturnValue({ unwrap: () => Promise.resolve(undefined) })
+    useLogoutMutation.mockReset().mockReturnValue([logout, { isLoading: false }])
 
     useListAccountsQuery.mockReset().mockReturnValue({
       data: { items: [CASH_ACCOUNT, BANK_ACCOUNT], total: 2 },
@@ -251,13 +257,27 @@ describe('SettingsPage', () => {
     expect(window.localStorage.getItem('default-account-uid')).toBe(BANK_ACCOUNT.account_uid)
   })
 
-  it('點擊登出導向 /login 並清空 RTK Query 快取', () => {
+  it('點擊登出呼叫 POST /auth/logout 清 cookie，並導向 /login 清空 RTK Query 快取', async () => {
     render(<SettingsPage />)
     // 補上 <AppShell> 後 <Sidebar>/<BottomNav> 也各自有一顆「登出」，全站可從任何頁面登出
     // （→ 部分頁面返回按鈕修復）；本頁自己那顆是設定頁內容區域裡唯一一顆，用 h1 找到
     // SettingsPageContent 自己的 <main> 再限定查詢範圍，不受 Sidebar 的「登出」影響。
     const settingsMain = screen.getByRole('heading', { name: '設定' }).closest('main') as HTMLElement
-    fireEvent.click(within(settingsMain).getByRole('button', { name: '登出' }))
+    await act(async () => {
+      fireEvent.click(within(settingsMain).getByRole('button', { name: '登出' }))
+    })
+    expect(logout).toHaveBeenCalledOnce()
+    expect(push).toHaveBeenCalledExactlyOnceWith('/login')
+    expect(dispatch).toHaveBeenCalledOnce()
+  })
+
+  it('登出 API 失敗仍清空快取並導向 /login（task-034：不擋本機登出流程）', async () => {
+    logout.mockReturnValue({ unwrap: () => Promise.reject(new Error('network error')) })
+    render(<SettingsPage />)
+    const settingsMain = screen.getByRole('heading', { name: '設定' }).closest('main') as HTMLElement
+    await act(async () => {
+      fireEvent.click(within(settingsMain).getByRole('button', { name: '登出' }))
+    })
     expect(push).toHaveBeenCalledExactlyOnceWith('/login')
     expect(dispatch).toHaveBeenCalledOnce()
   })

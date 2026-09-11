@@ -344,6 +344,43 @@ async def test_list_transactions_filtered_by_date_range(client: AsyncClient) -> 
     assert body["items"][0]["description"] == "九月交易"
 
 
+async def test_list_transactions_returns_correct_tags_per_item(client: AsyncClient) -> None:
+    """task-033：清單端點改用批次查詢（`list_tags_by_transaction_uids`）撈標籤，
+    這裡驗證批次映射不會把不同交易的標籤配錯（含一筆完全沒有標籤的交易）。"""
+    await _register_and_login(client, "tx-user-tags-batch@example.com")
+    account_uid = await _create_account(client)
+    categories = await _list_category_uids(client)
+    category_uid = categories["其他"]
+
+    async def _create(description: str, tags: list[str]) -> None:
+        res = await client.post(
+            "/api/v1/transactions",
+            json={
+                "account_uid": account_uid,
+                "category_uid": category_uid,
+                "transaction_date": "2026-09-01T00:00:00+08:00",
+                "description": description,
+                "amount": "10.00",
+                "transaction_type": "income",
+                "payment_method": "轉帳",
+                "tags": tags,
+            },
+        )
+        assert res.status_code == 201
+
+    await _create("交易A", ["標籤A"])
+    await _create("交易B", ["標籤B1", "標籤B2"])
+    await _create("交易C", [])
+
+    res = await client.get("/api/v1/transactions")
+    assert res.status_code == 200
+    items = res.json()["data"]["items"]
+    tags_by_description = {item["description"]: {t["name"] for t in item["tags"]} for item in items}
+    assert tags_by_description["交易A"] == {"標籤A"}
+    assert tags_by_description["交易B"] == {"標籤B1", "標籤B2"}
+    assert tags_by_description["交易C"] == set()
+
+
 async def test_get_nonexistent_transaction_returns_404(client: AsyncClient) -> None:
     await _register_and_login(client, "tx-user-4@example.com")
     res = await client.get("/api/v1/transactions/00000000-0000-4000-8000-000000000000")

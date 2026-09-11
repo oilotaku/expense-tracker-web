@@ -109,3 +109,29 @@ async def test_me_returns_has_pin_false_before_setup_and_true_after(client: Asyn
 async def test_me_without_cookie_returns_401(client: AsyncClient) -> None:
     res = await client.get("/api/v1/auth/me")
     assert res.status_code == 401
+
+
+async def test_logout_clears_cookie_and_revokes_session(client: AsyncClient) -> None:
+    """task-034：httpOnly cookie 原本只能等 TTL 過期，`/auth/logout` 讓它可以主動撤銷。"""
+    payload = {"email": "user-6@example.com", "password": _PASSWORD}
+    await client.post("/api/v1/auth/register", json=payload)
+    await client.post("/api/v1/auth/login", json=payload)
+
+    before = await client.get("/api/v1/auth/me")
+    assert before.status_code == 200
+
+    logout = await client.post("/api/v1/auth/logout")
+    assert logout.status_code == 200
+    assert logout.json()["success"] is True
+    set_cookie = logout.headers.get("set-cookie", "")
+    assert 'access_token=""' in set_cookie
+    assert "Max-Age=0" in set_cookie
+
+    after = await client.get("/api/v1/auth/me")
+    assert after.status_code == 401
+
+
+async def test_logout_without_cookie_still_succeeds(client: AsyncClient) -> None:
+    res = await client.post("/api/v1/auth/logout")
+    assert res.status_code == 200
+    assert res.json()["success"] is True

@@ -115,6 +115,26 @@ class TransactionRepository:
         )
         return (await self.db.execute(stmt)).scalars().all()
 
+    async def list_tags_by_transaction_uids(
+        self, transaction_uids: Sequence[UUID]
+    ) -> dict[UUID, list[Tag]]:
+        """單次 IN 查詢批次撈多筆交易的標籤，避免清單端點逐筆查詢造成 N+1。"""
+        result: dict[UUID, list[Tag]] = {uid: [] for uid in transaction_uids}
+        if not transaction_uids:
+            return result
+        stmt = (
+            select(transaction_tags.c.transaction_uid, Tag)
+            .join(Tag, transaction_tags.c.tag_uid == Tag.tag_uid)
+            .where(
+                transaction_tags.c.transaction_uid.in_(transaction_uids),
+                Tag.is_deleted.is_(False),
+            )
+            .order_by(Tag.name)
+        )
+        for transaction_uid, tag in (await self.db.execute(stmt)).all():
+            result[transaction_uid].append(tag)
+        return result
+
     async def update_fields(
         self,
         transaction: Transaction,

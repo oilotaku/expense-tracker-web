@@ -91,6 +91,13 @@ const authApi = baseApi.enhanceEndpoints({ addTagTypes: ['User'] }).injectEndpoi
       transformResponse: (res: ApiResponse<AuthUser>) => unwrapData(res),
       invalidatesTags: [{ type: 'User', id: 'ME' }],
     }),
+    // 登出（POST /auth/logout）：清除 httpOnly cookie，讓 access_token 在 TTL 到期前就
+    // 失效，而不是只清前端快取。成功回應為 ApiResponse[None]，同 setPin 不經 unwrapData。
+    logout: build.mutation<void, void>({
+      query: () => ({ url: 'auth/logout', method: 'POST' }),
+      transformResponse: () => undefined,
+      invalidatesTags: [{ type: 'User', id: 'ME' }],
+    }),
   }),
   overrideExisting: false,
 })
@@ -103,6 +110,7 @@ export const {
   useChangePinMutation,
   useDeletePinMutation,
   useLoginWithPinMutation,
+  useLogoutMutation,
 } = authApi
 
 // FE-029：錯誤處理必用型別收窄（'status' in error 判 FetchBaseQueryError），禁 `error as any`。

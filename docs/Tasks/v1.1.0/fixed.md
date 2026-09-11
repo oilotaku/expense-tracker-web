@@ -109,3 +109,36 @@
 - **修正**: 未修正（這兩支 e2e 不在 task-026 `affected_files` 內）。已拆 `docs/Tasks/v1.1.0/tasks/task-032-stale-e2e-specs-fix.md`（CORE-068）。
 - **rule**: NONE
 - **後續**: task-032 修正後解除；與 §7 同一個 reflect 候選（新增必填欄位這類橫向變更，拆解時應該掃描全 repo 含 e2e 在內的所有呼叫點，不只後端單元測試）。
+
+## §11 — `GET /transactions` 逐筆呼叫 repository 查標籤，100 筆分頁打出最多 101 次 DB 往返（既存自 v1.0.0，使用者請求的改善優化建議掃描發現，已拆 task-033）
+
+- **time**: 2026-09-11T16:00:00+08:00
+- **commit**: pending（task-033 修正）
+- **files**: `backend/app/api/v1/transactions.py`（`list_transactions()` 第 159-162 行，既存自 v1.0.0 該端點首次實作時就是這個寫法）、`backend/app/repositories/transaction_repository.py`（新增批次方法）
+- **問題**: `list_transactions()` 分頁查完交易後，用 list comprehension 對每一筆交易各自呼叫一次 `repo.list_tags_for_transaction_uid(t.transaction_uid)` 撈標籤；`TransactionListFilter.limit` 上限 100，代表這個端點最多會發 1（分頁查詢）+ 1（count）+ 100（逐筆標籤）= 102 次 DB round-trip，違反 `→ BE-095`「service 禁在迴圈內呼叫 repository」。
+- **根因**: `Transaction`/`Tag` 是透過 `transaction_tags` 關聯表手寫查詢，從未用 SQLAlchemy `relationship()`建模（`create_transaction`/`get_transaction`/`update_transaction` 各自單筆場景下逐筆查詢沒有 N+1 問題，容易讓人忽略 list 端點分頁後同一段程式碼會被放大到最多 100 倍），task-001（v1.0.0）實作 `GET /transactions` 時直接沿用單筆場景的 `list_tags_for_transaction_uid` 呼叫方式，沒有意識到需要為列表場景另外設計批次查詢。
+- **修正**: `TransactionRepository` 新增 `list_tags_by_transaction_uids(transaction_uids)`，用單次 `transaction_tags.c.transaction_uid.in_(...)` JOIN 查詢撈整頁的標籤，回傳 `dict[UUID, list[Tag]]`；`list_transactions()` 改呼叫一次批次方法，不在迴圈內呼叫 repository。單筆場景（`get_transaction`/`create_transaction`/`update_transaction`）維持原本的 `list_tags_for_transaction_uid`（原本就只查一次，不受影響）。新增 `test_list_transactions_returns_correct_tags_per_item` 驗證批次映射不會把不同交易的標籤配錯。
+- **rule**: BE-095
+- **後續**: 已解除。reflect 候選：手寫關聯表（未用 SQLAlchemy `relationship()`）的多對多查詢，在新增任何「列表」端點時應該預設檢查是否需要對應的批次查詢方法，避免沿用單筆場景的寫法直接放進迴圈。
+
+## §12 — 補上 `POST /auth/logout`，解除 §4 記錄的既存缺口（使用者請求的改善優化建議掃描發現，已拆 task-034）
+
+- **time**: 2026-09-11T16:00:00+08:00
+- **commit**: pending（task-034 修正）
+- **files**: `backend/app/api/v1/auth.py`、`backend/tests/api/test_auth.py`、`frontend/src/lib/api/authApi.ts`、`frontend/src/app/settings/page.tsx`、`frontend/src/app/settings/page.test.tsx`
+- **問題**: 同 §4——`backend/app/api/v1/auth.py` 從未提供 `POST /auth/logout`，設定頁「登出」只能清前端 RTK Query 快取並導向 `/login`，httpOnly `access_token` cookie 本身要等 8 小時 TTL 自然過期，裝置遺失時無法立即撤銷該裝置的登入態。
+- **根因**: 見 §4（v1.0.0 propose 範圍從未規劃登出功能，後端從未實作對應 endpoint；`app/core/cookies.py::clear_jwt_cookie()` 其實早就存在，但因為沒有任何路由呼叫它，一直是死代碼）。
+- **修正**: `auth.py` 新增 `POST /auth/logout`，呼叫既有的 `clear_jwt_cookie()` 清 cookie；不要求登入態（未帶 cookie 呼叫也回 200，冪等）。前端 `authApi.ts` 新增 `useLogoutMutation`，`settings/page.tsx` 的 `handleLogout` 改為先呼叫該 mutation（失敗也不擋登出流程）再清快取、導回 `/login`，移除原本說明「後端缺口」的註解。新增後端測試 `test_logout_clears_cookie_and_revokes_session`（驗證登出後 `Set-Cookie: access_token=""; Max-Age=0` 且 `/auth/me` 變 401）與 `test_logout_without_cookie_still_succeeds`；前端 `settings/page.test.tsx` 新增登出成功／登出 API 失敗兩種情境的測試。
+- **rule**: NONE
+- **後續**: §4 已解除，不再是開放缺口。
+
+## §13 — `test_triggering_twice_in_same_month_is_idempotent` 在乾淨 main 分支上穩定失敗，根因是 e2e 測試殘留資料污染共用 dev DB，非程式邏輯 bug（使用者請求的改善優化建議掃描過程中意外發現，已清除污染資料）
+
+- **time**: 2026-09-11T16:00:00+08:00
+- **commit**: `cb8fd8e`（DB 資料清除，非程式碼修正；此條目本身的文字修正隨後續 commit 一併記錄）
+- **files**: `frontend/e2e/recurring-interval.spec.ts`（污染源：建立測試資料後從未清除）；`backend/app/repositories/recurring_rule_repository.py::list_pending_for_year_month()`（刻意不分使用者的全域查詢，設計正確，非本條目要修的對象）
+- **問題**: 驗證 task-033/034 修正時，為了排除「全套件 pytest 既有 event-loop flake」（`tasks-v1.1.0.md` 環境備註）造成的假訊號，逐一排查全套件測試結果，發現 `test_triggering_twice_in_same_month_is_idempotent` 這個測試本身（非 flake）會穩定失敗：規則第三次觸發（`as_of=2026-09-28`）預期回傳空清單（月粒度冪等），實際卻多出 3 筆交易。在**完全乾淨的 main 分支**單獨執行同一測試也重現一樣的失敗，一度誤判為 `RecurringService`/`RecurringRuleRepository` 的邏輯回歸（見本條目先前版本）。
+- **根因**: 實際排查後**並非程式邏輯 bug**。`list_pending_for_year_month()` 是刻意設計成不分使用者的全域查詢（系統排程語意：「掃描所有到期規則」），這個設計本身正確。真正原因是 dev 資料庫（測試與本機開發共用同一份，非獨立 test DB）裡累積了 3 個從未清除的 e2e 測試殘留帳號（`e2e-recurring-1788909949018-508369@example.com` 等 3 個，2026-09-08 由 `frontend/e2e/recurring-interval.spec.ts` 建立，各帶一條「每兩週訂閱」規則、`anchor_date=2026-01-05`、週期 2 週）。這 3 條規則的雙週循環數學上恰好落在 `2026-09-28`（266 天 = 38×7，週期數為偶數，符合到期條件），與測試自己建立的規則一起被 `list_pending_for_year_month()` 掃進候選清單，造成「多 3 筆」。`recurring-interval.spec.ts` 建立測試使用者/規則後從未在測試結束時清除，是這次污染的直接來源。
+- **修正**: 直接在 dev DB 清除這 3 個殘留 e2e 帳號（`recurring_rules` 6 筆、`accounts` 3 筆、`categories` 27 筆、`user_credentials` 3 筆、`users` 3 筆，依 FK 順序刪除；已核對這 3 個帳號的 `transactions`/`budgets`/`liabilities`/`financial_assets`/`tags` 皆為 0 筆，且未動到使用者自己真實帳號（`8938059d-...`）的 6 條真實固定收支規則）。清除後重跑 `test_recurring_service.py`：原本失敗的測試轉綠（14 passed，僅剩已知的 event-loop flake 5 個 error，與此問題無關）。**未修改** `recurring-interval.spec.ts` 補加測試結束清理——使用者這次只要求清資料，補測試清理留待下一版視情況處理。
+- **rule**: NONE
+- **後續**: 這是本次未解決的殘留風險：`recurring-interval.spec.ts`（以及可能其他 e2e spec）仍然沒有測試結束清理，之後再次執行 e2e 又會留下新的殘留帳號，未來換個日期組合仍可能重新巧合命中並讓其他測試看起來「回歸」。reflect 候選：(1) e2e spec 應在 `afterEach`/`afterAll` 清除自己建立的資料，或至少歸戶到專屬前綴方便定期清除；(2) 更根本的作法是 e2e 改用獨立於一般開發/整合測試的資料庫，避免共用 dev DB 造成跨測試污染，這類「系統排程語意、不分使用者」的 repository 方法（`list_pending_for_year_month` 等）特別容易受害。

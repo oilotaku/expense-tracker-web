@@ -5,7 +5,7 @@
 > - `recurring_rules.interval_unit=year` 且 `anchor_date` 為 2/29、目標年非閏年時，比照既有「超過當月天數夾到月底」規則夾到 2/28 → task-003。
 > - `GET /dashboard/summary` 的 `(user_uid, transaction_date)` 查詢效能沿用既有索引慣例（`→ rules/30-database/08-indexes-and-perf.md`），若既有索引不足由 worker 於 task-001 一併補（`affected_files` 已含 migration 空間，不需新開 task）。
 
-- **狀態**：**全部完成**（26/26 原始範圍 done + 6 個補洞 task 027/028/029/030/031/032 皆 done，共 32 個 task）。另有 1 項不掛 task 編號的直接修正：`frontend/src/app/page.tsx` 根路由導向修正（使用者實測發現，commit `f675a69`）。
+- **狀態**：**全部完成**（26/26 原始範圍 done + 8 個補洞 task 027/028/029/030/031/032/033/034 皆 done，共 34 個 task）。另有 1 項不掛 task 編號的直接修正：`frontend/src/app/page.tsx` 根路由導向修正（使用者實測發現，commit `f675a69`）。task-033/034 為使用者請求的「專案改善優化建議」掃描發現後直接授權修的補洞 task（非 task-016/021 執行中發現，來源見各 task 檔）。
 - **重要環境修復記錄**：`docker compose watch` 在多次 session 中斷過程中掛掉，backend/frontend 容器一度停留在舊版程式碼（frontend 停在 9/4 最早版本），已於 2026-09-09 重新 `docker compose up -d --build` 兩個服務並重啟 `watch`；同時第一次真正跑全套件 `uv run pytest`（過去只各自驗 task 相關檔案）抓到 §7 兩個真 bug 並修正，全套件 105→122 passed。task-026 e2e 前置條件已備妥，容器狀態可信。
 - **環境備註**：
   - `frontend` container 是 production standalone image（無 devDependencies/`tsc`），跑 vitest/typecheck/lint 驗證要用 `docker run node:24-alpine` 掛載 `frontend/node_modules`，不能直接 `docker compose exec frontend`；host 直接跑 vitest 有 rolldown native binding 問題，同樣不可行（task-007 已驗證，後續 wave 的 worker 可省去重新摸索）。
@@ -53,6 +53,8 @@
 | 031 | 補洞：設定 PIN 成功後從未呼叫 rememberAccount，PIN 快速登入入口不會出現（CORE-068，功能阻斷，來源 task-026） | done | ✓ | — | `frontend/src/app/settings/page.tsx`、`frontend/src/app/settings/page.test.tsx` | af13cbc5（commit `52dd193`） |
 | 032 | 補洞：修正 2 支 v1.0.0 e2e 因登入導向 /dashboard + 帳戶必填 color/icon 而變紅（CORE-068，來源 task-026） | done（另修正 2 個任務書未列的既有斷點：task-017 表單改 Dialog、task-016 總資產 DOM 改變；net-worth 等台股開盤後 09:05 重跑轉綠） | ✓ | — | `frontend/e2e/multi-user-isolation.spec.ts`、`frontend/e2e/net-worth.spec.ts` | a035c80f（commit `f92cecd`） |
 | 027 | 補洞：msw devDependency + eslint 掃描範圍（CORE-068，來源 `fixed.md` §1/§2） | done | ✓ | task-006 | `frontend/package.json`、`frontend/package-lock.json`、`frontend/eslint.config.mjs` | a1a18235（commit `a27b584`） |
+| 033 | 補洞：交易清單 N+1 查詢修正（批次撈標籤，CORE-068，來源：使用者請求的改善優化建議掃描） | done | ✓ | — | `backend/app/api/v1/transactions.py`、`backend/app/repositories/transaction_repository.py`、`backend/tests/api/test_transactions.py` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
+| 034 | 補洞：補上 POST /auth/logout，解除 fixed.md §4（CORE-068，來源：使用者請求的改善優化建議掃描） | done | ✓ | — | `backend/app/api/v1/auth.py`、`backend/tests/api/test_auth.py`、`frontend/src/lib/api/authApi.ts`、`frontend/src/app/settings/page.tsx`、`frontend/src/app/settings/page.test.tsx` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 
 ## 跨 area 三段鏈（後端 API → 前端串接 → 頁面/e2e）
 
