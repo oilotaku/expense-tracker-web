@@ -22,7 +22,7 @@ v1.1.0 = 補視覺設計系統（含 Light + Dark 兩套色彩 tokens，v1.0.0 �
 - **[A4]** 現金帳戶預設**不可刪除到 0 個帳戶**：使用者可改名任何帳戶（含現金），但系統**至少保留 1 個帳戶**；刪除操作在只剩最後一個帳戶時停用並顯示原因。銀行帳戶無此限制，可自由刪除（刪除前若有交易掛在該帳戶，比照一般刪除警告：走 `<ConfirmDialog>` 並提示需先轉移或保留歷史交易，實際轉移邏輯由後端規則決定，非本版範圍）。
 - **[A5]** 新增交易表單「分類 / 明細 / 支付方式」留白時，前端送出：分類 = 系統預設「其他」分類、明細 = 空字串、支付方式 = 空字串（皆為目前後端 NOT NULL 欄位可接受的合法值，**不需要後端 schema migration**）。這是為了不牽動後端而做的**設計妥協**：「其他」分類與「使用者真的手動選其他」會混在一起、統計上有一定失真。**已決議（2026-09-04）：維持此方案，不做後端 `NULL` migration**——`category_uid` / `description` / `payment_method` 三欄位不改為可為 `NULL`，本版對此妥協的接受度已由使用者確認，不再是開放問題。
 - **[A6]（已決議：週/月/年間隔全面開放）** 「固定收支」週期單位（週/月/年 + 間隔 N）**UI 與後端一併全量開放**，不再是「即將開放」的停用態。現有 `recurring_rules` 後端 model 需擴充（新增 `interval_unit` / `interval_count` / `anchor_date` 欄位）才能支援，完整資料模型調整方向與既有月資料相容策略見 §12.3；UI 規格見 §7.2（已更新為正式可用版本）。
-- **[A7]** Dashboard「預算結餘」卡片只在期間 = **月** 時完整可用（對齊 `Budget.period_type = monthly`）；期間切到「年」或「自訂範圍」時，該卡片顯示簡化狀態（見 §9.2），不做不精確的估算數字。此行為同時對應 §12.1 Dashboard 彙總 API 回應中 `budget_remaining` 欄位「period ≠ month 時一律為 `null`」的約定。
+- **[A7]（2026-09-11 修訂）** Dashboard「預算結餘」卡片在期間 = **月**或**年**時皆可用：月視圖沿用既有加總；年視圖改用「月度預算 `limit_amount` × 涵蓋月份數（固定 12）− 該分類全年已花費」估算（見 §9.2），取代原本一律顯示簡化狀態的舊決策（使用者需求變更：年度總覽的預算結餘要用月/日基礎推算，而非直接留空）。期間 = **自訂範圍**時區間可能不對齊月份邊界，估算會失真，維持顯示簡化狀態、不做估算。此行為同時對應 §12.1 Dashboard 彙總 API 回應中 `budget_remaining` 欄位「`period == "custom"` 時一律為 `null`」的約定。
 - **[A8]（已決議：後端加 icon / color 欄位）** 分類 / 帳戶新增 `color`（hex）與 `icon`（固定圖示 key）欄位，使用者可在新增/編輯表單自訂並跨裝置同步；不再使用前端依名稱雜湊配色的方案。完整欄位設計、驗證規則與既有資料回填策略見 §12.4；表單呈現（色票選擇器 + 圖示選擇器）見 §9.6 / §8。
 - **[A9]** 支付方式沿用後端 `payment_method: String(50)` 自由字串（無 enum），前端提供常用選項的 combobox（現金／信用卡／金融卡／行動支付／銀行轉帳／其他）+ 允許輸入自訂字串，非後端強制枚舉。
 - **[A10]（已決議：本版納入 Dark Mode）** 本版**同時交付 Light + Dark 兩套完整色彩 tokens**，語意對應一致（收入/支出/警示色系不變，僅明度/彩度依深色背景重新校正，見 §2.2.1 / §2.3.1）；套用機制（切換入口、儲存方式、無 FOUC 作法）見 §2.7。視覺 mockup 已在 Dashboard 桌機版與行動版兩個 artboard 加上 Dark Mode 切換 tweak，供對照瀏覽。
@@ -546,7 +546,7 @@ mode="amount"（變動長度，含小數點）：
 └─────────────────────────┘
 ```
 
-**RWD 對應**：卡片區塊桌機 `grid-cols-4`、行動端垂直堆疊且「結餘」單獨拉大成 Hero（行動端螢幕窄，四卡並排會過度壓縮字級，改用資訊優先序：結餘 > 收入/支出 > 預算結餘）；圖表與帳戶總覽桌機並排兩欄、行動端上下堆疊。期間選擇器桌機常駐於 Header、行動端收進標題列右側下拉。**預算結餘卡片**在期間 = 年 / 自訂範圍時（`→ A7`）改顯示灰階卡 + 文字「預算僅支援月度檢視」，不強行估算數字。
+**RWD 對應**：卡片區塊桌機 `grid-cols-4`、行動端垂直堆疊且「結餘」單獨拉大成 Hero（行動端螢幕窄，四卡並排會過度壓縮字級，改用資訊優先序：結餘 > 收入/支出 > 預算結餘）；圖表與帳戶總覽桌機並排兩欄、行動端上下堆疊。期間選擇器桌機常駐於 Header、行動端收進標題列右側下拉。**預算結餘卡片**在期間 = 自訂範圍時（`→ A7`）改顯示灰階卡 + 文字「預算僅支援月／年度檢視」，不強行估算數字；期間 = 年時卡片正常顯示估算後的結餘數字。
 
 **資料源（已決議，`→ A14`）**：月收入／月支出／結餘／預算結餘四張卡片與期間切換（月/年/自訂範圍）**改吃新增的 `GET /dashboard/summary` 彙總 API**（完整規格見 §12.1），取代前端逐頁分頁抓交易再加總的方案；帳戶總覽卡片沿用既有帳戶清單 API，最近交易摘要沿用既有 `GET /transactions?limit=5` 分頁清單。
 
@@ -665,7 +665,7 @@ GET /api/v1/dashboard/summary
 | `income` | `Decimal` | 期間內 `transaction_type=income` 加總 |
 | `expense` | `Decimal` | 期間內 `transaction_type=expense` 加總 |
 | `balance` | `Decimal` | `income - expense` |
-| `budget_remaining` | `Decimal \| None` | `period != "month"` 時一律 `null`（`→ A7`，對齊 `Budget.period_type=monthly` 的限制）；`period == "month"` 時 = Σ(該使用者所有 `period_type=monthly` 預算的 `limit_amount - 該分類同期間已花費`)；使用者未設定任何月度預算時回傳 `0.00`（**非** `null`，用 `null`/`0` 區分「不適用」與「有查、目前是 0」） |
+| `budget_remaining` | `Decimal \| None` | `period == "custom"` 時一律 `null`（`→ A7`，區間不對齊月份邊界）；`period == "month"` 或 `"year"` 時 = Σ(該使用者所有 `period_type=monthly` 預算的 `limit_amount × 該區間涵蓋月份數 − 該分類同期間已花費`)（月視圖月份數固定 1，即舊行為；年視圖固定 12）；使用者未設定任何月度預算時回傳 `0.00`（**非** `null`，用 `null`/`0` 區分「不適用」與「有查、目前是 0」） |
 
 **實作方向**（供拆 task 參考，非最終程式碼）：新增 `DashboardService`（建構子吃 `TransactionRepository` + `BudgetRepository`），`income`/`expense` 用一次 SQL `GROUP BY transaction_type` 加總（避免抓全部交易到 app 層再加總，效能優於前端方案）；`budget_remaining` 沿用 `BudgetService.get_summary`（`backend/app/services/budget_service.py`）已有的「同分類同期間花費」計算邏輯，對使用者所有月度預算做迴圈加總。認證比照既有 router 一律 `Depends(get_current_user)`（`→ BE-023`）。
 

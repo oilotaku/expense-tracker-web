@@ -237,22 +237,43 @@ async def test_dashboard_summary_year_and_custom_period_scoped_to_range(
     assert custom_body["expense"] == "0.00"
 
 
-async def test_dashboard_summary_budget_remaining_null_when_not_month(
+async def test_dashboard_summary_budget_remaining_null_when_custom(
     client: AsyncClient,
 ) -> None:
     await _register_and_login(client, "dashboard-budget-null@example.com")
     categories = await _list_category_uids(client)
     await _create_budget(client, categories["餐飲"], "monthly", "1000.00")
 
-    year_body = await _get_summary(
-        client, "year", "2026-01-01T00:00:00+08:00", "2026-12-31T23:59:59+08:00"
-    )
-    assert year_body["budget_remaining"] is None
-
     custom_body = await _get_summary(
         client, "custom", "2026-01-01T00:00:00+08:00", "2026-01-15T00:00:00+08:00"
     )
     assert custom_body["budget_remaining"] is None
+
+
+async def test_dashboard_summary_budget_remaining_estimated_by_month_for_year(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "dashboard-budget-year@example.com")
+    account_uid = await _create_account(client)
+    categories = await _list_category_uids(client)
+    food_uid = categories["餐飲"]
+
+    await _create_budget(client, food_uid, "monthly", "1000.00")
+    await _create_transaction(
+        client,
+        account_uid,
+        food_uid,
+        datetime.fromisoformat("2026-03-10T12:00:00+08:00"),
+        "300.00",
+        "expense",
+    )
+
+    year_body = await _get_summary(
+        client, "year", "2026-01-01T00:00:00+08:00", "2026-12-31T23:59:59+08:00"
+    )
+    # 1000.00 * 12 個月 - 300.00 已花費 = 11700.00（→ A7 2026-09-11 修訂：年視圖用月度預算 ×
+    # 涵蓋月份數估算，取代原本一律回 null 的舊決策）
+    assert year_body["budget_remaining"] == "11700.00"
 
 
 async def test_dashboard_summary_budget_remaining_zero_when_no_budgets(
