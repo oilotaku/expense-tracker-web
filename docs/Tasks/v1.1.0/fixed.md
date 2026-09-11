@@ -153,3 +153,14 @@
 - **修正**: `recurring_rule.py` 的兩個 schema 皆拿掉 `min_length=1`（同 task-028，不改型別、不做 nullable，DB 欄位本來就是 `NOT NULL` 但接受空字串）。新增 `test_create_recurring_rule_with_blank_description_and_payment_method`、`test_update_recurring_rule_can_clear_description_and_payment_method` 驗證留白建立/更新皆成功。
 - **rule**: BE-023
 - **後續**: 已解除。reflect 候選：與 §7/§10 是同一類根因的第三次出現（欄位層級的規則變更，拆解/修正當下只看到當次觸發的那個 schema，沒有掃描 repo 內同語意的姊妹欄位）——建議之後任何「放寬/收緊某個欄位驗證規則」的 task，Acceptance 應該明確要求先 `grep` 同欄位名在其他 schema 檔的定義，列出全部命中處再決定是否一併處理。
+
+## §15 — 帳戶餘額後端/型別層早已支援直接編輯，前端從未提供入口（既存自 v1.0.0/task-005，使用者請求發現，已拆 task-036）
+
+- **time**: 2026-09-11T18:00:00+08:00
+- **commit**: pending（task-036 修正）
+- **files**: `frontend/src/components/accounts/AccountCard.tsx`、`frontend/src/app/accounts/page.tsx`（既存自 v1.0.0：`commitAccountUpdate` 從一開始就只接受 `{ name?, color?, icon? }` 三個欄位）
+- **問題**: 帳戶建立後，餘額只能透過交易間接調整（收入/支出/轉帳自動同步），沒有任何地方能讓使用者直接手動修正餘額（例如對帳發現誤差、初始資料遷移需要修正）。但 `backend/app/schemas/account.py::AccountUpdateRequest.balance` 與 `frontend/src/lib/api/accountsApi.ts::AccountUpdateRequest.balance` 兩層都早已宣告這個欄位可選填傳入，`account_repository.py::update_fields` 也已正確處理（直接覆寫 `account.balance`，無其他 side effect）——換句話說，這個功能在資料層/型別層已經「存在」了一個版本，只是從未有 UI 呼叫過，是純粹的前端串接缺口。
+- **根因**: `frontend/src/lib/api/accountsApi.ts` 第 63-64 行的既有註解「改名/改色/改圖示不需通過重建帳戶流程...四欄位皆各自 optional」明確提到四個欄位（含 balance），但當時（v1.0.0 task-005 前端串接階段）實際串接 `commitAccountUpdate` 時只挑了三個欄位（name/color/icon）寫進 UI，balance 的 UI 入口被遺漏，之後也沒有任何後續 task 回頭補上，形成「型別/schema 已就緒但功能沒有出口」的落差，直到使用者實際想對帳修正餘額時才發現。
+- **修正**: `AccountCard.tsx` 新增「餘額」輸入框（比照既有「名稱」欄位 draft + blur/Enter 提交慣例；`type="number" step="0.01"`，允許負數，格式驗證 `BALANCE_PATTERN = /^-?\d+(\.\d*)?$/`——比 `TransactionFormDialog.tsx` 的 `AMOUNT_PATTERN` 少了 `>0` 限制，因為信用卡類帳戶餘額本來就可能是負數）；`app/accounts/page.tsx` 的 `commitAccountUpdate` patch 型別與 `<AccountCard>` 呼叫點加上 `balance`/`onBalanceChange`。不改動後端（schema/repository 本來就支援）。
+- **rule**: NONE
+- **後續**: 已解除。reflect 候選：「schema/型別層已宣告的欄位」與「UI 是否真的有入口串接」之間的落差，這是本版第二次出現類似模式（第一次是 §9 的 `rememberAccount` 從未被呼叫）——建議 task 拆解 Acceptance 針對「新增/擴充某個 mutation 的可選欄位」這類情境，明確要求列出「哪些 UI 元件需要對應串接」，而不是只驗證 schema/型別本身編譯過。

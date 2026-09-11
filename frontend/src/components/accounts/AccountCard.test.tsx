@@ -19,6 +19,7 @@ describe('AccountCard', () => {
         account={CASH_ACCOUNT}
         isOnlyAccount={false}
         onNameChange={vi.fn()}
+        onBalanceChange={vi.fn()}
         onColorChange={vi.fn()}
         onIconChange={vi.fn()}
         onRequestDelete={vi.fn()}
@@ -36,6 +37,7 @@ describe('AccountCard', () => {
         account={{ ...CASH_ACCOUNT, icon: 'not-a-real-icon' }}
         isOnlyAccount={false}
         onNameChange={vi.fn()}
+        onBalanceChange={vi.fn()}
         onColorChange={vi.fn()}
         onIconChange={vi.fn()}
         onRequestDelete={vi.fn()}
@@ -51,6 +53,7 @@ describe('AccountCard', () => {
         account={CASH_ACCOUNT}
         isOnlyAccount={false}
         onNameChange={onNameChange}
+        onBalanceChange={vi.fn()}
         onColorChange={vi.fn()}
         onIconChange={vi.fn()}
         onRequestDelete={vi.fn()}
@@ -72,6 +75,7 @@ describe('AccountCard', () => {
         account={CASH_ACCOUNT}
         isOnlyAccount={false}
         onNameChange={onNameChange}
+        onBalanceChange={vi.fn()}
         onColorChange={vi.fn()}
         onIconChange={vi.fn()}
         onRequestDelete={vi.fn()}
@@ -89,6 +93,56 @@ describe('AccountCard', () => {
     expect(onNameChange).toHaveBeenCalledExactlyOnceWith('a-cash', '主帳戶')
   })
 
+  it('點擊編輯展開餘額輸入框，修改後 blur 呼叫 onBalanceChange（使用者手動對帳/修正誤差用）', () => {
+    const onBalanceChange = vi.fn()
+    render(
+      <AccountCard
+        account={CASH_ACCOUNT}
+        isOnlyAccount={false}
+        onNameChange={vi.fn()}
+        onBalanceChange={onBalanceChange}
+        onColorChange={vi.fn()}
+        onIconChange={vi.fn()}
+        onRequestDelete={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByLabelText('編輯 現金'))
+    const balanceInput = screen.getByLabelText('餘額')
+    fireEvent.change(balanceInput, { target: { value: '850.50' } })
+    fireEvent.blur(balanceInput)
+
+    expect(onBalanceChange).toHaveBeenCalledExactlyOnceWith('a-cash', '850.50')
+  })
+
+  it('餘額允許改成負數（例如信用卡循環未繳），按 Enter 提交；跟現值相同或格式不合法則不提交', () => {
+    const onBalanceChange = vi.fn()
+    render(
+      <AccountCard
+        account={CASH_ACCOUNT}
+        isOnlyAccount={false}
+        onNameChange={vi.fn()}
+        onBalanceChange={onBalanceChange}
+        onColorChange={vi.fn()}
+        onIconChange={vi.fn()}
+        onRequestDelete={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByLabelText('編輯 現金'))
+    const balanceInput = screen.getByLabelText('餘額')
+
+    // 跟現值相同：不提交
+    fireEvent.change(balanceInput, { target: { value: '1000.00' } })
+    fireEvent.keyDown(balanceInput, { key: 'Enter' })
+    expect(onBalanceChange).not.toHaveBeenCalled()
+
+    // 負數：允許提交
+    fireEvent.change(balanceInput, { target: { value: '-500.00' } })
+    fireEvent.keyDown(balanceInput, { key: 'Enter' })
+    expect(onBalanceChange).toHaveBeenCalledExactlyOnceWith('a-cash', '-500.00')
+  })
+
   it('展開後選色 / 選圖示即時呼叫 onColorChange / onIconChange', () => {
     const onColorChange = vi.fn()
     const onIconChange = vi.fn()
@@ -97,6 +151,7 @@ describe('AccountCard', () => {
         account={CASH_ACCOUNT}
         isOnlyAccount={false}
         onNameChange={vi.fn()}
+        onBalanceChange={vi.fn()}
         onColorChange={onColorChange}
         onIconChange={onIconChange}
         onRequestDelete={vi.fn()}
@@ -118,6 +173,7 @@ describe('AccountCard', () => {
         account={CASH_ACCOUNT}
         isOnlyAccount={false}
         onNameChange={vi.fn()}
+        onBalanceChange={vi.fn()}
         onColorChange={vi.fn()}
         onIconChange={vi.fn()}
         onRequestDelete={onRequestDelete}
@@ -134,6 +190,7 @@ describe('AccountCard', () => {
         account={CASH_ACCOUNT}
         isOnlyAccount
         onNameChange={vi.fn()}
+        onBalanceChange={vi.fn()}
         onColorChange={vi.fn()}
         onIconChange={vi.fn()}
         onRequestDelete={onRequestDelete}
