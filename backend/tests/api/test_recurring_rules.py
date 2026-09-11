@@ -146,6 +146,61 @@ async def test_update_recurring_rule_interval_fields(client: AsyncClient) -> Non
     assert body["anchor_date"] == "2026-03-01"
 
 
+async def test_create_recurring_rule_with_blank_description_and_payment_method(
+    client: AsyncClient,
+) -> None:
+    """task-035：description/payment_method 比照 task-028 的一次性交易慣例，留白也能送出。"""
+    await _register_and_login(client, "recur-blank@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    res = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "",
+            "amount": "100.00",
+            "transaction_type": "expense",
+            "payment_method": "",
+            "anchor_date": "2026-09-15",
+        },
+    )
+    assert res.status_code == 201
+    data = res.json()["data"]
+    assert data["description"] == ""
+    assert data["payment_method"] == ""
+
+
+async def test_update_recurring_rule_can_clear_description_and_payment_method(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "recur-blank-update@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+
+    created = await client.post(
+        "/api/v1/recurring-rules",
+        json={
+            "account_uid": account_uid,
+            "category_uid": category_uid,
+            "description": "訂閱",
+            "amount": "199.00",
+            "transaction_type": "expense",
+            "payment_method": "信用卡",
+            "anchor_date": "2026-01-10",
+        },
+    )
+    recurring_rule_uid = created.json()["data"]["recurring_rule_uid"]
+
+    res = await client.patch(
+        f"/api/v1/recurring-rules/{recurring_rule_uid}",
+        json={"description": "", "payment_method": ""},
+    )
+    assert res.status_code == 200
+    body = res.json()["data"]
+    assert body["description"] == ""
+    assert body["payment_method"] == ""
+
+
 async def test_list_recurring_rules_reflects_interval_fields(client: AsyncClient) -> None:
     await _register_and_login(client, "recur-6@example.com")
     account_uid, category_uid = await _make_account_and_category(client)

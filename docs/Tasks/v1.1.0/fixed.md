@@ -142,3 +142,14 @@
 - **修正**: 直接在 dev DB 清除這 3 個殘留 e2e 帳號（`recurring_rules` 6 筆、`accounts` 3 筆、`categories` 27 筆、`user_credentials` 3 筆、`users` 3 筆，依 FK 順序刪除；已核對這 3 個帳號的 `transactions`/`budgets`/`liabilities`/`financial_assets`/`tags` 皆為 0 筆，且未動到使用者自己真實帳號（`8938059d-...`）的 6 條真實固定收支規則）。清除後重跑 `test_recurring_service.py`：原本失敗的測試轉綠（14 passed，僅剩已知的 event-loop flake 5 個 error，與此問題無關）。**未修改** `recurring-interval.spec.ts` 補加測試結束清理——使用者這次只要求清資料，補測試清理留待下一版視情況處理。
 - **rule**: NONE
 - **後續**: 這是本次未解決的殘留風險：`recurring-interval.spec.ts`（以及可能其他 e2e spec）仍然沒有測試結束清理，之後再次執行 e2e 又會留下新的殘留帳號，未來換個日期組合仍可能重新巧合命中並讓其他測試看起來「回歸」。reflect 候選：(1) e2e spec 應在 `afterEach`/`afterAll` 清除自己建立的資料，或至少歸戶到專屬前綴方便定期清除；(2) 更根本的作法是 e2e 改用獨立於一般開發/整合測試的資料庫，避免共用 dev DB 造成跨測試污染，這類「系統排程語意、不分使用者」的 repository 方法（`list_pending_for_year_month` 等）特別容易受害。
+
+## §14 — `RecurringRuleCreateRequest`/`UpdateRequest` 的 `description`/`payment_method` 仍是 `min_length=1`，task-028 決議未同步到固定收支（既存自 v1.1.0 task-002，使用者請求發現，已拆 task-035）
+
+- **time**: 2026-09-11T17:00:00+08:00
+- **commit**: pending（task-035 修正）
+- **files**: `backend/app/schemas/recurring_rule.py`（既存自 task-002：`RecurringRuleCreateRequest` 第 19/22 行、`RecurringRuleUpdateRequest` 第 36/39 行皆為 `Field(min_length=1, ...)`）、`backend/tests/api/test_recurring_rules.py`
+- **問題**: 使用者反映「新增所有交易紀錄的明細不用必填」。一次性交易（`TransactionCreateRequest`/`TransactionUpdateRequest`）的 `description`/`payment_method` 已在 task-028（`fixed.md` §5）拿掉 `min_length=1`，但固定收支（`RecurringRuleCreateRequest`/`RecurringRuleUpdateRequest`）從未同步這個決議——兩者共用同一個 `frontend/src/components/transactions/TransactionFormDialog.tsx` 表單（`isRecurring` 切換），前端 zod schema 對兩個欄位皆無 `.min(1)`，一次性交易可以留白送出，但切到「固定收支」模式留白送出會被後端 422 拒絕，使用者體驗不一致。
+- **根因**: task-028 拆解時 `affected_files` 只列了 `backend/app/schemas/transaction.py`，沒有掃到 `recurring_rule.py` 裡定義相同兩個欄位、相同 `min_length=1` 問題的姊妹 schema——task-002（固定收支後端）與 task-028（修正一次性交易的必填限制）是不同時間點的不同 task，task-028 解決當下没有回頭檢查「還有哪裡也定義了 description/payment_method 的必填規則」。
+- **修正**: `recurring_rule.py` 的兩個 schema 皆拿掉 `min_length=1`（同 task-028，不改型別、不做 nullable，DB 欄位本來就是 `NOT NULL` 但接受空字串）。新增 `test_create_recurring_rule_with_blank_description_and_payment_method`、`test_update_recurring_rule_can_clear_description_and_payment_method` 驗證留白建立/更新皆成功。
+- **rule**: BE-023
+- **後續**: 已解除。reflect 候選：與 §7/§10 是同一類根因的第三次出現（欄位層級的規則變更，拆解/修正當下只看到當次觸發的那個 schema，沒有掃描 repo 內同語意的姊妹欄位）——建議之後任何「放寬/收緊某個欄位驗證規則」的 task，Acceptance 應該明確要求先 `grep` 同欄位名在其他 schema 檔的定義，列出全部命中處再決定是否一併處理。
