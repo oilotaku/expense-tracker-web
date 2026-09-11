@@ -132,13 +132,13 @@
 - **rule**: NONE
 - **後續**: §4 已解除，不再是開放缺口。
 
-## §13 — `RecurringService.generate_due_transactions()` 同月內第二次呼叫（間隔數天）會重複產生交易，冪等性測試失敗（既存自 v1.1.0 task-003，使用者請求的改善優化建議掃描過程中意外發現，未修正）
+## §13 — `test_triggering_twice_in_same_month_is_idempotent` 在乾淨 main 分支上穩定失敗，根因是 e2e 測試殘留資料污染共用 dev DB，非程式邏輯 bug（使用者請求的改善優化建議掃描過程中意外發現，已清除污染資料）
 
 - **time**: 2026-09-11T16:00:00+08:00
-- **commit**: pending（未修正，交下一版）
-- **files**: `backend/app/services/recurring_service.py`（`generate_due_transactions`/`list_pending_for_year_month` 疑似未正確排除同月已產生過的規則）、`backend/tests/services/test_recurring_service.py::TestGenerateDueTransactions::test_triggering_twice_in_same_month_is_idempotent`
-- **問題**: 驗證 task-033/034 修正時，為了排除「全套件 pytest 既有 event-loop flake」（`tasks-v1.1.0.md` 環境備註）造成的假訊號，逐一排查全套件測試結果，發現 `test_triggering_twice_in_same_month_is_idempotent` 這個測試本身（非 flake）會穩定失敗：同一規則在同一年月被觸發 3 次（第 10、10、28 天），第三次（`third`）預期回傳空清單（冪等），實際卻多出 3 筆交易。在**完全乾淨的 main 分支**（未套用本次 task-033/034 任何改動）單獨執行同一測試也重現一樣的失敗，確認與本次改動無關，是 v1.1.0 task-003（recurring_rules 週期擴充）就存在但過去被全套件跑的 event-loop flake 蓋過、從未被單獨排查出來的真回歸。
-- **根因**: 未排查（不在 task-033/034 `affected_files` 內，不擅自擴權修改 `recurring_service.py`）。初步觀察：「3 more items」意味著同一規則在第三次呼叫時被視為候選並重複產生了不只一次，懷疑 `RecurringRuleRepository.list_pending_for_year_month()` 或 `is_due()` 對「本月已產生過」的排除條件（`rule.last_generated_year_month == year_month`）有邏輯缺口，需要實際除錯才能定案，這裡只記錄現象與重現步驟。
-- **修正**: 未修正。重現步驟：`docker run --rm --network <compose>_default -v "$PWD/backend:/app" -w /app --env-file .env -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv-cache ghcr.io/astral-sh/uv:0.9-python3.14-trixie-slim sh -c "uv sync --frozen && uv run pytest tests/services/test_recurring_service.py::TestGenerateDueTransactions::test_triggering_twice_in_same_month_is_idempotent -q"`，在乾淨 main 分支與本次 worktree 皆可重現，非本次改動造成。
+- **commit**: `cb8fd8e`（DB 資料清除，非程式碼修正；此條目本身的文字修正隨後續 commit 一併記錄）
+- **files**: `frontend/e2e/recurring-interval.spec.ts`（污染源：建立測試資料後從未清除）；`backend/app/repositories/recurring_rule_repository.py::list_pending_for_year_month()`（刻意不分使用者的全域查詢，設計正確，非本條目要修的對象）
+- **問題**: 驗證 task-033/034 修正時，為了排除「全套件 pytest 既有 event-loop flake」（`tasks-v1.1.0.md` 環境備註）造成的假訊號，逐一排查全套件測試結果，發現 `test_triggering_twice_in_same_month_is_idempotent` 這個測試本身（非 flake）會穩定失敗：規則第三次觸發（`as_of=2026-09-28`）預期回傳空清單（月粒度冪等），實際卻多出 3 筆交易。在**完全乾淨的 main 分支**單獨執行同一測試也重現一樣的失敗，一度誤判為 `RecurringService`/`RecurringRuleRepository` 的邏輯回歸（見本條目先前版本）。
+- **根因**: 實際排查後**並非程式邏輯 bug**。`list_pending_for_year_month()` 是刻意設計成不分使用者的全域查詢（系統排程語意：「掃描所有到期規則」），這個設計本身正確。真正原因是 dev 資料庫（測試與本機開發共用同一份，非獨立 test DB）裡累積了 3 個從未清除的 e2e 測試殘留帳號（`e2e-recurring-1788909949018-508369@example.com` 等 3 個，2026-09-08 由 `frontend/e2e/recurring-interval.spec.ts` 建立，各帶一條「每兩週訂閱」規則、`anchor_date=2026-01-05`、週期 2 週）。這 3 條規則的雙週循環數學上恰好落在 `2026-09-28`（266 天 = 38×7，週期數為偶數，符合到期條件），與測試自己建立的規則一起被 `list_pending_for_year_month()` 掃進候選清單，造成「多 3 筆」。`recurring-interval.spec.ts` 建立測試使用者/規則後從未在測試結束時清除，是這次污染的直接來源。
+- **修正**: 直接在 dev DB 清除這 3 個殘留 e2e 帳號（`recurring_rules` 6 筆、`accounts` 3 筆、`categories` 27 筆、`user_credentials` 3 筆、`users` 3 筆，依 FK 順序刪除；已核對這 3 個帳號的 `transactions`/`budgets`/`liabilities`/`financial_assets`/`tags` 皆為 0 筆，且未動到使用者自己真實帳號（`8938059d-...`）的 6 條真實固定收支規則）。清除後重跑 `test_recurring_service.py`：原本失敗的測試轉綠（14 passed，僅剩已知的 event-loop flake 5 個 error，與此問題無關）。**未修改** `recurring-interval.spec.ts` 補加測試結束清理——使用者這次只要求清資料，補測試清理留待下一版視情況處理。
 - **rule**: NONE
-- **後續**: 建議下一版開專門 task 除錯 `RecurringService`/`RecurringRuleRepository` 的月度冪等邏輯（固定收支重複產生交易屬於使用者可感知的資料正確性問題，優先序不低）；同時建議與既有的「全套件 pytest event-loop flake」（`tasks-v1.1.0.md` 環境備註）分開追蹤——這兩者過去被合併觀察，容易讓真回歸被誤判為環境雜訊。
+- **後續**: 這是本次未解決的殘留風險：`recurring-interval.spec.ts`（以及可能其他 e2e spec）仍然沒有測試結束清理，之後再次執行 e2e 又會留下新的殘留帳號，未來換個日期組合仍可能重新巧合命中並讓其他測試看起來「回歸」。reflect 候選：(1) e2e spec 應在 `afterEach`/`afterAll` 清除自己建立的資料，或至少歸戶到專屬前綴方便定期清除；(2) 更根本的作法是 e2e 改用獨立於一般開發/整合測試的資料庫，避免共用 dev DB 造成跨測試污染，這類「系統排程語意、不分使用者」的 repository 方法（`list_pending_for_year_month` 等）特別容易受害。
