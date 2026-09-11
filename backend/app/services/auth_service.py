@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions import AppError, ConflictError
 from app.core.security import create_access_token, hash_password_async, verify_password_async
 from app.models.user import User, UserCredential
@@ -25,6 +26,8 @@ def _to_user_response(user: User, credential: UserCredential | None) -> UserResp
         user_uid=user.user_uid,
         email=user.email,
         has_pin=credential is not None and credential.pin_hash is not None,
+        is_admin=user.email in get_settings().ADMIN_EMAILS,
+        must_change_password=credential is not None and credential.must_change_password,
     )
 
 
@@ -79,6 +82,21 @@ class AuthService:
         await self._verify_pin_or_raise(credential, current_pin)
         new_hash = await hash_password_async(new_pin)
         await self.repo.set_pin(credential, new_hash, datetime.now(UTC))
+
+    async def change_password(
+        self, user_uid: UUID, current_password: str, new_password: str
+    ) -> None:
+        """自助改密碼；後台管理員重設密碼後強制走這裡才能清除 must_change_password
+        （不開後門直接清 flag，改密碼本身就是「使用者確認並取代管理員給的臨時密碼」）。"""
+        credential = await self.repo.find_credential_by_user_uid(user_uid)
+        if credential is None or not await verify_password_async(
+            current_password, credential.password_hash
+        ):
+            raise AppError(_LOGIN_FAILED_DETAIL, response_code=401, status_code=401)
+        new_hash = await hash_password_async(new_password)
+        await self.repo.update_password(
+            credential, new_hash, datetime.now(UTC), must_change_password=False
+        )
 
     async def disable_pin(self, user_uid: UUID, password: str) -> None:
         credential = await self.repo.find_credential_by_user_uid(user_uid)

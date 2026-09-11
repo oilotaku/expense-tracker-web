@@ -63,3 +63,18 @@ class UserRepository:
         credential.pin_failed_attempts = 0
         credential.pin_locked_until = None
         await self.db.flush()
+
+    async def update_password(
+        self,
+        credential: UserCredential,
+        password_hash: str,
+        now: datetime,
+        *,
+        must_change_password: bool,
+    ) -> None:
+        """自助改密碼（`must_change_password=False`）與後台管理員重設密碼
+        （`must_change_password=True`）共用；後者額外標記下次登入強制改密碼。"""
+        credential.password_hash = password_hash
+        credential.password_updated_at = now
+        credential.must_change_password = must_change_password
+        await self.db.flush()

@@ -21,6 +21,9 @@ export interface LoginRequest {
 export interface AuthUser {
   user_uid: string
   email: string
+  has_pin: boolean
+  is_admin: boolean
+  must_change_password: boolean
 }
 
 // PIN 登入（design-spec.md §12.2，task-002 後端已實作）：型別對齊
@@ -45,6 +48,11 @@ export interface PinLoginRequest {
   pin: string
 }
 
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}
+
 // baseApi 是全專案唯一的 createApi（FE-022）；enhanceEndpoints({ addTagTypes }) 讓本檔
 // 在不修改 lib/api/baseApi.ts 的前提下，替共用的 api 實例登記新的 tag type。
 const authApi = baseApi.enhanceEndpoints({ addTagTypes: ['User'] }).injectEndpoints({
@@ -58,10 +66,8 @@ const authApi = baseApi.enhanceEndpoints({ addTagTypes: ['User'] }).injectEndpoi
       transformResponse: (res: ApiResponse<AuthUser>) => unwrapData(res),
       invalidatesTags: [{ type: 'User', id: 'ME' }],
     }),
-    // NOTE：backend 尚未提供 GET /auth/me（task-001 的 affected_files 未含此 endpoint，
-    // 之後的 task 也未見補上）。AuthGuard 仍依 FE-036/FE-037 的既定作法呼叫它來判斷登入態
-    // （httpOnly cookie 前端無法自行讀取）；在該 endpoint 落地前，此 query 恆為 401/404，
-    // 效果等同「一律視為未登入」。此為需要回報的 backend 缺口，不在本 task 範圍內新增。
+    // AuthGuard 依 FE-036/FE-037 呼叫它判斷登入態（httpOnly cookie 前端無法自行讀取）；
+    // 401 視為未登入。
     getMe: build.query<AuthUser, void>({
       query: () => 'auth/me',
       transformResponse: (res: ApiResponse<AuthUser>) => unwrapData(res),
@@ -98,6 +104,14 @@ const authApi = baseApi.enhanceEndpoints({ addTagTypes: ['User'] }).injectEndpoi
       transformResponse: () => undefined,
       invalidatesTags: [{ type: 'User', id: 'ME' }],
     }),
+    // 改密碼（PATCH /auth/change-password）：自助改密碼，也是後台管理員重設密碼後
+    // must_change_password 強制流程的唯一出口。成功後 invalidate ME 讓 AuthGuard 重新
+    // 讀到 must_change_password=false，才會放行離開強制改密碼頁。
+    changePassword: build.mutation<void, ChangePasswordRequest>({
+      query: (body) => ({ url: 'auth/change-password', method: 'PATCH', body }),
+      transformResponse: () => undefined,
+      invalidatesTags: [{ type: 'User', id: 'ME' }],
+    }),
   }),
   overrideExisting: false,
 })
@@ -111,6 +125,7 @@ export const {
   useDeletePinMutation,
   useLoginWithPinMutation,
   useLogoutMutation,
+  useChangePasswordMutation,
 } = authApi
 
 // FE-029：錯誤處理必用型別收窄（'status' in error 判 FetchBaseQueryError），禁 `error as any`。
