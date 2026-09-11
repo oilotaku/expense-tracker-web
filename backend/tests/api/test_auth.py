@@ -23,6 +23,9 @@ async def test_register_creates_user_with_hashed_password(
     assert body["data"]["email"] == "user-1@example.com"
     # 新帳號一定還沒有 PIN（PIN 只能登入後在設定頁設）
     assert body["data"]["has_pin"] is False
+    # 預設不是 admin、不用強制改密碼（ADMIN_EMAILS 測試環境預設空清單）
+    assert body["data"]["is_admin"] is False
+    assert body["data"]["must_change_password"] is False
     user_uid = UUID(body["data"]["user_uid"])
 
     credential = (

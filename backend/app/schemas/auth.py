@@ -37,6 +37,11 @@ class UserResponse(ApiSchema):
     # PIN 快速登入是否已設定（UserCredential.pin_hash 非 null）。前端據此決定設定/變更 PIN 的
     # 入口與提醒，不必再用 localStorage 猜（換瀏覽器 / 換裝置時那份近似值會錯）。
     has_pin: bool = Field(description="是否已設定 PIN 快速登入")
+    # 前端據此決定要不要顯示「管理後台」入口；後端 ADMIN_EMAILS 才是真正的授權來源
+    # （→ FE-037，前端禁自行解 JWT 判角色，一律信任這個欄位）。
+    is_admin: bool = Field(description="是否為後台管理員（ADMIN_EMAILS 名單）")
+    # 後台管理員重設密碼後為 true；前端據此強制導向改密碼頁，改完才能繼續使用其他頁面。
+    must_change_password: bool = Field(description="是否需要強制改密碼才能繼續使用")
 
 
 _PIN_RE = re.compile(r"^\d{6}$")
@@ -73,6 +78,14 @@ class ChangePinRequest(ApiInput):
 
 class DisablePinRequest(ApiInput):
     password: str = Field(min_length=1, max_length=72, description="目前登入密碼，供身份重驗證")
+
+
+class ChangePasswordRequest(ApiInput):
+    current_password: str = Field(
+        min_length=1, max_length=72, description="目前登入密碼，供身份重驗證"
+    )
+    # 上限同 RegisterRequest.password（bcrypt 72 bytes，→ BE-027）
+    new_password: str = Field(min_length=8, max_length=72, description="欲變更的新密碼")
 
 
 class PinLoginRequest(ApiInput):

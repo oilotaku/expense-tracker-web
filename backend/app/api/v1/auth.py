@@ -8,6 +8,7 @@ from app.core.cookies import clear_jwt_cookie, set_jwt_cookie
 from app.core.response import success
 from app.models.user import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
     ChangePinRequest,
     DisablePinRequest,
     LoginRequest,
@@ -66,6 +67,20 @@ async def logout(response: Response) -> ApiResponse[None]:
 )
 async def me(current_user: CurrentUser, db: DbSession) -> ApiResponse[UserResponse]:
     return success(data=await AuthService(db).get_me(current_user))
+
+
+@router.patch(
+    "/change-password",
+    response_model=ApiResponse[None],
+    summary="改密碼（自助；後台管理員重設密碼後強制走這裡才能清除 must_change_password）",
+)
+async def change_password(
+    payload: ChangePasswordRequest, db: DbSession, current_user: CurrentUser
+) -> ApiResponse[None]:
+    await AuthService(db).change_password(
+        current_user.user_uid, payload.current_password, payload.new_password
+    )
+    return success(data=None)
 
 
 @router.post(

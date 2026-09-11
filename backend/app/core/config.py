@@ -24,6 +24,9 @@ class Settings(BaseSettings):
         default=INTERNAL_TRIGGER_SECRET_DEVELOPMENT_DEFAULT, min_length=32
     )
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # 後台管理員名單：email 完全比對（大小寫已於登入/註冊正規化為小寫）。單人維運場景，
+    # 刻意不開 is_admin 欄位/角色系統，改用環境變數判定，省掉「誰來授予第一個 admin」的問題。
+    ADMIN_EMAILS: list[str] = []
     # 報價快取（→ rules/40-cache）；純加速型快取，未設定時 app 仍可啟動（→ CACHE-006）
     REDIS_URL: str | None = None
     # API 邊界（request / response）時區；內部層一律 UTC（harness rules/00-core/03-timezone.md）

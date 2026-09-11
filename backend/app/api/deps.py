@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import get_redis
+from app.core.config import get_settings
 from app.core.cookies import JWT_COOKIE_NAME
 from app.core.db import AsyncSessionLocal
 from app.core.exceptions import AppError
@@ -39,6 +40,14 @@ async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends
     if user is None or user.is_deleted:
         raise AppError("登入已失效", status_code=401, response_code=401)
     return user
+
+
+async def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+    """`ADMIN_EMAILS` 名單比對，403 不透露「有這個 endpoint 但你沒權限」以外的資訊
+    （不用 404，因為 admin 路由本身存在與否不是需要隱藏的機密）。"""
+    if current_user.email not in get_settings().ADMIN_EMAILS:
+        raise AppError("沒有權限", status_code=403, response_code=403)
+    return current_user
 
 
 def get_pricing_service(redis: Annotated[Redis | None, Depends(get_redis)]) -> PricingService:

@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel, public_uid
@@ -34,4 +34,8 @@ class UserCredential(BaseModel):
     pin_failed_attempts: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     pin_locked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # 後台管理員重設密碼後強制下次登入改密碼（PIN 登入也要擋，避免繞過，→ AuthService）。
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
