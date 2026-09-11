@@ -16,10 +16,10 @@ from app.schemas.base import ApiInput, ApiSchema
 class RecurringRuleCreateRequest(ApiInput):
     account_uid: UUID
     category_uid: UUID
-    description: str = Field(min_length=1, max_length=255)
+    description: str = Field(max_length=255)
     amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
     transaction_type: TransactionType
-    payment_method: str = Field(min_length=1, max_length=50)
+    payment_method: str = Field(max_length=50)
     interval_unit: RecurringIntervalUnit = Field(
         default=RecurringIntervalUnit.MONTH, description="週期單位：week/month/year"
     )
@@ -33,10 +33,10 @@ class RecurringRuleCreateRequest(ApiInput):
 class RecurringRuleUpdateRequest(ApiInput):
     account_uid: UUID | None = None
     category_uid: UUID | None = None
-    description: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=255)
     amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
     transaction_type: TransactionType | None = None
-    payment_method: str | None = Field(default=None, min_length=1, max_length=50)
+    payment_method: str | None = Field(default=None, max_length=50)
     interval_unit: RecurringIntervalUnit | None = Field(
         default=None, description="週期單位：week/month/year"
     )
