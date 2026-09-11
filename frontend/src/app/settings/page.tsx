@@ -18,6 +18,7 @@ import {
   useChangePinMutation,
   useDeletePinMutation,
   useGetMeQuery,
+  useLogoutMutation,
   useSetPinMutation,
 } from '@/lib/api/authApi'
 import type { AppDispatch } from '@/store/store'
@@ -420,6 +421,7 @@ function SettingsPageContent(): ReactNode {
   const [isSetPinOpen, setIsSetPinOpen] = useState(false)
   const [isChangePinOpen, setIsChangePinOpen] = useState(false)
   const [isDisablePinOpen, setIsDisablePinOpen] = useState(false)
+  const [logoutMutation] = useLogoutMutation()
 
   function handleDefaultAccountChange(event: ChangeEvent<HTMLSelectElement>): void {
     const next = event.target.value
@@ -440,12 +442,14 @@ function SettingsPageContent(): ReactNode {
     if (userUid) writeHasPin(userUid, false)
   }
 
-  function handleLogout(): void {
-    // 已知後端缺口：backend/app/api/v1/auth.py 尚無 POST /auth/logout（httpOnly cookie 因此
-    // 無法在此清除，同 authApi.ts 內 GET /auth/me 缺口註解慣例，非本 task 範圍）。這裡清空前端
-    // RTK Query 快取（含 /auth/me）並導回登入頁：AuthGuard 之後在其他頁面會因快取已清空重新
-    // 打一次 /auth/me，若 cookie 仍未過期會被視為已登入 —— 這是已知限制，需要後端補上真正的
-    // 登出 endpoint 才能完整解決。
+  async function handleLogout(): Promise<void> {
+    // POST /auth/logout 清除後端 httpOnly cookie（task-034）；即使呼叫失敗（例如 cookie 已
+    // 過期）也不擋登出流程，仍清空前端 RTK Query 快取並導回登入頁。
+    try {
+      await logoutMutation().unwrap()
+    } catch {
+      // 忽略：cookie 清除失敗不影響本機登出流程
+    }
     dispatch(baseApi.util.resetApiState())
     router.push('/login')
   }

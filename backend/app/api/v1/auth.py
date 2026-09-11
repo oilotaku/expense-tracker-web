@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.core.cookies import set_jwt_cookie
+from app.core.cookies import clear_jwt_cookie, set_jwt_cookie
 from app.core.response import success
 from app.models.user import User
 from app.schemas.auth import (
@@ -47,6 +47,16 @@ async def login(
     user, token = await AuthService(db).login(payload.email, payload.password)
     set_jwt_cookie(response, token)
     return success(data=user)
+
+
+@router.post(
+    "/logout",
+    response_model=ApiResponse[None],
+    summary="登出",
+)
+async def logout(response: Response) -> ApiResponse[None]:
+    clear_jwt_cookie(response)
+    return success(data=None)
 
 
 @router.get(

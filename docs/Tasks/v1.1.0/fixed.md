@@ -109,3 +109,36 @@
 - **修正**: 未修正（這兩支 e2e 不在 task-026 `affected_files` 內）。已拆 `docs/Tasks/v1.1.0/tasks/task-032-stale-e2e-specs-fix.md`（CORE-068）。
 - **rule**: NONE
 - **後續**: task-032 修正後解除；與 §7 同一個 reflect 候選（新增必填欄位這類橫向變更，拆解時應該掃描全 repo 含 e2e 在內的所有呼叫點，不只後端單元測試）。
+
+## §11 — `GET /transactions` 逐筆呼叫 repository 查標籤，100 筆分頁打出最多 101 次 DB 往返（既存自 v1.0.0，使用者請求的改善優化建議掃描發現，已拆 task-033）
+
+- **time**: 2026-09-11T16:00:00+08:00
+- **commit**: pending（task-033 修正）
+- **files**: `backend/app/api/v1/transactions.py`（`list_transactions()` 第 159-162 行，既存自 v1.0.0 該端點首次實作時就是這個寫法）、`backend/app/repositories/transaction_repository.py`（新增批次方法）
+- **問題**: `list_transactions()` 分頁查完交易後，用 list comprehension 對每一筆交易各自呼叫一次 `repo.list_tags_for_transaction_uid(t.transaction_uid)` 撈標籤；`TransactionListFilter.limit` 上限 100，代表這個端點最多會發 1（分頁查詢）+ 1（count）+ 100（逐筆標籤）= 102 次 DB round-trip，違反 `→ BE-095`「service 禁在迴圈內呼叫 repository」。
+- **根因**: `Transaction`/`Tag` 是透過 `transaction_tags` 關聯表手寫查詢，從未用 SQLAlchemy `relationship()`建模（`create_transaction`/`get_transaction`/`update_transaction` 各自單筆場景下逐筆查詢沒有 N+1 問題，容易讓人忽略 list 端點分頁後同一段程式碼會被放大到最多 100 倍），task-001（v1.0.0）實作 `GET /transactions` 時直接沿用單筆場景的 `list_tags_for_transaction_uid` 呼叫方式，沒有意識到需要為列表場景另外設計批次查詢。
+- **修正**: `TransactionRepository` 新增 `list_tags_by_transaction_uids(transaction_uids)`，用單次 `transaction_tags.c.transaction_uid.in_(...)` JOIN 查詢撈整頁的標籤，回傳 `dict[UUID, list[Tag]]`；`list_transactions()` 改呼叫一次批次方法，不在迴圈內呼叫 repository。單筆場景（`get_transaction`/`create_transaction`/`update_transaction`）維持原本的 `list_tags_for_transaction_uid`（原本就只查一次，不受影響）。新增 `test_list_transactions_returns_correct_tags_per_item` 驗證批次映射不會把不同交易的標籤配錯。
+- **rule**: BE-095
+- **後續**: 已解除。reflect 候選：手寫關聯表（未用 SQLAlchemy `relationship()`）的多對多查詢，在新增任何「列表」端點時應該預設檢查是否需要對應的批次查詢方法，避免沿用單筆場景的寫法直接放進迴圈。
+
+## §12 — 補上 `POST /auth/logout`，解除 §4 記錄的既存缺口（使用者請求的改善優化建議掃描發現，已拆 task-034）
+
+- **time**: 2026-09-11T16:00:00+08:00
+- **commit**: pending（task-034 修正）
+- **files**: `backend/app/api/v1/auth.py`、`backend/tests/api/test_auth.py`、`frontend/src/lib/api/authApi.ts`、`frontend/src/app/settings/page.tsx`、`frontend/src/app/settings/page.test.tsx`
+- **問題**: 同 §4——`backend/app/api/v1/auth.py` 從未提供 `POST /auth/logout`，設定頁「登出」只能清前端 RTK Query 快取並導向 `/login`，httpOnly `access_token` cookie 本身要等 8 小時 TTL 自然過期，裝置遺失時無法立即撤銷該裝置的登入態。
+- **根因**: 見 §4（v1.0.0 propose 範圍從未規劃登出功能，後端從未實作對應 endpoint；`app/core/cookies.py::clear_jwt_cookie()` 其實早就存在，但因為沒有任何路由呼叫它，一直是死代碼）。
+- **修正**: `auth.py` 新增 `POST /auth/logout`，呼叫既有的 `clear_jwt_cookie()` 清 cookie；不要求登入態（未帶 cookie 呼叫也回 200，冪等）。前端 `authApi.ts` 新增 `useLogoutMutation`，`settings/page.tsx` 的 `handleLogout` 改為先呼叫該 mutation（失敗也不擋登出流程）再清快取、導回 `/login`，移除原本說明「後端缺口」的註解。新增後端測試 `test_logout_clears_cookie_and_revokes_session`（驗證登出後 `Set-Cookie: access_token=""; Max-Age=0` 且 `/auth/me` 變 401）與 `test_logout_without_cookie_still_succeeds`；前端 `settings/page.test.tsx` 新增登出成功／登出 API 失敗兩種情境的測試。
+- **rule**: NONE
+- **後續**: §4 已解除，不再是開放缺口。
+
+## §13 — `RecurringService.generate_due_transactions()` 同月內第二次呼叫（間隔數天）會重複產生交易，冪等性測試失敗（既存自 v1.1.0 task-003，使用者請求的改善優化建議掃描過程中意外發現，未修正）
+
+- **time**: 2026-09-11T16:00:00+08:00
+- **commit**: pending（未修正，交下一版）
+- **files**: `backend/app/services/recurring_service.py`（`generate_due_transactions`/`list_pending_for_year_month` 疑似未正確排除同月已產生過的規則）、`backend/tests/services/test_recurring_service.py::TestGenerateDueTransactions::test_triggering_twice_in_same_month_is_idempotent`
+- **問題**: 驗證 task-033/034 修正時，為了排除「全套件 pytest 既有 event-loop flake」（`tasks-v1.1.0.md` 環境備註）造成的假訊號，逐一排查全套件測試結果，發現 `test_triggering_twice_in_same_month_is_idempotent` 這個測試本身（非 flake）會穩定失敗：同一規則在同一年月被觸發 3 次（第 10、10、28 天），第三次（`third`）預期回傳空清單（冪等），實際卻多出 3 筆交易。在**完全乾淨的 main 分支**（未套用本次 task-033/034 任何改動）單獨執行同一測試也重現一樣的失敗，確認與本次改動無關，是 v1.1.0 task-003（recurring_rules 週期擴充）就存在但過去被全套件跑的 event-loop flake 蓋過、從未被單獨排查出來的真回歸。
+- **根因**: 未排查（不在 task-033/034 `affected_files` 內，不擅自擴權修改 `recurring_service.py`）。初步觀察：「3 more items」意味著同一規則在第三次呼叫時被視為候選並重複產生了不只一次，懷疑 `RecurringRuleRepository.list_pending_for_year_month()` 或 `is_due()` 對「本月已產生過」的排除條件（`rule.last_generated_year_month == year_month`）有邏輯缺口，需要實際除錯才能定案，這裡只記錄現象與重現步驟。
+- **修正**: 未修正。重現步驟：`docker run --rm --network <compose>_default -v "$PWD/backend:/app" -w /app --env-file .env -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv-cache ghcr.io/astral-sh/uv:0.9-python3.14-trixie-slim sh -c "uv sync --frozen && uv run pytest tests/services/test_recurring_service.py::TestGenerateDueTransactions::test_triggering_twice_in_same_month_is_idempotent -q"`，在乾淨 main 分支與本次 worktree 皆可重現，非本次改動造成。
+- **rule**: NONE
+- **後續**: 建議下一版開專門 task 除錯 `RecurringService`/`RecurringRuleRepository` 的月度冪等邏輯（固定收支重複產生交易屬於使用者可感知的資料正確性問題，優先序不低）；同時建議與既有的「全套件 pytest event-loop flake」（`tasks-v1.1.0.md` 環境備註）分開追蹤——這兩者過去被合併觀察，容易讓真回歸被誤判為環境雜訊。
