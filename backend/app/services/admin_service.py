@@ -22,7 +22,10 @@ _TEMP_PASSWORD_BYTES = 12
 
 
 def _to_list_item(
-    user: User, account_counts: dict[UUID, int], transaction_counts: dict[UUID, int]
+    user: User,
+    account_counts: dict[UUID, int],
+    transaction_counts: dict[UUID, int],
+    last_logins: dict[UUID, datetime | None],
 ) -> AdminUserListItem:
     return AdminUserListItem(
         user_uid=user.user_uid,
@@ -30,6 +33,7 @@ def _to_list_item(
         created_at=user.created_at,
         account_count=account_counts.get(user.user_uid, 0),
         transaction_count=transaction_counts.get(user.user_uid, 0),
+        last_login_at=last_logins.get(user.user_uid),
     )
 
 
@@ -44,7 +48,8 @@ class AdminService:
         user_uids = [u.user_uid for u in users]
         account_counts = await self.admin_repo.count_accounts_by_user_uids(user_uids)
         transaction_counts = await self.admin_repo.count_transactions_by_user_uids(user_uids)
-        items = [_to_list_item(u, account_counts, transaction_counts) for u in users]
+        last_logins = await self.admin_repo.find_last_login_by_user_uids(user_uids)
+        items = [_to_list_item(u, account_counts, transaction_counts, last_logins) for u in users]
         return AdminUserListResponse(items=items, total=total)
 
     async def delete_user(self, target_user_uid: UUID, admin_user: User) -> None:

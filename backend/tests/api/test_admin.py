@@ -46,6 +46,9 @@ async def test_admin_can_list_users_with_account_counts(
     assert by_email["member-list@example.com"]["account_count"] == 3
     assert by_email["member-list@example.com"]["transaction_count"] == 0
     assert by_email["admin-list@example.com"]["account_count"] == 2
+    # 兩者都在這個測試裡登入過，last_login_at 不應該是 None（task-038）
+    assert by_email["member-list@example.com"]["last_login_at"] is not None
+    assert by_email["admin-list@example.com"]["last_login_at"] is not None
 
 
 async def test_admin_cannot_delete_own_account(
@@ -143,6 +146,47 @@ async def test_admin_reset_password_nonexistent_user_returns_404(
         "/api/v1/admin/users/00000000-0000-4000-8000-000000000000/reset-password"
     )
     assert res.status_code == 404
+
+
+async def test_registered_but_never_logged_in_user_has_null_last_login_at(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_admin(monkeypatch, "admin-nulllogin@example.com")
+
+    # 只註冊不登入（register 本身不設 cookie，不算一次登入，→ backend/app/api/v1/auth.py）
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "never-logged-in@example.com", "password": _PASSWORD},
+    )
+
+    await _register_and_login(client, "admin-nulllogin@example.com")
+    res = await client.get("/api/v1/admin/users")
+    body = res.json()["data"]
+    by_email = {item["email"]: item for item in body["items"]}
+    assert by_email["never-logged-in@example.com"]["last_login_at"] is None
+
+
+async def test_pin_login_also_updates_last_login_at(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_admin(monkeypatch, "admin-pinlogin@example.com")
+
+    await _register_and_login(client, "member-pinlogin@example.com")
+    member = (await client.get("/api/v1/auth/me")).json()["data"]
+    set_pin_res = await client.post(
+        "/api/v1/auth/pin", json={"pin": "123456", "password": _PASSWORD}
+    )
+    assert set_pin_res.status_code == 201
+
+    pin_login_res = await client.post(
+        "/api/v1/auth/login/pin", json={"user_uid": member["user_uid"], "pin": "123456"}
+    )
+    assert pin_login_res.status_code == 200
+
+    await _register_and_login(client, "admin-pinlogin@example.com")
+    res = await client.get("/api/v1/admin/users")
+    by_email = {item["email"]: item for item in res.json()["data"]["items"]}
+    assert by_email["member-pinlogin@example.com"]["last_login_at"] is not None
 
 
 async def test_change_password_wrong_current_password_returns_401(client: AsyncClient) -> None:
