@@ -180,7 +180,7 @@ export default function AccountsPage(): ReactNode {
 
   async function commitAccountUpdate(
     accountUid: string,
-    patch: { name?: string; color?: string; icon?: string },
+    patch: { name?: string; balance?: string; color?: string; icon?: string },
   ): Promise<void> {
     setSavingAccountUid(accountUid)
     try {
@@ -194,6 +194,10 @@ export default function AccountsPage(): ReactNode {
 
   function handleNameChange(accountUid: string, name: string): void {
     void commitAccountUpdate(accountUid, { name })
+  }
+
+  function handleBalanceChange(accountUid: string, balance: string): void {
+    void commitAccountUpdate(accountUid, { balance })
   }
 
   function handleColorChange(accountUid: string, color: string): void {
@@ -247,6 +251,7 @@ export default function AccountsPage(): ReactNode {
                   isOnlyAccount={isOnlyAccount}
                   isSaving={savingAccountUid === account.account_uid}
                   onNameChange={handleNameChange}
+                  onBalanceChange={handleBalanceChange}
                   onColorChange={handleColorChange}
                   onIconChange={handleIconChange}
                   onRequestDelete={setPendingDelete}

@@ -15,10 +15,15 @@ export interface AccountCardProps {
    * 名稱輸入框與色票/圖示選擇器，避免使用者誤以為點擊沒有反應而重複點擊。 */
   isSaving?: boolean
   onNameChange: (accountUid: string, name: string) => void
+  onBalanceChange: (accountUid: string, balance: string) => void
   onColorChange: (accountUid: string, color: string) => void
   onIconChange: (accountUid: string, icon: string) => void
   onRequestDelete: (account: AccountResponse) => void
 }
+
+// 同 TransactionFormDialog.tsx 的 AMOUNT_PATTERN，但帳戶餘額允許負數（例如信用卡循環未繳）：
+// 建立帳戶時後端 AccountCreateRequest.balance 本來就沒有 >0 限制，這裡直接編輯不應該比建立更嚴。
+const BALANCE_PATTERN = /^-?\d+(\.\d*)?$/
 
 interface IconGlyphDefinition {
   label: string
@@ -188,12 +193,14 @@ export function AccountCard({
   isOnlyAccount,
   isSaving = false,
   onNameChange,
+  onBalanceChange,
   onColorChange,
   onIconChange,
   onRequestDelete,
 }: AccountCardProps): ReactNode {
   const [isEditing, setIsEditing] = useState(false)
   const [draftName, setDraftName] = useState(account.name)
+  const [draftBalance, setDraftBalance] = useState(account.balance)
   const icon = resolveIconGlyph(account.icon)
 
   function commitName(): void {
@@ -205,8 +212,21 @@ export function AccountCard({
     }
   }
 
+  // 帳戶餘額原本只能在建立帳戶時設定，建立後沒有地方能手動對帳／修正誤差，只能靠交易間接
+  // 調整（使用者反映此為缺口）。這裡比照 commitName 的 draft + blur/Enter 送出慣例，但允許
+  // 負數（信用卡循環未繳等情境）且不要求「跟現值不同才送」以外的其他限制。
+  function commitBalance(): void {
+    const trimmed = draftBalance.trim()
+    if (BALANCE_PATTERN.test(trimmed) && trimmed !== account.balance) {
+      onBalanceChange(account.account_uid, trimmed)
+    } else {
+      setDraftBalance(account.balance)
+    }
+  }
+
   function toggleEditing(): void {
     setDraftName(account.name)
+    setDraftBalance(account.balance)
     setIsEditing((current) => !current)
   }
 
@@ -282,6 +302,24 @@ export function AccountCard({
                 if (event.key === 'Enter') {
                   event.preventDefault()
                   commitName()
+                }
+              }}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary disabled:opacity-50"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">餘額</span>
+            <input
+              type="number"
+              step="0.01"
+              disabled={isSaving}
+              value={draftBalance}
+              onChange={(event) => setDraftBalance(event.target.value)}
+              onBlur={commitBalance}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  commitBalance()
                 }
               }}
               className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary disabled:opacity-50"

@@ -165,6 +165,17 @@ describe('AccountsPage', () => {
     expect(updateAccount).toHaveBeenCalledExactlyOnceWith({ accountUid: 'a-cash', name: '皮夾' })
   })
 
+  it('改餘額：AccountCard 編輯餘額送出後呼叫 updateAccount（手動對帳/修正誤差）', () => {
+    render(<AccountsPage />)
+
+    fireEvent.click(screen.getByLabelText('編輯 現金'))
+    const balanceInput = screen.getByLabelText('餘額')
+    fireEvent.change(balanceInput, { target: { value: '999.50' } })
+    fireEvent.blur(balanceInput)
+
+    expect(updateAccount).toHaveBeenCalledExactlyOnceWith({ accountUid: 'a-cash', balance: '999.50' })
+  })
+
   it('改色：AccountCard 選色即時呼叫 updateAccount', () => {
     render(<AccountsPage />)
 
@@ -204,6 +215,7 @@ describe('AccountsPage', () => {
 
     expect(screen.getByText('儲存中…')).toBeInTheDocument()
     expect(screen.getByLabelText('名稱')).toBeDisabled()
+    expect(screen.getByLabelText('餘額')).toBeDisabled()
     expect(screen.getByRole('button', { name: '選擇顏色 #D65FA0' })).toBeDisabled()
 
     await act(async () => {
@@ -213,6 +225,7 @@ describe('AccountsPage', () => {
 
     expect(screen.queryByText('儲存中…')).not.toBeInTheDocument()
     expect(screen.getByLabelText('名稱')).not.toBeDisabled()
+    expect(screen.getByLabelText('餘額')).not.toBeDisabled()
   })
 
   it('刪除帳戶走 ConfirmDialog：點刪除按鈕開對話框並顯示既有交易警告文字，確認後才呼叫 deleteAccount', async () => {

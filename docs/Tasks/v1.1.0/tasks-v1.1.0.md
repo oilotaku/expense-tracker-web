@@ -5,7 +5,7 @@
 > - `recurring_rules.interval_unit=year` 且 `anchor_date` 為 2/29、目標年非閏年時，比照既有「超過當月天數夾到月底」規則夾到 2/28 → task-003。
 > - `GET /dashboard/summary` 的 `(user_uid, transaction_date)` 查詢效能沿用既有索引慣例（`→ rules/30-database/08-indexes-and-perf.md`），若既有索引不足由 worker 於 task-001 一併補（`affected_files` 已含 migration 空間，不需新開 task）。
 
-- **狀態**：**全部完成**（26/26 原始範圍 done + 9 個補洞 task 027/028/029/030/031/032/033/034/035 皆 done，共 35 個 task）。另有 1 項不掛 task 編號的直接修正：`frontend/src/app/page.tsx` 根路由導向修正（使用者實測發現，commit `f675a69`）。task-033/034/035 為使用者請求的「專案改善優化建議」掃描與後續需求後直接授權修的補洞 task（非 task-016/021 執行中發現，來源見各 task 檔）。
+- **狀態**：**全部完成**（26/26 原始範圍 done + 10 個補洞 task 027/028/029/030/031/032/033/034/035/036 皆 done，共 36 個 task）。另有 1 項不掛 task 編號的直接修正：`frontend/src/app/page.tsx` 根路由導向修正（使用者實測發現，commit `f675a69`）。task-033/034/035/036 為使用者請求的「專案改善優化建議」掃描與後續需求後直接授權修的補洞 task（非 task-016/021 執行中發現，來源見各 task 檔）。
 - **重要環境修復記錄**：`docker compose watch` 在多次 session 中斷過程中掛掉，backend/frontend 容器一度停留在舊版程式碼（frontend 停在 9/4 最早版本），已於 2026-09-09 重新 `docker compose up -d --build` 兩個服務並重啟 `watch`；同時第一次真正跑全套件 `uv run pytest`（過去只各自驗 task 相關檔案）抓到 §7 兩個真 bug 並修正，全套件 105→122 passed。task-026 e2e 前置條件已備妥，容器狀態可信。
 - **環境備註**：
   - `frontend` container 是 production standalone image（無 devDependencies/`tsc`），跑 vitest/typecheck/lint 驗證要用 `docker run node:24-alpine` 掛載 `frontend/node_modules`，不能直接 `docker compose exec frontend`；host 直接跑 vitest 有 rolldown native binding 問題，同樣不可行（task-007 已驗證，後續 wave 的 worker 可省去重新摸索）。
@@ -56,6 +56,7 @@
 | 033 | 補洞：交易清單 N+1 查詢修正（批次撈標籤，CORE-068，來源：使用者請求的改善優化建議掃描） | done | ✓ | — | `backend/app/api/v1/transactions.py`、`backend/app/repositories/transaction_repository.py`、`backend/tests/api/test_transactions.py` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 | 034 | 補洞：補上 POST /auth/logout，解除 fixed.md §4（CORE-068，來源：使用者請求的改善優化建議掃描） | done | ✓ | — | `backend/app/api/v1/auth.py`、`backend/tests/api/test_auth.py`、`frontend/src/lib/api/authApi.ts`、`frontend/src/app/settings/page.tsx`、`frontend/src/app/settings/page.test.tsx` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 | 035 | 補洞：固定收支 description/payment_method 允許空字串，同步 task-028（CORE-068，來源：使用者請求） | done | ✓ | — | `backend/app/schemas/recurring_rule.py`、`backend/tests/api/test_recurring_rules.py` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
+| 036 | 補洞：帳戶編輯畫面新增直接編輯餘額功能（CORE-068，來源：使用者請求） | done | ✓ | — | `frontend/src/components/accounts/AccountCard.tsx`、`frontend/src/components/accounts/AccountCard.test.tsx`、`frontend/src/app/accounts/page.tsx`、`frontend/src/app/accounts/page.test.tsx` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 
 ## 跨 area 三段鏈（後端 API → 前端串接 → 頁面/e2e）
 
