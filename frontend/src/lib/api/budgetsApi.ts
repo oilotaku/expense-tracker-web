@@ -21,6 +21,11 @@ export interface BudgetCreateRequest {
   limit_amount: string
 }
 
+export interface BudgetUpdateRequest {
+  budgetUid: string
+  limit_amount: string
+}
+
 export interface BudgetListResponse {
   items: BudgetResponse[]
   total: number
@@ -58,9 +63,34 @@ const budgetsApi = baseApi.enhanceEndpoints({ addTagTypes: ['Budget'] }).injectE
       transformResponse: (res: ApiResponse<BudgetSummaryResponse>) => unwrapData(res),
       providesTags: (_result, _error, budgetUid) => [{ type: 'Budget' as const, id: budgetUid }],
     }),
+    // 改上限金額（PATCH /budgets/{uid}）。後端早已支援，只是前端從未串接（task-039）；
+    // invalidate 該 budget 的 LIST 與 summary tag，讓清單與進度條一起重新抓最新上限。
+    updateBudget: build.mutation<BudgetResponse, BudgetUpdateRequest>({
+      query: ({ budgetUid, ...body }) => ({
+        url: `budgets/${budgetUid}`,
+        method: 'PATCH',
+        body,
+      }),
+      transformResponse: (res: ApiResponse<BudgetResponse>) => unwrapData(res),
+      invalidatesTags: (_result, _error, { budgetUid }) => [
+        { type: 'Budget', id: budgetUid },
+        { type: 'Budget', id: 'LIST' },
+      ],
+    }),
+    // 刪除預算（DELETE /budgets/{uid}，軟刪）。同上，後端早已支援。
+    deleteBudget: build.mutation<void, string>({
+      query: (budgetUid) => ({ url: `budgets/${budgetUid}`, method: 'DELETE' }),
+      transformResponse: () => undefined,
+      invalidatesTags: [{ type: 'Budget', id: 'LIST' }],
+    }),
   }),
   overrideExisting: false,
 })
 
-export const { useListBudgetsQuery, useCreateBudgetMutation, useGetBudgetSummaryQuery } =
-  budgetsApi
+export const {
+  useListBudgetsQuery,
+  useCreateBudgetMutation,
+  useGetBudgetSummaryQuery,
+  useUpdateBudgetMutation,
+  useDeleteBudgetMutation,
+} = budgetsApi
