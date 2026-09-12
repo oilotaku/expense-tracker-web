@@ -51,6 +51,16 @@ class AdminRepository:
         )
         return {row.user_uid: row.row_count for row in await self.db.execute(stmt)}
 
+    async def find_last_login_by_user_uids(
+        self, user_uids: Sequence[UUID]
+    ) -> dict[UUID, datetime | None]:
+        if not user_uids:
+            return {}
+        stmt = select(UserCredential.user_uid, UserCredential.last_login_at).where(
+            UserCredential.user_uid.in_(user_uids), UserCredential.is_deleted.is_(False)
+        )
+        return {row.user_uid: row.last_login_at for row in await self.db.execute(stmt)}
+
     async def soft_delete_user(self, user_uid: UUID, admin_user_uid: UUID) -> bool:
         """軟刪 User + UserCredential（比照全站既有慣例，禁硬刪，→ DB-033）；子資料
         （帳戶/交易/固定收支等）不連動軟刪——使用者一旦被軟刪，`get_current_user` 的

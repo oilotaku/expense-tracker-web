@@ -88,6 +88,12 @@ function AdminPageContent(): ReactNode {
                     {user.account_count} 個帳戶・{user.transaction_count} 筆交易・
                     {new Date(user.created_at).toLocaleDateString('zh-TW')} 註冊
                   </span>
+                  <span className="text-sm text-text-secondary">
+                    最後登入：
+                    {user.last_login_at
+                      ? new Date(user.last_login_at).toLocaleString('zh-TW')
+                      : '從未登入'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

@@ -21,6 +21,9 @@ class AdminUserListItem(ApiSchema):
     # （→ 今天手動 psql 清 3 個 e2e 殘留帳號的同一種需求，這裡改成有介面做）。
     account_count: int
     transaction_count: int
+    # 追蹤活躍度（task-038）：只記「最後一次」登入（密碼/PIN 皆算），None = 從未登入過
+    # （例如剛註冊但還沒登入，或已經被清理但 credential 本身還沒被 admin 刪除的邊界情況）。
+    last_login_at: datetime | None
 
 
 class AdminUserListResponse(ApiSchema):

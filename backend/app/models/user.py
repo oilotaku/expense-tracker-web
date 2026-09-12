@@ -39,3 +39,6 @@ class UserCredential(BaseModel):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # 追蹤使用者活躍度（後台管理清單顯示，→ task-038）：密碼登入 + PIN 登入成功都更新，
+    # 只記「最後一次」，不是完整登入歷史（需要更細的稽核再另開表）。
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

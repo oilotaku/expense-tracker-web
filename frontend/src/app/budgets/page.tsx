@@ -6,12 +6,15 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { useListCategoryOptionsQuery } from '@/lib/api/transactionsApi'
 import {
   useCreateBudgetMutation,
+  useDeleteBudgetMutation,
   useGetBudgetSummaryQuery,
   useListBudgetsQuery,
+  useUpdateBudgetMutation,
   type BudgetPeriodType,
   type BudgetResponse,
 } from '@/lib/api/budgetsApi'
@@ -206,19 +209,104 @@ interface BudgetProgressCardProps {
 
 // 各分類進度顯示：依 budget_uid 個別呼叫花費彙總 API。清單筆數動態，無法在迴圈外一次呼叫
 // hook，故抽成獨立元件（一元件一次 hook 呼叫，符合 React hooks 規則，→ rules of hooks）。
+// 改上限金額／刪除（task-039）：後端 PATCH/DELETE /budgets/{uid} 早已支援，這裡直接在本元件
+// 自行呼叫對應 mutation（同既有 useGetBudgetSummaryQuery 的「一元件一份 hook」寫法），不像
+// AccountCard 那樣把 mutation 呼叫拉到父層——這裡沒有「同時追蹤哪張卡片正在儲存」的需求
+// （RTK Query 的 mutation hook 本身的 isLoading 已經是「這個元件實例」專屬，不會互相干擾）。
 function BudgetProgressCard({ budget, categoryName }: BudgetProgressCardProps): ReactNode {
   const { data: summary, isLoading, error } = useGetBudgetSummaryQuery(budget.budget_uid)
+  const [updateBudget, { isLoading: isUpdating }] = useUpdateBudgetMutation()
+  const [deleteBudget, { isLoading: isDeleting }] = useDeleteBudgetMutation()
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftLimit, setDraftLimit] = useState(budget.limit_amount)
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+
   const percent = summary ? spentPercent(summary.spent_amount, summary.limit_amount) : 0
   const state = summary ? budgetMeterState(percent, summary.is_over_budget) : 'normal'
+
+  function toggleEditing(): void {
+    setDraftLimit(budget.limit_amount)
+    setIsEditing((current) => !current)
+  }
+
+  async function commitLimitAmount(): Promise<void> {
+    const trimmed = draftLimit.trim()
+    const parsed = Number(trimmed)
+    if (trimmed.length === 0 || !Number.isFinite(parsed) || parsed <= 0) {
+      setDraftLimit(budget.limit_amount)
+      return
+    }
+    if (trimmed === budget.limit_amount) return
+    try {
+      await updateBudget({ budgetUid: budget.budget_uid, limit_amount: trimmed }).unwrap()
+    } catch {
+      setDraftLimit(budget.limit_amount)
+    }
+  }
+
+  async function handleConfirmDelete(): Promise<void> {
+    try {
+      await deleteBudget(budget.budget_uid).unwrap()
+    } catch {
+      // 失敗維持既有清單顯示，錯誤不額外攔截（同 accounts/page.tsx 既有慣例）
+    }
+    setIsConfirmingDelete(false)
+  }
 
   return (
     <CurvedCard>
       <div className="flex items-center justify-between">
-        <span className="font-medium text-text-primary">{categoryName}</span>
-        <span className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-700">
-          {periodTypeLabel(budget.period_type)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-text-primary">{categoryName}</span>
+          <span className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-700">
+            {periodTypeLabel(budget.period_type)}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleEditing}
+            aria-expanded={isEditing}
+            aria-label={`編輯 ${categoryName} 預算`}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+          >
+            <span aria-hidden="true">✎</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsConfirmingDelete(true)}
+            aria-label={`刪除 ${categoryName} 預算`}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-danger-500 hover:text-danger-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
+        </div>
       </div>
+      {isEditing && (
+        <div className="mt-3 flex flex-col gap-1 border-t border-border pt-3">
+          {isUpdating && <p className="text-xs text-text-muted">儲存中…</p>}
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-text-secondary">上限金額</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              disabled={isUpdating}
+              value={draftLimit}
+              onChange={(event) => setDraftLimit(event.target.value)}
+              onBlur={() => void commitLimitAmount()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void commitLimitAmount()
+                }
+              }}
+              className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary disabled:opacity-50"
+            />
+          </label>
+        </div>
+      )}
       {isLoading && <p className="text-sm text-text-secondary">載入中…</p>}
       {error && (
         <p role="alert" className="text-sm text-danger-700">
@@ -251,6 +339,14 @@ function BudgetProgressCard({ budget, categoryName }: BudgetProgressCardProps): 
           </p>
         </>
       )}
+      <ConfirmDialog
+        open={isConfirmingDelete}
+        title={`刪除「${categoryName}」預算？`}
+        confirmLabel={isDeleting ? '刪除中…' : '刪除'}
+        destructive
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => setIsConfirmingDelete(false)}
+      />
     </CurvedCard>
   )
 }

@@ -43,6 +43,16 @@ const MEMBER: AdminUserListItemForTest = {
   created_at: '2026-09-01T00:00:00Z',
   account_count: 2,
   transaction_count: 5,
+  last_login_at: '2026-09-10T08:30:00Z',
+}
+
+const NEVER_LOGGED_IN: AdminUserListItemForTest = {
+  user_uid: 'u-never',
+  email: 'never@example.com',
+  created_at: '2026-09-01T00:00:00Z',
+  account_count: 2,
+  transaction_count: 0,
+  last_login_at: null,
 }
 
 interface AdminUserListItemForTest {
@@ -51,6 +61,7 @@ interface AdminUserListItemForTest {
   created_at: string
   account_count: number
   transaction_count: number
+  last_login_at: string | null
 }
 
 describe('AdminPage', () => {
@@ -74,6 +85,17 @@ describe('AdminPage', () => {
     render(<AdminPage />)
     expect(screen.getByText('member@example.com')).toBeInTheDocument()
     expect(screen.getByText(/2 個帳戶・5 筆交易/)).toBeInTheDocument()
+  })
+
+  it('render 最後登入時間；從未登入顯示「從未登入」（task-038）', () => {
+    useListAdminUsersQuery.mockReturnValue({
+      data: { items: [MEMBER, NEVER_LOGGED_IN], total: 2 },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<AdminPage />)
+    expect(screen.getByText(/最後登入：2026/)).toBeInTheDocument()
+    expect(screen.getByText(/最後登入：從未登入/)).toBeInTheDocument()
   })
 
   it('is_admin=false 時顯示沒有權限，不 render 使用者清單', () => {

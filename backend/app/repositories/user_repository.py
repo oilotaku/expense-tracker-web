@@ -64,6 +64,10 @@ class UserRepository:
         credential.pin_locked_until = None
         await self.db.flush()
 
+    async def record_login(self, credential: UserCredential, now: datetime) -> None:
+        credential.last_login_at = now
+        await self.db.flush()
+
     async def update_password(
         self,
         credential: UserCredential,

@@ -164,3 +164,14 @@
 - **修正**: `AccountCard.tsx` 新增「餘額」輸入框（比照既有「名稱」欄位 draft + blur/Enter 提交慣例；`type="number" step="0.01"`，允許負數，格式驗證 `BALANCE_PATTERN = /^-?\d+(\.\d*)?$/`——比 `TransactionFormDialog.tsx` 的 `AMOUNT_PATTERN` 少了 `>0` 限制，因為信用卡類帳戶餘額本來就可能是負數）；`app/accounts/page.tsx` 的 `commitAccountUpdate` patch 型別與 `<AccountCard>` 呼叫點加上 `balance`/`onBalanceChange`。不改動後端（schema/repository 本來就支援）。
 - **rule**: NONE
 - **後續**: 已解除。reflect 候選：「schema/型別層已宣告的欄位」與「UI 是否真的有入口串接」之間的落差，這是本版第二次出現類似模式（第一次是 §9 的 `rememberAccount` 從未被呼叫）——建議 task 拆解 Acceptance 針對「新增/擴充某個 mutation 的可選欄位」這類情境，明確要求列出「哪些 UI 元件需要對應串接」，而不是只驗證 schema/型別本身編譯過。
+
+## §16 — 預算後端 PATCH/DELETE 早已完整實作並有測試，前端從未串接編輯/刪除入口（既存自 v1.0.0/task-023，使用者請求發現，已拆 task-039）
+
+- **time**: 2026-09-12T09:00:00+08:00
+- **commit**: pending（task-039 修正）
+- **files**: `frontend/src/lib/api/budgetsApi.ts`（既存自 v1.0.0：只 export `useListBudgetsQuery`/`useCreateBudgetMutation`/`useGetBudgetSummaryQuery` 三個 hook）、`frontend/src/app/budgets/page.tsx`（`BudgetProgressCard` 只讀，無任何編輯/刪除 UI）
+- **問題**: 使用者建立預算後找不到修改上限金額或刪除預算的入口。但 `backend/app/api/v1/budgets.py` 的 `PATCH /budgets/{uid}`（更新上限金額）與 `DELETE /budgets/{uid}`（軟刪）本來就存在，且 `backend/tests/api/test_budgets.py` 的 `test_update_budget_limit`／`test_delete_budget_is_soft_delete` 早就驗證通過——這是與 §15（帳戶餘額）完全同一類根因的第三次出現（第一次是 §9 `rememberAccount`）：後端/測試都齊全，純粹是前端從未呼叫。
+- **根因**: v1.0.0 task-023（預算頁視覺重新套用）的 `affected_files` 只列 `app/budgets/page.tsx`／`page.test.tsx`，且該 task 依 design-spec §9.5 定調「只做視覺重新套用（沿用既有資料邏輯/API 呼叫）」，範圍內從未要求新增編輯/刪除功能；再往前追，更早期實作 `PATCH`/`DELETE` 端點的 task 本身只負責後端，沒有對應的前端串接 task 接手，兩邊各自「做完自己的部分」但沒有 task 真正把二者串起來。
+- **修正**: `budgetsApi.ts` 新增 `useUpdateBudgetMutation`／`useDeleteBudgetMutation`；`BudgetProgressCard` 新增編輯（✎ 展開上限金額輸入框，draft + blur/Enter 提交，同 `AccountCard.tsx` 慣例）與刪除（✕ 走 `<ConfirmDialog>`，同 accounts/categories 頁慣例）。不改動後端。
+- **rule**: NONE
+- **後續**: 已解除。reflect 候選：與 §15 同一個候選的第三次驗證——建議盤點全站其他「有後端 CRUD 但前端只做部分」的資源（例如分類、標籤等），一次性掃過而非等使用者一個一個發現。

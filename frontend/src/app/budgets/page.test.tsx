@@ -39,10 +39,16 @@ const createBudget = vi.fn()
 const useCreateBudgetMutation = vi.fn()
 const useListBudgetsQuery = vi.fn()
 const useGetBudgetSummaryQuery = vi.fn()
+const updateBudget = vi.fn()
+const useUpdateBudgetMutation = vi.fn()
+const deleteBudget = vi.fn()
+const useDeleteBudgetMutation = vi.fn()
 vi.mock('@/lib/api/budgetsApi', () => ({
   useCreateBudgetMutation: () => useCreateBudgetMutation(),
   useListBudgetsQuery: () => useListBudgetsQuery(),
   useGetBudgetSummaryQuery: (budgetUid: string) => useGetBudgetSummaryQuery(budgetUid),
+  useUpdateBudgetMutation: () => useUpdateBudgetMutation(),
+  useDeleteBudgetMutation: () => useDeleteBudgetMutation(),
 }))
 
 const CATEGORY = { category_uid: 'c1', name: '餐飲' }
@@ -73,6 +79,11 @@ describe('BudgetsPage', () => {
       error: undefined,
     })
     useGetBudgetSummaryQuery.mockReset()
+
+    updateBudget.mockReset().mockReturnValue({ unwrap: () => Promise.resolve({ ...BUDGET_MONTHLY }) })
+    useUpdateBudgetMutation.mockReset().mockReturnValue([updateBudget, { isLoading: false }])
+    deleteBudget.mockReset().mockReturnValue({ unwrap: () => Promise.resolve(undefined) })
+    useDeleteBudgetMutation.mockReset().mockReturnValue([deleteBudget, { isLoading: false }])
   })
 
   it('送出表單觸發 createBudget mutation', async () => {
@@ -198,6 +209,51 @@ describe('BudgetsPage', () => {
     expect(meterText).toBeInTheDocument()
     expect(meterText).toHaveTextContent('🔴')
     expect(meterText).toHaveAttribute('role', 'alert')
+  })
+
+  it('點編輯展開上限金額輸入框，修改後 blur 呼叫 updateBudget（task-039）', async () => {
+    useGetBudgetSummaryQuery.mockReturnValue({
+      data: {
+        budget_uid: 'b1',
+        category_uid: 'c1',
+        period_type: 'monthly',
+        limit_amount: '3000.00',
+        spent_amount: '1200.00',
+        remaining_amount: '1800.00',
+        is_over_budget: false,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    render(<BudgetsPage />)
+
+    fireEvent.click(screen.getByLabelText('編輯 餐飲 預算'))
+    // 「上限金額」這個 label 同時出現在頁面上方的新增表單與這張卡片的編輯區塊，
+    // 後者是 DOM 順序中的第二個。
+    const limitInput = screen.getAllByLabelText('上限金額')[1]!
+    fireEvent.change(limitInput, { target: { value: '5000' } })
+    await act(async () => {
+      fireEvent.blur(limitInput)
+    })
+
+    expect(updateBudget).toHaveBeenCalledExactlyOnceWith({ budgetUid: 'b1', limit_amount: '5000' })
+  })
+
+  it('點刪除走 ConfirmDialog，確認後呼叫 deleteBudget（task-039）', async () => {
+    useGetBudgetSummaryQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: undefined,
+    })
+    render(<BudgetsPage />)
+
+    fireEvent.click(screen.getByLabelText('刪除 餐飲 預算'))
+    expect(screen.getByText('刪除「餐飲」預算？')).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '刪除' }))
+    })
+    expect(deleteBudget).toHaveBeenCalledExactlyOnceWith('b1')
   })
 
   it('尚未設定預算時顯示提示文字', () => {

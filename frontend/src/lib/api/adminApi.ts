@@ -9,6 +9,8 @@ export interface AdminUserListItem {
   created_at: string
   account_count: number
   transaction_count: number
+  // 追蹤活躍度（task-038）：只記最後一次登入（密碼/PIN 皆算），null = 從未登入過。
+  last_login_at: string | null
 }
 
 export interface AdminUserListResponse {

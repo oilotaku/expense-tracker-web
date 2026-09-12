@@ -61,6 +61,7 @@ class AuthService:
             password, credential.password_hash
         ):
             raise AppError(_LOGIN_FAILED_DETAIL, response_code=401, status_code=401)
+        await self.repo.record_login(credential, datetime.now(UTC))
         token = create_access_token(str(user.user_uid))
         return _to_user_response(user, credential), token
 
@@ -114,6 +115,7 @@ class AuthService:
         if credential is None or credential.pin_hash is None:
             raise AppError(_PIN_FAILED_DETAIL, response_code=401, status_code=401)
         await self._verify_pin_or_raise(credential, pin)
+        await self.repo.record_login(credential, datetime.now(UTC))
         token = create_access_token(str(user.user_uid))
         return _to_user_response(user, credential), token
 
