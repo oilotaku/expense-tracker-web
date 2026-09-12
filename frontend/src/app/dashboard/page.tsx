@@ -113,16 +113,21 @@ const CHART_FORMAT_VALUE = (amount: number): string => formatAmount(String(amoun
 
 // FE-052：條件樣式改走 cva variant，不在 JSX 內串三元 class。轉帳不是收入也不是支出，
 // 用中性色（同 TransactionList.tsx 轉帳列的既有配色決定）。
-const transactionAmountClassName = cva('shrink-0 text-sm font-semibold tabular-nums md:text-base', {
-  variants: {
-    transactionType: {
-      income: 'text-income-700',
-      expense: 'text-expense-700',
-      transfer: 'text-text-primary',
+// whitespace-nowrap：同 StatTile.tsx 的既有註解，避免瀏覽器把負號單獨斷成一行
+// （→ StatTile.tsx 同一類 bug 的修法）。
+const transactionAmountClassName = cva(
+  'shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums md:text-base',
+  {
+    variants: {
+      transactionType: {
+        income: 'text-income-700',
+        expense: 'text-expense-700',
+        transfer: 'text-text-primary',
+      },
     },
+    defaultVariants: { transactionType: 'expense' },
   },
-  defaultVariants: { transactionType: 'expense' },
-})
+)
 
 // 支出在清單一律顯示負號、收入顯示正號（design-spec §9.2 wireframe `-NT$120` / `+NT$45,000`）；
 // 轉帳兩邊帳戶互相抵銷、不是真正的增減，不加正負號。

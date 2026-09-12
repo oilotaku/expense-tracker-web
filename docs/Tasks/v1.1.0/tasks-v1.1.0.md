@@ -5,7 +5,7 @@
 > - `recurring_rules.interval_unit=year` 且 `anchor_date` 為 2/29、目標年非閏年時，比照既有「超過當月天數夾到月底」規則夾到 2/28 → task-003。
 > - `GET /dashboard/summary` 的 `(user_uid, transaction_date)` 查詢效能沿用既有索引慣例（`→ rules/30-database/08-indexes-and-perf.md`），若既有索引不足由 worker 於 task-001 一併補（`affected_files` 已含 migration 空間，不需新開 task）。
 
-- **狀態**：**全部完成**（26/26 原始範圍 done + 13 個補洞 task 027/028/029/030/031/032/033/034/035/036/037/038/039 皆 done，共 39 個 task）。另有 1 項不掛 task 編號的直接修正：`frontend/src/app/page.tsx` 根路由導向修正（使用者實測發現，commit `f675a69`）。task-033/034/035/036/037/038/039 為使用者請求的「專案改善優化建議」掃描與後續需求後直接授權修的補洞 task（非 task-016/021 執行中發現，來源見各 task 檔）。
+- **狀態**：**全部完成**（26/26 原始範圍 done + 14 個補洞 task 027/028/029/030/031/032/033/034/035/036/037/038/039/040 皆 done，共 40 個 task）。另有 1 項不掛 task 編號的直接修正：`frontend/src/app/page.tsx` 根路由導向修正（使用者實測發現，commit `f675a69`）。task-033/034/035/036/037/038/039/040 為使用者請求的「專案改善優化建議」掃描與後續需求後直接授權修的補洞 task（非 task-016/021 執行中發現，來源見各 task 檔）。
 - **重要環境修復記錄**：`docker compose watch` 在多次 session 中斷過程中掛掉，backend/frontend 容器一度停留在舊版程式碼（frontend 停在 9/4 最早版本），已於 2026-09-09 重新 `docker compose up -d --build` 兩個服務並重啟 `watch`；同時第一次真正跑全套件 `uv run pytest`（過去只各自驗 task 相關檔案）抓到 §7 兩個真 bug 並修正，全套件 105→122 passed。task-026 e2e 前置條件已備妥，容器狀態可信。
 - **環境備註**：
   - `frontend` container 是 production standalone image（無 devDependencies/`tsc`），跑 vitest/typecheck/lint 驗證要用 `docker run node:24-alpine` 掛載 `frontend/node_modules`，不能直接 `docker compose exec frontend`；host 直接跑 vitest 有 rolldown native binding 問題，同樣不可行（task-007 已驗證，後續 wave 的 worker 可省去重新摸索）。
@@ -60,6 +60,7 @@
 | 037 | 補洞：後台管理（查/刪使用者、重設密碼）+ 強制改密碼流程（CORE-068，來源：使用者討論後授權） | done | ✓ | — | 見 `tasks/task-037-admin-panel-and-password-reset.md` frontmatter（23 個 affected_files，橫跨後端 admin/auth 與前端 admin/change-password/AuthGuard） | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 | 038 | 補洞：追蹤使用者活躍度（last_login_at），後台清單顯示最後登入（CORE-068，來源：使用者討論後授權） | done | ✓ | task-037 | `backend/app/models/user.py`、`backend/app/repositories/user_repository.py`、`backend/app/repositories/admin_repository.py`、`backend/app/schemas/admin.py`、`backend/app/services/auth_service.py`、`backend/app/services/admin_service.py`、`backend/tests/api/test_admin.py`、`frontend/src/lib/api/adminApi.ts`、`frontend/src/app/admin/page.tsx`、`frontend/src/app/admin/page.test.tsx` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 | 039 | 補洞：預算頁新增編輯上限金額與刪除功能（CORE-068，來源：使用者請求） | done | ✓ | — | `frontend/src/lib/api/budgetsApi.ts`、`frontend/src/app/budgets/page.tsx`、`frontend/src/app/budgets/page.test.tsx` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
+| 040 | 補洞：修正負值金額（-NT$...）被瀏覽器單獨斷成一行（CORE-068，來源：使用者截圖回報） | done | ✓ | — | `frontend/src/components/dashboard/StatTile.tsx`、`frontend/src/components/dashboard/StatTile.test.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/dashboard/NetWorthCard.tsx` | claude（本次 session，`.claude/worktrees/n1-logout-fixes`） |
 
 ## 跨 area 三段鏈（後端 API → 前端串接 → 頁面/e2e）
 
