@@ -175,3 +175,14 @@
 - **修正**: `budgetsApi.ts` 新增 `useUpdateBudgetMutation`／`useDeleteBudgetMutation`；`BudgetProgressCard` 新增編輯（✎ 展開上限金額輸入框，draft + blur/Enter 提交，同 `AccountCard.tsx` 慣例）與刪除（✕ 走 `<ConfirmDialog>`，同 accounts/categories 頁慣例）。不改動後端。
 - **rule**: NONE
 - **後續**: 已解除。reflect 候選：與 §15 同一個候選的第三次驗證——建議盤點全站其他「有後端 CRUD 但前端只做部分」的資源（例如分類、標籤等），一次性掃過而非等使用者一個一個發現。
+
+## §17 — Dashboard「結餘」等負值金額卡片，負號會被瀏覽器單獨斷成一行（使用者截圖回報，已拆 task-040）
+
+- **time**: 2026-09-12T11:30:00+08:00
+- **commit**: pending（task-040 修正）
+- **files**: `frontend/src/components/dashboard/StatTile.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/dashboard/NetWorthCard.tsx`
+- **問題**: 使用者截圖回報 Dashboard「結餘」卡片（收入 0、支出 NT$48,213，結餘應為 `-NT$48,213`）畫面上「-」單獨顯示在一行、「NT$48,213」另起一行，視覺上像是排版壞掉。
+- **根因**: `StatTile.tsx::formatAmount()` 組出的字串（例如 `-NT$48,213`）沒有加 `whitespace-nowrap`；瀏覽器預設的 Unicode 換行規則（UAX#14）把「連字號/負號後面接字母」視為合法斷行點（`-` 後面接 `N`），窄卡片 + hero 大字級（`結餘` 卡在 mobile 是 `text-3xl` 的 Hero 卡）最容易讓文字寬度超出容器而在這個點換行。同一種寫法（`sign + NT$ + 千分位數字`）也用在 `dashboard/page.tsx` 的交易清單金額（`transactionAmountClassName`）與 `NetWorthCard.tsx` 的 `NetWorthRow`（總資產/總負債/淨資產都可能是負值），三處都有同樣風險，一併檢查修正。
+- **修正**: 三處的金額文字容器都加上 `whitespace-nowrap`：`StatTile.tsx` 的 `statValueClassName`、`dashboard/page.tsx` 的 `transactionAmountClassName`、`NetWorthCard.tsx` 的 `NetWorthRow` span。新增 `StatTile.test.tsx` 測試案例驗證負值 + hero 情境有 `whitespace-nowrap` class。
+- **rule**: NONE
+- **後續**: 已解除。reflect 候選：任何「符號 + 貨幣代碼/前綴 + 數字」組成的顯示字串（尤其負號後面接字母的情況，如 `-NT$`、`-USD` 等）都應該預設加 `whitespace-nowrap`，避免同一類 bug 在其他語系/貨幣前綴下再次出現；`formatAmount()` 若之後真的落地共用 `utils/format.ts`（→ FE-044 既有備註），建議連同呼叫端的容器樣式慣例一併整理成一份可重用的 `<AmountText>` 元件，而不是每個呼叫端各自記得加 class。

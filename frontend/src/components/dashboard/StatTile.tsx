@@ -27,7 +27,9 @@ export function formatAmount(value: string, signed = false): string {
 
 // FE-052：條件樣式禁 inline 三元串接。tone 的 `muted` 是 `unavailable` 專用的內部值（→ A7 的
 // 灰階狀態），不對外開放為 `StatTileTone`，避免呼叫端拿它當一般語意色用。
-const statValueClassName = cva('font-semibold tabular-nums', {
+// whitespace-nowrap：瀏覽器預設會把 ASCII 連字號（負號）視為可斷行點，窄卡片下「-NT$48,213」
+// 可能斷成「-」單獨一行、「NT$48,213」另一行（結餘卡負值 + hero 大字級最容易踩到）。
+const statValueClassName = cva('font-semibold tabular-nums whitespace-nowrap', {
   variants: {
     tone: {
       income: 'text-income-700',

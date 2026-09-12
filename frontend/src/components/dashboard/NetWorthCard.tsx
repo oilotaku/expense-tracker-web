@@ -48,7 +48,11 @@ function NetWorthRow({ label, value }: NetWorthRowProps): ReactNode {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-sm text-text-secondary md:text-base">{label}</span>
-      <span className="text-base font-semibold tabular-nums text-text-primary md:text-lg">{value}</span>
+      {/* whitespace-nowrap：同 StatTile.tsx 既有註解，避免瀏覽器把負號（總負債/淨資產可能為負）
+          單獨斷成一行 */}
+      <span className="whitespace-nowrap text-base font-semibold tabular-nums text-text-primary md:text-lg">
+        {value}
+      </span>
     </div>
   )
 }

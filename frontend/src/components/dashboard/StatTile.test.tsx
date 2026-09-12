@@ -39,6 +39,11 @@ describe('StatTile', () => {
     expect(value).toHaveClass('lg:text-4xl')
   })
 
+  it('數值一律禁止斷行，避免瀏覽器把負號單獨斷成一行（結餘卡負值 + hero 大字級最容易踩到）', () => {
+    render(<StatTile label="結餘" value="-48213.00" tone="neutral" signed hero />)
+    expect(screen.getByText('-NT$48,213')).toHaveClass('whitespace-nowrap')
+  })
+
   it('unavailable 時顯示灰階佔位與說明，不顯示估算數字（→ A7）', () => {
     render(<StatTile label="預算結餘" value="3200.00" tone="warning" unavailable hint="預算僅支援月度檢視" />)
 
