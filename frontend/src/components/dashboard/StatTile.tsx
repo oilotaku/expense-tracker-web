@@ -39,10 +39,13 @@ const statValueClassName = cva('font-semibold tabular-nums whitespace-nowrap', {
       muted: 'text-text-muted',
     },
     hero: {
-      // design-spec §2.5：Dashboard Hero 數字 mobile `text-3xl` / desktop `text-4xl`。
-      // 放大綁 `lg` 而非 `md`：`md`–`lg` 之間（平板直向）<Sidebar> 已佔 240px，
-      // 卡片寬度不足以容納放大後的金額，會被截斷（→ dashboard/page.tsx 期間彙總同一組修正）。
-      true: 'text-3xl lg:text-4xl',
+      // design-spec §2.5 原訂 Hero 數字 desktop `text-4xl`，但 `lg:` 起結餘卡從 mobile 的
+      // `col-span-2`（雙倍寬，撐得住大字級）變回跟其他三張卡等寬的 `col-span-1`
+      // （→ dashboard/page.tsx `<StatTile label="結餘" ... />` 的 className），字級卻仍比
+      // 其他卡大一級，金額位數多或結餘為負（`-NT$48,213` 這類字串）在等寬欄位裡會超出卡片
+      // 邊界（使用者截圖回報）。desktop 改成跟其他卡同尺寸，只保留 mobile 的放大（此時仍有
+      // 雙倍寬可以撐）。
+      true: 'text-3xl lg:text-3xl',
       false: 'text-2xl lg:text-3xl',
     },
   },

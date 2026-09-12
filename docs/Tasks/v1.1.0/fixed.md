@@ -185,4 +185,15 @@
 - **根因**: `StatTile.tsx::formatAmount()` 組出的字串（例如 `-NT$48,213`）沒有加 `whitespace-nowrap`；瀏覽器預設的 Unicode 換行規則（UAX#14）把「連字號/負號後面接字母」視為合法斷行點（`-` 後面接 `N`），窄卡片 + hero 大字級（`結餘` 卡在 mobile 是 `text-3xl` 的 Hero 卡）最容易讓文字寬度超出容器而在這個點換行。同一種寫法（`sign + NT$ + 千分位數字`）也用在 `dashboard/page.tsx` 的交易清單金額（`transactionAmountClassName`）與 `NetWorthCard.tsx` 的 `NetWorthRow`（總資產/總負債/淨資產都可能是負值），三處都有同樣風險，一併檢查修正。
 - **修正**: 三處的金額文字容器都加上 `whitespace-nowrap`：`StatTile.tsx` 的 `statValueClassName`、`dashboard/page.tsx` 的 `transactionAmountClassName`、`NetWorthCard.tsx` 的 `NetWorthRow` span。新增 `StatTile.test.tsx` 測試案例驗證負值 + hero 情境有 `whitespace-nowrap` class。
 - **rule**: NONE
-- **後續**: 已解除。reflect 候選：任何「符號 + 貨幣代碼/前綴 + 數字」組成的顯示字串（尤其負號後面接字母的情況，如 `-NT$`、`-USD` 等）都應該預設加 `whitespace-nowrap`，避免同一類 bug 在其他語系/貨幣前綴下再次出現；`formatAmount()` 若之後真的落地共用 `utils/format.ts`（→ FE-044 既有備註），建議連同呼叫端的容器樣式慣例一併整理成一份可重用的 `<AmountText>` 元件，而不是每個呼叫端各自記得加 class。
+- **後續**: `whitespace-nowrap` 本身沒錯，但暴露了 §18 記錄的另一個既存版面問題（desktop 結餘卡字級跟欄寬不成比例），見 §18。reflect 候選：任何「符號 + 貨幣代碼/前綴 + 數字」組成的顯示字串（尤其負號後面接字母的情況，如 `-NT$`、`-USD` 等）都應該預設加 `whitespace-nowrap`，避免同一類 bug 在其他語系/貨幣前綴下再次出現；`formatAmount()` 若之後真的落地共用 `utils/format.ts`（→ FE-044 既有備註），建議連同呼叫端的容器樣式慣例一併整理成一份可重用的 `<AmountText>` 元件，而不是每個呼叫端各自記得加 class。
+
+## §18 — desktop 結餘卡跟其他卡等寬卻用更大字級，長數字/負值加上 §17 的 whitespace-nowrap 後會超出卡片邊界（使用者截圖回報，已拆 task-040 追加修正）
+
+- **time**: 2026-09-12T13:55:00+08:00
+- **commit**: pending（task-040 追加修正）
+- **files**: `frontend/src/components/dashboard/StatTile.tsx`（`statValueClassName` 的 `hero` variant）
+- **問題**: §17 修正（加 `whitespace-nowrap`）上線後，使用者截圖回報「結餘」卡片文字（`-NT$48,213`）在 desktop 4 欄並排版面下超出卡片邊界（往右溢出、貼到「預算結餘」卡）。這是 §17 修正的直接副作用：原本 `whitespace-nowrap` 之前，放不下的文字會「醜但至少留在版面內」地被瀏覽器換行；禁止換行後，同一段放不下的文字改成「超出容器溢出去」，兩者都不對，但後者在等寬 4 欄版面下視覺更嚴重。
+- **根因**: `StatTile.tsx` 的 `hero` variant 原本是 `true: 'text-3xl lg:text-4xl'`（`lg:` 起用比其他卡（`text-3xl`）更大一級的 `text-4xl`）。這個字級差異的設計前提是「結餘卡比其他卡寬」——mobile 版確實如此（`dashboard/page.tsx` 給結餘卡 `col-span-2` 雙倍寬），但 `lg:` 起（`lg:grid-cols-4`）結餘卡的 className 改回 `lg:col-span-1`，變成跟其他三張卡等寬，字級卻沒有跟著降回等寬卡片該用的 `text-3xl`，形成「同寬卻用更大字」的版面矛盾。金額位數少、且都是正值時字串短，恰好還塞得進去所以沒被發現；直到收支相減出現 6 位數負結餘（`-NT$48,213`，10 字元）才第一次真正超出。
+- **修正**: `hero` variant 的 `lg:` 字級從 `text-4xl` 改回 `text-3xl`（跟其他三張卡的 `lg:text-3xl` 一致），只保留 mobile 的放大（`text-3xl` vs 其他卡的 `text-2xl`，此時仍有 `col-span-2` 雙倍寬撐得住）。更新 `StatTile.test.tsx` 既有的字級斷言（`lg:text-4xl` → `lg:text-3xl`）。
+- **rule**: NONE
+- **後續**: 已解除。reflect 候選：`hero`/`col-span` 這類「字級與版面寬度綁定假設」的 variant，應該在拆分行動端/桌機兩種寬度時同步檢查兩邊是否都成立，而不是預設兩個尺寸各自獨立設定；design-spec §2.5 若要保留 desktop `text-4xl` 的原始設計意圖，需要先確認 4 欄等寬版面能不能撐住最長可能字串（含負值/大數字），否則設計稿與可用寬度會持續衝突。

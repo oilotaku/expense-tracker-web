@@ -31,12 +31,14 @@ describe('StatTile', () => {
     expect(screen.getByText('NT$28,000')).toHaveClass('text-expense-700')
   })
 
-  it('hero 卡片字級拉大（行動端結餘 Hero，→ §2.5）', () => {
+  it('hero 卡片字級只在 mobile 拉大（行動端結餘 Hero 有 col-span-2 雙倍寬撐得住）；' +
+    'desktop 起結餘卡跟其他卡等寬（col-span-1），字級也應跟其他卡一致，避免長數字/負值超出卡片（使用者截圖回報）', () => {
     render(<StatTile label="結餘" value="17000.00" signed hero />)
 
     const value = screen.getByText('+NT$17,000')
     expect(value).toHaveClass('text-3xl')
-    expect(value).toHaveClass('lg:text-4xl')
+    expect(value).toHaveClass('lg:text-3xl')
+    expect(value).not.toHaveClass('lg:text-4xl')
   })
 
   it('數值一律禁止斷行，避免瀏覽器把負號單獨斷成一行（結餘卡負值 + hero 大字級最容易踩到）', () => {
