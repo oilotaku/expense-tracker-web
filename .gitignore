@@ -22,11 +22,10 @@ npm-audit.json
 pip-audit.json
 openapi.json
 
-# Env（每層 .env.<env> 對應 .env.<env>.example；只有 example 進版控）
+# Env（每層 .env.<env> 對應 .env.<env>.example；只有 example 進版控）。萬用寫法涵蓋
+# .env.test.local 這類變體，逐一列舉環境名稱曾漏掉它導致誤 commit（→ R-ENV-006）。
 .env
-.env.development
-.env.staging
-.env.production
+.env.*
 !.env.*.example
 
 # OS / IDE

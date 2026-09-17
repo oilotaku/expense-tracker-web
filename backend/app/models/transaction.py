@@ -8,7 +8,18 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Enum, ForeignKey, Numeric, String, Table
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Table,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -107,5 +118,15 @@ class Transaction(BaseModel):
             "(transaction_type = 'transfer' AND category_uid IS NULL "
             "AND transfer_group_uid IS NOT NULL AND transfer_direction IS NOT NULL)",
             name="ck_transactions_transfer_shape",
+        ),
+        # 交易分頁列表（TransactionRepository.list_by_user_uid）依 user_uid 篩選、
+        # transaction_date DESC, uid DESC 排序分頁；partial WHERE 比照 list_by_user_uid
+        # 永遠帶的 is_deleted = false 篩選（→ ADR-0004）。
+        Index(
+            "idx_transactions_user_uid_transaction_date",
+            "user_uid",
+            text("transaction_date DESC"),
+            text("uid DESC"),
+            postgresql_where=text("is_deleted = false"),
         ),
     )
