@@ -16,12 +16,14 @@ class AppError(Exception):
         response_code: int = 400,
         status_code: int = 400,
         error_code: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.detail = detail
         self.response_code = response_code
         self.status_code = status_code
         self.error_code = error_code
+        self.headers = headers
 
 
 # 常用子類（BE-048）；response_code 一律等於 HTTP status（BE-018）
@@ -39,7 +41,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
         return failure(
-            detail=exc.detail, response_code=exc.response_code, status_code=exc.status_code
+            detail=exc.detail,
+            response_code=exc.response_code,
+            status_code=exc.status_code,
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
