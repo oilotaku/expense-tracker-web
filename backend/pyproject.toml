@@ -59,6 +59,10 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# app.core.db.engine 是模組層級單例，連線池內的 asyncpg 連線綁定建立它的 event loop；
+# 每個測試各開一個 loop 會拿到綁在已關閉 loop 上的連線（Event loop is closed）。
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 
 [tool.coverage.run]
