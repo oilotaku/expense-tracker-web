@@ -13,11 +13,16 @@ ENV UV_COMPILE_BYTECODE=1 \
     TZ=UTC \
     PATH="/app/.venv/bin:$PATH"
 
-# ZoneInfo(API_TZ) 需要系統 tzdata（slim image 未內建）
+# ZoneInfo(API_TZ) 需要系統 tzdata（slim image 未內建）。
+# upgrade：基礎 image 發布後 Debian 才出的安全修補要在 build 時補上，否則 container-scan（→ CICD-035）擋下。
+# 移除系統 pip：app 只跑 /app/.venv（uv 建立，本身不含 pip），系統 pip 用不到，
+# 但它內建（vendored）的 msgpack / setuptools 舊版會被 trivy 判定為 HIGH 漏洞。
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends tzdata \
     && apt-get clean \
-    && rm -f /var/lib/apt/lists/*_*
+    && rm -f /var/lib/apt/lists/*_* \
+    && /usr/local/bin/python -m pip uninstall -y pip
 
 # uv.lock 由 scaffold post_action `uv sync` 產生；--no-install 時請先手動 uv sync
 COPY backend/pyproject.toml backend/uv.lock ./
