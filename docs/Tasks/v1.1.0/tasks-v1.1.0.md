@@ -9,7 +9,7 @@
 - **重要環境修復記錄**：`docker compose watch` 在多次 session 中斷過程中掛掉，backend/frontend 容器一度停留在舊版程式碼（frontend 停在 9/4 最早版本），已於 2026-09-09 重新 `docker compose up -d --build` 兩個服務並重啟 `watch`；同時第一次真正跑全套件 `uv run pytest`（過去只各自驗 task 相關檔案）抓到 §7 兩個真 bug 並修正，全套件 105→122 passed。task-026 e2e 前置條件已備妥，容器狀態可信。
 - **環境備註**：
   - `frontend` container 是 production standalone image（無 devDependencies/`tsc`），跑 vitest/typecheck/lint 驗證要用 `docker run node:24-alpine` 掛載 `frontend/node_modules`，不能直接 `docker compose exec frontend`；host 直接跑 vitest 有 rolldown native binding 問題，同樣不可行（task-007 已驗證，後續 wave 的 worker 可省去重新摸索）。
-  - `tests/services/test_recurring_service.py` 等既有 async 測試在**整批**跑（非單獨跑）時，teardown 階段偶發 `RuntimeError: Event loop is closed`（`conftest.py` engine/pool 跨 event loop 重用的既有環境瑕疵，task-003 已確認與本版改動無關，任一單獨執行皆通過）。後續 worker 若整批跑到類似錯誤，先確認是否單獨跑會過，過就不是你要修的問題，記到 `fixed.md` 交給後續版本处理，不要在自己 task 範圍內硬修 `conftest.py`。
+  - ~~`tests/services/test_recurring_service.py` 等既有 async 測試在**整批**跑（非單獨跑）時，teardown 階段偶發 `RuntimeError: Event loop is closed`~~ **已於 2026-09-17 修正**（`backend/pyproject.toml` 設 session 級 event loop scope，詳見 `docs/Tasks/v1.0.0/fixed.md` §4 追加與 scan 報告 AD-002）；全套件現應 0 error，若再出現 `Event loop is closed` 就是新迴歸，不能再當已知 flake 略過。
   - 本機是資源有限的 Raspberry Pi（4 核/8GB），worker 平行度上限抓 2 個，避免同時跑多個 docker build/pytest 把 session process 壓垮中斷。
 - **來源**：`propose-v1.1.0.md`
 - **更新**：2026-09-04

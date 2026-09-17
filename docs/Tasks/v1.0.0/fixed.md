@@ -69,6 +69,8 @@
 
 **現況**：問題本質很可能是 module-level `engine`（`app.core.db`）的連線池跨測試共用，配合 function-scope event loop 時，pool 在高測試量下偶發連線終止競態；正確修法可能是測試專用 engine 改用 `NullPool`（而非調整 event loop scope），但尚未嘗試、風險未知，不在本次 orchestrator 巡場範圍內貿然再試第二次。**這已經是需要獨立開一個小 task 認真處理的問題，不要再讓其他 task 的 worker 各自花時間重新調查同一件事。**
 
+**追加（2026-09-17，已修正，對應 `docs/Tasks/scan-project/scan-260917093724.md` AD-002）**：`backend/pyproject.toml` 的 `[tool.pytest.ini_options]` **同時**設 `asyncio_default_fixture_loop_scope = "session"` 與 `asyncio_default_test_loop_scope = "session"`，讓所有 fixture 與測試本體共用同一個 event loop，模組層級 `engine` 連線池內的 asyncpg 連線就不會綁到已關閉的舊 loop。上面 2026-09-04 那次失敗的原因是**只設了 fixture 的 loop scope**：fixture（含 `client` 的 lifespan 與 `db` 的連線）跑在 session loop，測試本體卻仍各自在 function loop，兩者跨 loop 互用才造成 503 與大量失敗；兩者一起設就一致。另評估過「每個測試後 `engine.dispose()`」：`client` 的 lifespan 在 `db` fixture 還借著連線時就先 dispose，該連線歸還到已 dispose 的舊 pool 不會被關閉，之後在別的 loop 被 GC 仍會重現同樣錯誤，故不採用；`NullPool` 則需為測試改 `app/core/db.py`，也不採用。驗證：修正前 CI run 35177151750 `214 passed, 8 errors`、本機 4 個問題檔 `37 passed, 7 errors`；修正後本機全套件 `222 passed`（0 error），`test_recurring_service.py` 單獨跑加 `-W error::RuntimeWarning` 為 `19 passed`。
+
 ## §5 — CheckConstraint 顯式命名被 naming_convention 雙重前綴（DB naming convention 陷阱）
 
 - **time**: 2026-09-04T06:35:00+08:00
