@@ -31,6 +31,9 @@ dev = [
 
 [tool.uv]
 package = false
+# 新發布的套件版本可能是惡意（supply-chain）或不穩定的；等 7 天冷卻期讓問題有機會先被發現
+# （semgrep sast blocking rule：package_managers.uv.uv-missing-dependency-cooldown）。
+exclude-newer = "7 days"
 
 [tool.ruff]
 line-length = 100
