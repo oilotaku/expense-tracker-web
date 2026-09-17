@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import enforce_login_rate_limit, enforce_register_rate_limit
 from app.core.db import AsyncSessionLocal
 from app.main import app
 from app.models.account import Account
@@ -230,12 +231,22 @@ async def real_client() -> AsyncIterator[AsyncClient]:
     `conftest.py` 的 `client` fixture 把 `get_db` override 成直接 yield 測試用的
     `db`（外層 transaction + 最後 rollback），完全繞過正式 `get_db` 的
     try/commit/except/rollback，這正是先前 PIN 鎖定計數假綠燈的根源。這裡對照
-    既有 `client` fixture 的 lifespan 管理方式，唯一差異是不做 dependency override。
+    既有 `client` fixture 的 lifespan 管理方式，唯一差異是不做 `get_db` override。
+
+    登入 / 註冊限流（→ BE-034）維持跟 `conftest.py` 一樣 override 成 no-op：這組
+    測試要驗證的是 PIN 鎖定的 DB 持久化，不是限流本身，且不 override 會讓這裡的
+    `_register_and_login()` 真的消耗掉限流額度，干擾 `test_auth_rate_limit.py`
+    共用同一個假 client IP 的計數。
     """
-    async with app.router.lifespan_context(app):
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            yield ac
+    app.dependency_overrides[enforce_login_rate_limit] = lambda: None
+    app.dependency_overrides[enforce_register_rate_limit] = lambda: None
+    try:
+        async with app.router.lifespan_context(app):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                yield ac
+    finally:
+        app.dependency_overrides.clear()
 
 
 async def test_login_pin_lockout_persists_across_independent_requests_via_real_get_db(

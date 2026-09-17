@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Final
 from uuid import UUID
 
 import jwt
@@ -12,10 +12,18 @@ from app.core.config import get_settings
 from app.core.cookies import JWT_COOKIE_NAME
 from app.core.db import AsyncSessionLocal
 from app.core.exceptions import AppError
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import decode_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.services.pricing_service import PricingService
+
+# 登入 / 註冊限流門檻（→ BE-034 / CACHE-022）；註冊視窗較長因為正常使用者一天頂多註冊個位數次，
+# 登入視窗較短因為合法使用者忘記密碼重試也可能在一分鐘內連續多次。
+_LOGIN_RATE_LIMIT: Final[int] = 10
+_LOGIN_RATE_LIMIT_WINDOW_SECONDS: Final[int] = 60
+_REGISTER_RATE_LIMIT: Final[int] = 5
+_REGISTER_RATE_LIMIT_WINDOW_SECONDS: Final[int] = 3600
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -60,3 +68,31 @@ def get_pricing_service(redis: Annotated[Redis | None, Depends(get_redis)]) -> P
 
 
 PricingServiceDep = Annotated[PricingService, Depends(get_pricing_service)]
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client is not None else "unknown"
+
+
+async def enforce_login_rate_limit(
+    request: Request, redis: Annotated[Redis | None, Depends(get_redis)]
+) -> None:
+    await enforce_rate_limit(
+        redis,
+        scope="login",
+        subject=_client_ip(request),
+        limit=_LOGIN_RATE_LIMIT,
+        window_s=_LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+
+
+async def enforce_register_rate_limit(
+    request: Request, redis: Annotated[Redis | None, Depends(get_redis)]
+) -> None:
+    await enforce_rate_limit(
+        redis,
+        scope="register",
+        subject=_client_ip(request),
+        limit=_REGISTER_RATE_LIMIT,
+        window_s=_REGISTER_RATE_LIMIT_WINDOW_SECONDS,
+    )

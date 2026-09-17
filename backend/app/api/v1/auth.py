@@ -3,7 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import (
+    enforce_login_rate_limit,
+    enforce_register_rate_limit,
+    get_current_user,
+    get_db,
+)
 from app.core.cookies import clear_jwt_cookie, set_jwt_cookie
 from app.core.response import success
 from app.models.user import User
@@ -31,6 +36,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
     response_model=ApiResponse[UserResponse],
     status_code=201,
     summary="註冊",
+    dependencies=[Depends(enforce_register_rate_limit)],
 )
 async def register(payload: RegisterRequest, db: DbSession) -> ApiResponse[UserResponse]:
     user = await AuthService(db).register(payload.email, payload.password)
@@ -41,6 +47,7 @@ async def register(payload: RegisterRequest, db: DbSession) -> ApiResponse[UserR
     "/login",
     response_model=ApiResponse[UserResponse],
     summary="登入",
+    dependencies=[Depends(enforce_login_rate_limit)],
 )
 async def login(
     payload: LoginRequest, db: DbSession, response: Response
