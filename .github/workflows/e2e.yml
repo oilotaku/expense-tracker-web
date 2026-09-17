@@ -18,7 +18,7 @@ jobs:
     outputs:
       has_e2e: ${{ steps.check.outputs.has_e2e }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - id: check
         run: |
           if [ -n "$(find frontend/e2e -type f 2>/dev/null)" ]; then
@@ -34,7 +34,7 @@ jobs:
     if: needs.detect-e2e.outputs.has_e2e == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # task-018：真 e2e 對象是完整 stack（真實瀏覽器 + 真實 backend + 真實 DB + 真實外部報價
       # 來源，→ AGENTS.md § Testing），不是只跑前端。.env 用 `.env.development.example` 當唯一
@@ -57,7 +57,7 @@ jobs:
       - name: DB migration（唯一的 schema 套用方式，→ DB-054）
         run: docker compose exec -T backend alembic upgrade head
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: frontend/package.json
           cache: npm
@@ -72,7 +72,7 @@ jobs:
         if: failure()
         run: docker compose logs --tail 200
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: playwright-report
