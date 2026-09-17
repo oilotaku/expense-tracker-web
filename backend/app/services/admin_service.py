@@ -60,7 +60,10 @@ class AdminService:
             raise NotFoundError(_USER_NOT_FOUND_DETAIL)
         logger.warning(
             "admin deleted user",
-            extra={"admin_email": admin_user.email, "target_user_uid": str(target_user_uid)},
+            extra={
+                "admin_user_uid": str(admin_user.user_uid),
+                "target_user_uid": str(target_user_uid),
+            },
         )
 
     async def reset_password(
@@ -80,6 +83,9 @@ class AdminService:
         # 明文密碼不進 log（→ CORE-111/CORE-135），只記「發生過這件事」。
         logger.warning(
             "admin reset user password",
-            extra={"admin_email": admin_user.email, "target_user_uid": str(target_user_uid)},
+            extra={
+                "admin_user_uid": str(admin_user.user_uid),
+                "target_user_uid": str(target_user_uid),
+            },
         )
         return AdminResetPasswordResponse(temporary_password=temporary_password)

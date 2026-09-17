@@ -477,6 +477,17 @@ async def test_category_breakdown_without_jwt_returns_401(client: AsyncClient) -
     assert res.status_code == 401
 
 
+async def test_category_breakdown_date_range_over_366_days_returns_422(
+    client: AsyncClient,
+) -> None:
+    await _register_and_login(client, "dashboard-breakdown-range@example.com")
+    res = await client.get(
+        "/api/v1/dashboard/category-breakdown",
+        params={"date_from": "2024-01-01T00:00:00+08:00", "date_to": "2026-01-02T00:00:00+08:00"},
+    )
+    assert res.status_code == 422
+
+
 async def test_category_breakdown_sums_expense_by_category_excludes_income_and_transfer(
     client: AsyncClient,
 ) -> None:
@@ -611,6 +622,25 @@ async def test_trend_without_jwt_returns_401(client: AsyncClient) -> None:
         params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2026-01-31T23:59:59+08:00"},
     )
     assert res.status_code == 401
+
+
+async def test_trend_date_range_over_366_days_returns_422(client: AsyncClient) -> None:
+    await _register_and_login(client, "dashboard-trend-range@example.com")
+    res = await client.get(
+        "/api/v1/dashboard/trend",
+        params={"date_from": "2024-01-01T00:00:00+08:00", "date_to": "2026-01-02T00:00:00+08:00"},
+    )
+    assert res.status_code == 422
+
+
+async def test_trend_date_range_exactly_366_days_returns_200(client: AsyncClient) -> None:
+    # 2026 非閏年（365 天），2026-01-01 到 2027-01-02 恰好 366 天，驗證邊界為「可接受」而非「拒絕」
+    await _register_and_login(client, "dashboard-trend-range-ok@example.com")
+    res = await client.get(
+        "/api/v1/dashboard/trend",
+        params={"date_from": "2026-01-01T00:00:00+08:00", "date_to": "2027-01-02T00:00:00+08:00"},
+    )
+    assert res.status_code == 200
 
 
 async def test_trend_groups_by_local_date_excludes_transfer(client: AsyncClient) -> None:

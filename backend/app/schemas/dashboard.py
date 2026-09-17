@@ -16,6 +16,11 @@ from app.utils.currency import SupportedCurrency
 
 DashboardPeriod = Literal["month", "year", "custom"]
 
+# 分類彙總 / 趨勢彙總沒有分頁，區間內符合條件的交易列會整批撈進 app 層計算（`get_trend` 甚至整批
+# 撈進 Python 分桶，→ ADR-0004），沒有上限的話任意長區間查詢的時間/記憶體會隨交易量線性成長；
+# 366 天（含閏年）剛好涵蓋最大的既有前端期間選項「年」，不影響月/年視圖既有行為。
+_MAX_DATE_RANGE_DAYS = 366
+
 
 class DashboardSummaryFilter(ApiInput):
     period: DashboardPeriod
@@ -40,6 +45,8 @@ class DashboardDateRangeFilter(ApiInput):
     def _validate_date_range(self) -> DashboardDateRangeFilter:
         if self.date_to < self.date_from:
             raise ValueError("date_to 必須大於等於 date_from")
+        if (self.date_to - self.date_from).days > _MAX_DATE_RANGE_DAYS:
+            raise ValueError(f"查詢區間不可超過 {_MAX_DATE_RANGE_DAYS} 天")
         return self
 
 
