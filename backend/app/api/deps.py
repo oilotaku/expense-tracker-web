@@ -71,6 +71,15 @@ PricingServiceDep = Annotated[PricingService, Depends(get_pricing_service)]
 
 
 def _client_ip(request: Request) -> str:
+    """限流用的 client 識別：用 ASGI 層的 TCP 來源位址（`request.client`），不是
+    `X-Forwarded-For`／`X-Real-IP` 這類 header——這些 header 由 client 自己送出，
+    沒有受信任的反向代理覆寫前**不可信**，直接採信會讓限流被輪換偽造 header 繞過。
+
+    `docker-compose.yml` 目前沒有反向代理層，`backend` 直接對外，`request.client`
+    就是真正的來源 IP。**之後若在前面加反向代理**（nginx / CDN 等），這裡必須改成
+    只信任該代理設定的、且代理本身會覆寫（不會單純轉發 client 端送來的值）的 header，
+    否則所有使用者會共用代理的單一來源 IP（限流形同虛設或誤傷所有人）。
+    """
     return request.client.host if request.client is not None else "unknown"
 
 
