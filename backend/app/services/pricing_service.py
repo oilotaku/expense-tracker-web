@@ -20,6 +20,7 @@ TTL 依 ADR 記載的自限速率設定：
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Final
 
@@ -111,6 +112,37 @@ class PricingService:
         quote: StockQuote = await self._stock_client.get_quote(ticker)
         await _set_cached_decimal(self._redis, key, quote.price, STOCK_QUOTE_TTL_SECONDS)
         return quote.price
+
+    async def get_stock_prices(self, tickers: Sequence[str]) -> dict[str, Decimal]:
+        """批次版 `get_stock_price`：先逐檔查快取，只有快取未命中的股號才整批發一次
+        `TwseMisClient.get_quotes()`（→ 該檔模組頂註解「批次查詢」段），取代逐檔序列呼叫
+        `get_stock_price()`——持有多檔不同股票時，序列寫法會被 `TwseMisClient` 內部的自我
+        限速鎖疊加拖慢（使用者回報淨資產卡片載入過久的根因），批次後不論股數多寡都只需要
+        最多 2 次外部呼叫。全部命中快取時完全不打外部 API。
+        """
+        unique = list(dict.fromkeys(tickers))
+        if not unique:
+            return {}
+
+        result: dict[str, Decimal] = {}
+        misses: list[str] = []
+        for ticker in unique:
+            cached = await _get_cached_decimal(self._redis, _stock_quote_key(ticker))
+            if cached is not None:
+                result[ticker] = cached
+            else:
+                misses.append(ticker)
+
+        if misses:
+            quotes = await self._stock_client.get_quotes(misses)
+            for ticker in misses:
+                quote = quotes[ticker]
+                await _set_cached_decimal(
+                    self._redis, _stock_quote_key(ticker), quote.price, STOCK_QUOTE_TTL_SECONDS
+                )
+                result[ticker] = quote.price
+
+        return result
 
     async def get_us_stock_price(self, ticker: str) -> Decimal:
         """回傳美股每股市價（TWD，已用 USD/TWD 匯率換算，→ ADR-0003）；命中快取 TTL 內不重打

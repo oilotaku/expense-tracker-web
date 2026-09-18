@@ -8,6 +8,16 @@
 - 自限速率 ~1 req/2s（ADR-0001 記載的社群觀察上限之保守下限，非官方公告值），
   避免同一 process 內連續抓多檔股票時對外部觸發速率限制（→ BE-068，單機 in-memory 即可）。
 
+**批次查詢**（使用者回報持有多檔不同股票時淨資產卡片仍然很慢後補上，2026-09-18 實測驗證，
+→ ADR-0001 補充）：`ex_ch` 支援用 `|` 分隔多個值一次查詢（`ex_ch=tse_A.tw|tse_B.tw|...`），
+回應 `msgArray` **依請求順序逐一對應**（查無資料的股號在對應位置回同一種空殼物件，陣列長度
+與請求數一致，非官方文件記載，本檔已用真實 API 驗證過含「批次中混一檔市場前綴錯誤」的情況）。
+`get_quotes()` 用這個特性把 N 檔查詢併成最多 2 次外部呼叫（先整批試 `tse_`，查無資料的再
+整批試 `otc_`），取代逐檔序列呼叫——序列寫法下，即使呼叫端平行發起，本檔內部的自我限速鎖
+仍會把它們序列化（鎖是同一個 client 實例共用），持有檔數越多等越久；批次查詢從根本上避開
+這個問題，因為只需要 1（或 2）次外部呼叫本身受限速鎖排隊，不是 N 次。`get_quote()`（單檔）
+保留、改為呼叫 `get_quotes([ticker])`，行為與呼叫次數皆不變，供既有呼叫端沿用。
+
 **刻意不在本檔範圍內**（task-014 worker 報告已列出）：ADR-0001 提到的
 `STOCK_DAY_ALL` 收盤價退化路徑；task-014 的 Acceptance 未涵蓋此案例，留待後續視需要另開任務。
 """
@@ -17,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from time import monotonic
 from typing import Final, Literal
@@ -124,16 +135,42 @@ class TwseMisClient:
         await self._http.aclose()
 
     async def get_quote(self, ticker: str) -> StockQuote:
-        """依序嘗試上市（`tse_`）與上櫃（`otc_`）前綴；皆為空殼回應則視為查無資料。"""
-        for market in ("tse", "otc"):
-            quote = await self._fetch(ticker, market)
-            if quote is not None:
-                return quote
-        raise TwseMisNotFoundError(ticker)
+        """依序嘗試上市（`tse_`）與上櫃（`otc_`）前綴；皆為空殼回應則視為查無資料。
 
-    async def _fetch(self, ticker: str, market: Market) -> StockQuote | None:
+        單檔查詢，內部走 `get_quotes()` 的批次程式碼路徑（傳入單一元素清單），呼叫次數與
+        行為皆與過去相同（先試 `tse_` 一次外部呼叫，查無資料才試 `otc_` 再一次）。
+        """
+        quotes = await self.get_quotes([ticker])
+        return quotes[ticker]
+
+    async def get_quotes(self, tickers: Sequence[str]) -> dict[str, StockQuote]:
+        """批次查詢多檔股票市價（模組頂註解「批次查詢」段）：對 `tickers` 去重後，先整批
+        試上市（`tse_`）前綴，回應中仍是空殼物件的股號再整批試上櫃（`otc_`）——不論去重後有
+        幾檔，最多只有 2 次外部呼叫（也因此最多被限速鎖排隊等待 2 次，不是 N 次）。任何股號
+        兩種市場別皆查無資料則整批視為失敗（`TwseMisNotFoundError`），沿用單檔版本「查無資料
+        即拋錯」的既有語意，由呼叫端決定如何處理（→ `net_worth_service.NetWorthService`
+        目前的作法是整個彙總請求一起失敗，跟過去逐檔查詢時的行為一致）。
+        """
+        unique = list(dict.fromkeys(tickers))
+        if not unique:
+            return {}
+        quotes = await self._fetch_batch(unique, "tse")
+        missing = [ticker for ticker in unique if ticker not in quotes]
+        if missing:
+            quotes.update(await self._fetch_batch(missing, "otc"))
+        still_missing = [ticker for ticker in unique if ticker not in quotes]
+        if still_missing:
+            raise TwseMisNotFoundError(still_missing[0])
+        return quotes
+
+    async def _fetch_batch(self, tickers: Sequence[str], market: Market) -> dict[str, StockQuote]:
+        """對 `tickers` 發一次批次請求（`ex_ch` 用 `|` 分隔），依請求順序把回應
+        `msgArray` 逐一對應回各股號（模組頂註解「批次查詢」段：查無資料的股號在對應位置回
+        空殼物件，陣列長度與請求數一致，非官方文件記載，已用真實 API 驗證）。回傳的 dict
+        只包含成功取得報價的股號，缺漏的留給呼叫端（`get_quotes`）判斷是否要試下一個市場別。
+        """
         await self._gate.wait()
-        ex_ch = f"{market}_{ticker}.tw"
+        ex_ch = "|".join(f"{market}_{ticker}.tw" for ticker in tickers)
         try:
             resp = await self._http.get(
                 _QUOTE_PATH, params={"ex_ch": ex_ch, "json": "1", "delay": "0"}
@@ -155,28 +192,31 @@ class TwseMisClient:
             raise TwseMisError("證交所報價服務回應格式異常") from e
 
         msg_array = payload.get("msgArray")
-        if not isinstance(msg_array, list) or not msg_array:
-            return None
-        row = msg_array[0]
-        if not isinstance(row, dict) or not row.get("c"):
-            # 空殼回應：{"tv":"-","s":"-","c":"","z":"-"}（市場別用錯前綴或查無資料）
-            return None
+        if not isinstance(msg_array, list) or len(msg_array) != len(tickers):
+            raise TwseMisError("證交所報價服務回應格式異常（批次查詢筆數與請求不符）")
 
-        price_raw = row.get("z")
-        if price_raw in (None, "-", ""):
-            price_raw = _first_quote_price(row.get("a")) or _first_quote_price(row.get("b"))
-        if price_raw in (None, "-", ""):
-            raise TwseMisError(f"股號 {ticker} 目前無可用報價")
+        result: dict[str, StockQuote] = {}
+        for ticker, row in zip(tickers, msg_array, strict=True):
+            if not isinstance(row, dict) or not row.get("c"):
+                # 空殼回應：{"tv":"-","s":"-","c":"","z":"-"}（市場別用錯前綴或查無資料）
+                continue
 
-        try:
-            price = Decimal(str(price_raw))
-        except InvalidOperation as e:
-            raise TwseMisError("證交所報價服務回應價格格式異常") from e
+            price_raw = row.get("z")
+            if price_raw in (None, "-", ""):
+                price_raw = _first_quote_price(row.get("a")) or _first_quote_price(row.get("b"))
+            if price_raw in (None, "-", ""):
+                raise TwseMisError(f"股號 {ticker} 目前無可用報價")
 
-        name = row.get("n")
-        return StockQuote(
-            ticker=ticker,
-            market=market,
-            name=name if isinstance(name, str) else ticker,
-            price=price,
-        )
+            try:
+                price = Decimal(str(price_raw))
+            except InvalidOperation as e:
+                raise TwseMisError("證交所報價服務回應價格格式異常") from e
+
+            name = row.get("n")
+            result[ticker] = StockQuote(
+                ticker=ticker,
+                market=market,
+                name=name if isinstance(name, str) else ticker,
+                price=price,
+            )
+        return result
