@@ -7,6 +7,8 @@
 → `test_dashboard.py` 用同一個 override 目標）。
 """
 
+import asyncio
+import time
 from collections.abc import Callable
 from decimal import Decimal
 
@@ -72,6 +74,30 @@ class _TimeoutPricingService:
 
     async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
         raise TwseMisTimeoutError()
+
+
+class _CountingDelayPricingService:
+    """記錄 `get_stock_price` 每次呼叫的 ticker，並可模擬延遲，用來驗證
+    `net_worth_service.compute()` 對同一 `(asset_type, name)` 去重、且平行（非逐筆序列）
+    發起查詢（→ net_worth_service.py 模組頂註解「效能」段）。"""
+
+    def __init__(self, delay_seconds: float = 0.0) -> None:
+        self._delay_seconds = delay_seconds
+        self.stock_calls: list[str] = []
+
+    async def get_stock_price(self, ticker: str) -> Decimal:
+        self.stock_calls.append(ticker)
+        await asyncio.sleep(self._delay_seconds)
+        return Decimal("600.00")
+
+    async def get_us_stock_price(self, ticker: str) -> Decimal:
+        return Decimal("0")
+
+    async def get_metal_price_per_mace(self, symbol: MetalSymbol) -> Decimal:
+        return Decimal("0")
+
+    async def get_exchange_rate(self, base: str, quote: str) -> Decimal:
+        return Decimal(1)
 
 
 def _override_pricing(factory: Callable[[], object]) -> None:
@@ -221,6 +247,56 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     assert metal_item["principal_amount"] == "30000.00"
     # (40000 - 30000) / 30000 * 100 = 33.333...% → 33.33
     assert metal_item["gain_percent"] == "33.33"
+
+
+async def test_net_worth_dedupes_repeated_ticker_and_fetches_prices_concurrently(
+    client: AsyncClient,
+) -> None:
+    """同一 (asset_type, name) 分次持有時只查一次報價（不重複打外部 API），且不同標的的
+    報價查詢彼此平行、不逐筆序列疊加等待（→ net_worth_service.py 模組頂註解「效能」段，
+    使用者回報浮動資產卡片載入過久後的修法）。
+    """
+    await _register_and_login(client, "networth-dedup-parallel@example.com")
+
+    # "2330" 分兩筆持有（例：分批買進），去重後應只查一次
+    for _ in range(2):
+        res = await client.post(
+            "/api/v1/financial-assets",
+            json={
+                "asset_type": "stock",
+                "name": "2330",
+                "input_quantity": "1",
+                "input_unit": "張",
+                "principal_amount": "60000.00",
+            },
+        )
+        assert res.status_code == 201
+
+    for ticker in ("2317", "2454"):
+        res = await client.post(
+            "/api/v1/financial-assets",
+            json={
+                "asset_type": "stock",
+                "name": ticker,
+                "input_quantity": "1",
+                "input_unit": "張",
+                "principal_amount": "60000.00",
+            },
+        )
+        assert res.status_code == 201
+
+    fake = _CountingDelayPricingService(delay_seconds=0.3)
+    _override_pricing(lambda: fake)
+
+    start = time.monotonic()
+    res = await client.get("/api/v1/net-worth")
+    elapsed = time.monotonic() - start
+
+    assert res.status_code == 200
+    # 3 個不同標的（2330 分兩筆持有 + 2317 + 2454），去重後只查 3 次而非 4 次
+    assert sorted(fake.stock_calls) == ["2317", "2330", "2454"]
+    # 3 檔平行查詢、each 模擬延遲 0.3s：序列寫法至少需 3 * 0.3 = 0.9s，平行寫法應遠低於此
+    assert elapsed < 0.6
 
 
 @pytest.mark.parametrize(

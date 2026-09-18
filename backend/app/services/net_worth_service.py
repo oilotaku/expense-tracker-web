@@ -15,12 +15,23 @@
 預期例外崩潰（BE-051 禁裸 catch 靜默），統一轉成 `NetWorthPricingUnavailableError`
 （424 Failed Dependency，刻意選非 5xx：語意是「上游報價服務暫時不可用」而非「本服務壞了」，
 可與框架的通用 500 handler 明確區分），並在 log 保留原始例外（`logger.exception`，→ BE-052）。
+
+**效能（使用者回報浮動資產卡片載入過久後補上）**：報價 / 匯率查詢一律用 `asyncio.gather`
+平行發起，不逐筆序列 `await`——序列寫法在 Redis 快取未命中時（TTL 過期後第一次載入）會讓
+`TwseMisClient` / `YahooFinanceClient` 各自的自我限速鎖（ADR-0001 ~1 req/2s、ADR-0003
+1 req/s）在同一次請求內疊加等待，資產種類/檔數越多越慢。平行發起後，不同外部來源（台股／
+美股／貴金屬／匯率）彼此不互等，只有「同一來源內部」仍會被它自己的限速鎖序列化（這是刻意
+維持的行為，避免觸發外部來源的封鎖，`→ _fetch_asset_prices` / `_fetch_fx_rates`）。同時對
+`(asset_type, name)` 去重，同一標的分次持有時不重複打外部 API。用 `return_exceptions=True`
+手動找出第一個例外重新拋出，而非讓 `asyncio.gather` 直接拋——後者在有例外時不會等其他
+still-pending 的 task，會留下「exception never retrieved」的懸置 task。
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 from uuid import UUID
@@ -29,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.metal_price_client import MetalSymbol
 from app.core.exceptions import AppError
+from app.models.financial_asset import FinancialAsset
 from app.repositories.account_repository import AccountRepository
 from app.repositories.financial_asset_repository import FinancialAssetRepository
 from app.repositories.liability_repository import LiabilityRepository
@@ -88,18 +100,20 @@ class NetWorthService:
         assets = await FinancialAssetRepository(self._db).list_by_user_uid(user_uid)
         liabilities = await LiabilityRepository(self._db).list_by_user_uid(user_uid)
 
+        foreign_currencies = {account.currency for account in accounts if account.currency != "TWD"}
+        fx_rates = await self._fetch_fx_rates(foreign_currencies)
+        prices = await self._fetch_asset_prices(assets)
+
         total_assets = Decimal("0")
         for account in accounts:
             if account.currency == "TWD":
                 total_assets += account.balance
             else:
-                rate = await self._call_pricing(
-                    self._pricing_service.get_exchange_rate(account.currency, "TWD")
-                )
-                total_assets += account.balance * rate
+                total_assets += account.balance * fx_rates[account.currency]
+
         asset_items: list[NetWorthAssetItem] = []
         for asset in assets:
-            price = await self._get_unit_price(asset.asset_type, asset.name)
+            price = prices[(asset.asset_type, asset.name)]
             market_value = (asset.base_quantity * price).quantize(_CENTS, rounding=ROUND_HALF_UP)
             total_assets += market_value
             asset_items.append(
@@ -125,6 +139,45 @@ class NetWorthService:
             net_worth=net_worth,
             assets=asset_items,
         )
+
+    async def _fetch_fx_rates(self, currencies: set[str]) -> dict[str, Decimal]:
+        """外幣帳戶換算匯率，不同幣別平行查詢（模組頂註解「效能」段）。"""
+        ordered = sorted(currencies)
+        if not ordered:
+            return {}
+        results = await asyncio.gather(
+            *(
+                self._call_pricing(self._pricing_service.get_exchange_rate(currency, "TWD"))
+                for currency in ordered
+            ),
+            return_exceptions=True,
+        )
+        return dict(zip(ordered, self._unwrap_or_raise(results), strict=True))
+
+    async def _fetch_asset_prices(
+        self, assets: Sequence[FinancialAsset]
+    ) -> dict[tuple[str, str], Decimal]:
+        """浮動資產報價：對 `(asset_type, name)` 去重後平行查詢（模組頂註解「效能」段），
+        同一標的分次持有時不重複打外部 API。
+        """
+        unique_keys = sorted({(asset.asset_type, asset.name) for asset in assets})
+        if not unique_keys:
+            return {}
+        results = await asyncio.gather(
+            *(self._get_unit_price(asset_type, name) for asset_type, name in unique_keys),
+            return_exceptions=True,
+        )
+        return dict(zip(unique_keys, self._unwrap_or_raise(results), strict=True))
+
+    @staticmethod
+    def _unwrap_or_raise(results: Sequence[Decimal | BaseException]) -> list[Decimal]:
+        """`asyncio.gather(return_exceptions=True)` 的結果攤平：遇到第一個例外就重新拋出
+        （模組頂註解說明為何不直接讓 `gather` 拋），確保所有 task 都已被等待、不留懸置例外。
+        """
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+        return [result for result in results if isinstance(result, Decimal)]
 
     async def _get_unit_price(self, asset_type: str, name: str) -> Decimal:
         if asset_type == "stock":
