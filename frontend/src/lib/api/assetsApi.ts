@@ -92,11 +92,20 @@ export interface NetWorthAssetItem {
   gain_percent: string | null
 }
 
+export interface NetWorthAccountItem {
+  account_uid: string
+  converted_balance: string
+}
+
 export interface NetWorthResponse {
   total_assets: string
   total_liabilities: string
   net_worth: string
   assets: NetWorthAssetItem[]
+  // 外幣帳戶換算成 TWD 後的金額（使用者回報「帳戶總覽外幣要額外顯示換算 NT$」的需求）；
+  // 只有非 TWD 帳戶會出現在這裡（→ backend/app/schemas/net_worth.py 註解），TWD 帳戶本身
+  // 就是 TWD 金額，不需要換算。
+  accounts: NetWorthAccountItem[]
 }
 
 const assetsApi = baseApi

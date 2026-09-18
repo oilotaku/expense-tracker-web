@@ -55,7 +55,7 @@ from app.models.financial_asset import FinancialAsset
 from app.repositories.account_repository import AccountRepository
 from app.repositories.financial_asset_repository import FinancialAssetRepository
 from app.repositories.liability_repository import LiabilityRepository
-from app.schemas.net_worth import NetWorthAssetItem, NetWorthResponse
+from app.schemas.net_worth import NetWorthAccountItem, NetWorthAssetItem, NetWorthResponse
 from app.services.pricing_service import PricingService
 
 logger = logging.getLogger(__name__)
@@ -116,11 +116,22 @@ class NetWorthService:
         prices = await self._fetch_asset_prices(assets)
 
         total_assets = Decimal("0")
+        account_items: list[NetWorthAccountItem] = []
         for account in accounts:
             if account.currency == "TWD":
                 total_assets += account.balance
             else:
-                total_assets += account.balance * fx_rates[account.currency]
+                converted = account.balance * fx_rates[account.currency]
+                total_assets += converted
+                # 前端「帳戶總覽」額外顯示外幣帳戶換算 NT$（使用者回報需求）：只給非 TWD 帳戶，
+                # 這裡用未量化的 converted 加總 total_assets（沿用既有精度作法，只在最後量化
+                # 一次），但存進 account_items 的是量化到分的顯示值，兩者用途不同不能共用同一份。
+                account_items.append(
+                    NetWorthAccountItem(
+                        account_uid=account.account_uid,
+                        converted_balance=converted.quantize(_CENTS, rounding=ROUND_HALF_UP),
+                    )
+                )
 
         asset_items: list[NetWorthAssetItem] = []
         for asset in assets:
@@ -149,6 +160,7 @@ class NetWorthService:
             total_liabilities=total_liabilities,
             net_worth=net_worth,
             assets=asset_items,
+            accounts=account_items,
         )
 
     async def _fetch_fx_rates(self, currencies: set[str]) -> dict[str, Decimal]:
