@@ -102,6 +102,12 @@ export interface NetWorthCardProps {
 export function NetWorthCard({ accounts, netWorth, isLoading, error, onRetry }: NetWorthCardProps): ReactNode {
   const visibleAccounts = accounts.slice(0, VISIBLE_ACCOUNTS)
   const hiddenCount = accounts.length - visibleAccounts.length
+  // 外幣帳戶換算 NT$ 額外顯示（使用者回報需求）：只有非 TWD 帳戶會出現在 netWorth.accounts
+  // （→ assetsApi.ts NetWorthAccountItem 註解），netWorth 還在載入/出錯時查不到就不顯示，
+  // 不當成錯誤處理——帳戶清單本身不依賴 netWorth 是否載入成功。
+  const convertedBalanceByAccountUid = new Map(
+    netWorth?.accounts.map((item) => [item.account_uid, item.converted_balance]) ?? []
+  )
 
   return (
     <CurvedCard className="flex flex-col gap-4">
@@ -111,23 +117,33 @@ export function NetWorthCard({ accounts, netWorth, isLoading, error, onRetry }: 
         <p className="text-sm text-text-secondary md:text-base">尚未建立任何帳戶</p>
       ) : (
         <ul className="flex flex-col gap-2" role="list">
-          {visibleAccounts.map((account) => (
-            <li key={account.account_uid} className="flex items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2">
-                <span
-                  aria-hidden
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: account.color }}
-                />
-                <span className="truncate text-sm text-text-primary md:text-base">{account.name}</span>
-              </span>
-              {/* 外幣帳戶功能：帳戶餘額用原生幣別顯示（→ AccountCard.tsx 同慣例），不能套
-                  formatAmount（固定 NT$ 前綴）——那是假設所有帳戶都是 TWD 的既有 bug。 */}
-              <span className="shrink-0 text-sm tabular-nums text-text-primary md:text-base">
-                {account.balance} {account.currency}
-              </span>
-            </li>
-          ))}
+          {visibleAccounts.map((account) => {
+            const convertedBalance = convertedBalanceByAccountUid.get(account.account_uid)
+            return (
+              <li key={account.account_uid} className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: account.color }}
+                  />
+                  <span className="truncate text-sm text-text-primary md:text-base">{account.name}</span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end">
+                  {/* 外幣帳戶功能：帳戶餘額用原生幣別顯示（→ AccountCard.tsx 同慣例），不能套
+                      formatAmount（固定 NT$ 前綴）——那是假設所有帳戶都是 TWD 的既有 bug。 */}
+                  <span className="text-sm tabular-nums text-text-primary md:text-base">
+                    {account.balance} {account.currency}
+                  </span>
+                  {account.currency !== 'TWD' && convertedBalance !== undefined && (
+                    <span className="text-xs tabular-nums text-text-muted">
+                      ≈ {formatAmount(convertedBalance)}
+                    </span>
+                  )}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
 

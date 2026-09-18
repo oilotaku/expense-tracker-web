@@ -129,6 +129,7 @@ async def test_net_worth_with_no_data_is_zero(client: AsyncClient) -> None:
     assert body["total_assets"] == "0.00"
     assert body["total_liabilities"] == "0.00"
     assert body["net_worth"] == "0.00"
+    assert body["accounts"] == []
 
 
 async def test_net_worth_converts_foreign_currency_account_to_twd(client: AsyncClient) -> None:
@@ -151,6 +152,7 @@ async def test_net_worth_converts_foreign_currency_account_to_twd(client: AsyncC
         },
     )
     assert usd_res.status_code == 201
+    usd_account_uid = usd_res.json()["data"]["account_uid"]
 
     res = await client.get("/api/v1/net-worth")
     assert res.status_code == 200
@@ -158,6 +160,12 @@ async def test_net_worth_converts_foreign_currency_account_to_twd(client: AsyncC
     # 1000 TWD + 100 USD * 31.5 = 1000 + 3150 = 4150
     assert body["total_assets"] == "4150.00"
     assert body["net_worth"] == "4150.00"
+
+    # 帳戶總覽額外顯示外幣帳戶換算 NT$（使用者回報需求）：只有非 TWD 帳戶出現在 accounts，
+    # TWD 帳戶（現金）本身就是 TWD 金額，不需要換算，不會出現在這個清單裡
+    assert len(body["accounts"]) == 1
+    assert body["accounts"][0]["account_uid"] == usd_account_uid
+    assert body["accounts"][0]["converted_balance"] == "3150.00"
 
 
 async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncClient) -> None:

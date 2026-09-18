@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NetWorthCard } from './NetWorthCard'
 import type { AccountResponse } from '@/lib/api/accountsApi'
-import type { NetWorthAssetItem } from '@/lib/api/assetsApi'
+import type { NetWorthAccountItem, NetWorthAssetItem } from '@/lib/api/assetsApi'
 
 const CASH_ACCOUNT: AccountResponse = {
   account_uid: 'a-cash',
@@ -22,6 +22,15 @@ const BANK_ACCOUNT: AccountResponse = {
   icon: 'bank',
 }
 
+const USD_ACCOUNT: AccountResponse = {
+  account_uid: 'a-usd',
+  name: '美金帳戶',
+  balance: '100.00',
+  currency: 'USD',
+  color: '#4CAF50',
+  icon: 'bank',
+}
+
 const ACCOUNTS: AccountResponse[] = [CASH_ACCOUNT, BANK_ACCOUNT]
 
 const NET_WORTH = {
@@ -29,6 +38,7 @@ const NET_WORTH = {
   total_liabilities: '50000.00',
   net_worth: '100000.00',
   assets: [] as NetWorthAssetItem[],
+  accounts: [] as NetWorthAccountItem[],
 }
 
 const STOCK_ASSET: NetWorthAssetItem = {
@@ -90,6 +100,40 @@ describe('NetWorthCard', () => {
   it('沒有帳戶時顯示空狀態', () => {
     render(<NetWorthCard accounts={[]} netWorth={NET_WORTH} isLoading={false} onRetry={vi.fn()} />)
     expect(screen.getByText('尚未建立任何帳戶')).toBeInTheDocument()
+  })
+
+  it('外幣帳戶額外顯示換算 NT$（使用者回報需求），TWD 帳戶不重複顯示', () => {
+    render(
+      <NetWorthCard
+        accounts={[CASH_ACCOUNT, USD_ACCOUNT]}
+        netWorth={{
+          ...NET_WORTH,
+          accounts: [{ account_uid: USD_ACCOUNT.account_uid, converted_balance: '3150.00' }],
+        }}
+        isLoading={false}
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('100.00 USD')).toBeInTheDocument()
+    expect(screen.getByText('≈ NT$3,150')).toBeInTheDocument()
+    // TWD 帳戶（現金）本身就是 TWD 金額，不需要也不會出現額外的換算顯示
+    expect(screen.getByText('12000.00 TWD')).toBeInTheDocument()
+    expect(screen.queryByText('≈ NT$12,000')).not.toBeInTheDocument()
+  })
+
+  it('netWorth 尚未載入完成時，外幣帳戶不顯示換算金額（不當成錯誤處理）', () => {
+    render(
+      <NetWorthCard
+        accounts={[USD_ACCOUNT]}
+        netWorth={undefined}
+        isLoading
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('100.00 USD')).toBeInTheDocument()
+    expect(screen.queryByText(/^≈/)).not.toBeInTheDocument()
   })
 
   it('列出浮動資產市值與對比本金的漲跌幅（預設紅漲綠跌，→ usePriceColorPreference）', () => {

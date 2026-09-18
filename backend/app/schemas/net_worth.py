@@ -34,11 +34,26 @@ class NetWorthAssetItem(ApiSchema):
         return None if v is None else str(v)
 
 
+class NetWorthAccountItem(ApiSchema):
+    """外幣帳戶換算成 TWD 後的金額（→ AGENTS.md 使用者回報「帳戶總覽外幣要額外顯示換算
+    NT$」）：只有非 TWD 帳戶才會出現在 `NetWorthResponse.accounts`，TWD 帳戶本身就是 TWD
+    金額，不需要換算、前端也不需要另外顯示，故不占用回應體積。
+    """
+
+    account_uid: UUID
+    converted_balance: Decimal
+
+    @field_serializer("converted_balance", when_used="json")
+    def _converted_balance_to_str(self, v: Decimal) -> str:
+        return str(v)
+
+
 class NetWorthResponse(ApiSchema):
     total_assets: Decimal
     total_liabilities: Decimal
     net_worth: Decimal
     assets: list[NetWorthAssetItem]
+    accounts: list[NetWorthAccountItem]
 
     @field_serializer("total_assets", when_used="json")
     def _total_assets_to_str(self, v: Decimal) -> str:
