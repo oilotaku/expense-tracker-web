@@ -103,6 +103,8 @@ describe('NetWorthCard', () => {
     )
 
     expect(screen.getByText('浮動資產')).toBeInTheDocument()
+    // 浮動資產總額 = 逐筆 market_value 加總（1,200,000 + 20,000），非 total_assets（含帳戶餘額）
+    expect(screen.getByText('NT$1,220,000')).toBeInTheDocument()
     expect(screen.getByText('2330')).toBeInTheDocument()
     expect(screen.getByText('NT$1,200,000')).toBeInTheDocument()
     expect(screen.getByText('+1900.00%')).toHaveClass('text-expense-700')

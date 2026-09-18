@@ -135,7 +135,19 @@ export function NetWorthCard({ accounts, netWorth, isLoading, error, onRetry }: 
 
       {!isLoading && !error && netWorth && netWorth.assets.length > 0 && (
         <div className="flex flex-col gap-2 border-t border-border pt-4">
-          <h3 className="text-sm font-semibold text-text-secondary md:text-base">浮動資產</h3>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-sm font-semibold text-text-secondary md:text-base">浮動資產</h3>
+            {/* 後端 NetWorthResponse 沒有單獨的浮動資產小計欄位，只有含帳戶餘額的
+                total_assets（→ net_worth.py），這裡用逐筆 market_value 加總算出小計，
+                同 formatAmount 註解：僅用於顯示層，不回寫任何請求。 */}
+            <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-text-primary md:text-base">
+              {formatAmount(
+                String(
+                  netWorth.assets.reduce((sum, asset) => sum + Number(asset.market_value), 0)
+                )
+              )}
+            </span>
+          </div>
           <ul className="flex flex-col gap-2" role="list">
             {netWorth.assets.map((asset) => (
               <FloatingAssetRow key={asset.financial_asset_uid} asset={asset} />
