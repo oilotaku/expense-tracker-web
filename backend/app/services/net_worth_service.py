@@ -16,15 +16,26 @@
 （424 Failed Dependency，刻意選非 5xx：語意是「上游報價服務暫時不可用」而非「本服務壞了」，
 可與框架的通用 500 handler 明確區分），並在 log 保留原始例外（`logger.exception`，→ BE-052）。
 
-**效能（使用者回報浮動資產卡片載入過久後補上）**：報價 / 匯率查詢一律用 `asyncio.gather`
-平行發起，不逐筆序列 `await`——序列寫法在 Redis 快取未命中時（TTL 過期後第一次載入）會讓
-`TwseMisClient` / `YahooFinanceClient` 各自的自我限速鎖（ADR-0001 ~1 req/2s、ADR-0003
-1 req/s）在同一次請求內疊加等待，資產種類/檔數越多越慢。平行發起後，不同外部來源（台股／
-美股／貴金屬／匯率）彼此不互等，只有「同一來源內部」仍會被它自己的限速鎖序列化（這是刻意
-維持的行為，避免觸發外部來源的封鎖，`→ _fetch_asset_prices` / `_fetch_fx_rates`）。同時對
-`(asset_type, name)` 去重，同一標的分次持有時不重複打外部 API。用 `return_exceptions=True`
-手動找出第一個例外重新拋出，而非讓 `asyncio.gather` 直接拋——後者在有例外時不會等其他
-still-pending 的 task，會留下「exception never retrieved」的懸置 task。
+**效能（使用者回報浮動資產卡片載入過久後補上，分兩輪修）**：
+
+第一輪：報價 / 匯率查詢一律用 `asyncio.gather` 平行發起，不逐筆序列 `await`——序列寫法在
+Redis 快取未命中時（TTL 過期後第一次載入）會讓 `TwseMisClient` / `YahooFinanceClient` 各自
+的自我限速鎖（ADR-0001 ~1 req/2s、ADR-0003 1 req/s）在同一次請求內疊加等待，資產種類/檔數
+越多越慢。平行發起後，不同外部來源（台股／美股／貴金屬／匯率）彼此不互等。同時對
+`(asset_type, name)` 去重，同一標的分次持有時不重複打外部 API。
+
+第二輪（使用者實測回報「持有多檔不同股票時仍然很慢」）：第一輪的平行化對「同一來源、不同
+標的」沒有幫助——`TwseMisClient` 內部的自我限速鎖是同一個 client 實例共用，即使呼叫端同時
+發起多個不同股號的查詢，它們還是會被同一個鎖依序放行（每次間隔 ~2 秒），這是刻意保留的行為
+（避免對 TWSE 觸發速率限制）。真正的解法是把「查詢方式」本身改成批次：TWSE MIS 的 `ex_ch`
+支援用 `|` 分隔多個股號一次查詢（2026-09-18 實測驗證，→ ADR-0001 補充 /
+`stock_price_client.py` 模組頂註解），不論持有幾檔股票都只需要最多 2 次外部呼叫（`tse_`
+一次、查無資料的再試 `otc_` 一次），而不是 N 次——`→ _fetch_stock_price_map` /
+`PricingService.get_stock_prices`。美股／貴金屬持有檔數通常很少，維持第一輪的逐檔平行查詢。
+
+不論哪一輪，都用 `asyncio.gather(..., return_exceptions=True)` 手動找出第一個例外重新拋出，
+而非讓 `asyncio.gather` 直接拋——後者在有例外時不會等其他 still-pending 的 task，會留下
+「exception never retrieved」的懸置 task。
 """
 
 from __future__ import annotations
@@ -157,17 +168,51 @@ class NetWorthService:
     async def _fetch_asset_prices(
         self, assets: Sequence[FinancialAsset]
     ) -> dict[tuple[str, str], Decimal]:
-        """浮動資產報價：對 `(asset_type, name)` 去重後平行查詢（模組頂註解「效能」段），
-        同一標的分次持有時不重複打外部 API。
+        """浮動資產報價：股票對股號去重後合併成一次批次查詢（→ `_fetch_stock_price_map` /
+        `PricingService.get_stock_prices` / ADR-0001 補充）——這是使用者回報「持有多檔不同
+        股票時淨資產卡片仍然很慢」的根因：即使個別報價查詢平行發起，`TwseMisClient` 內部的
+        自我限速鎖是同一個 client 實例共用，仍會把「同一來源、不同標的」的查詢序列化，只有
+        真正合併成一次外部請求才能避開。美股／貴金屬目前持有檔數通常很少（貴金屬固定只有
+        XAU/XAG 兩種符號），維持逐檔查詢，但彼此平行、且與股票批次查詢平行（模組頂註解
+        「效能」段：不同來源彼此不互等）。
         """
-        unique_keys = sorted({(asset.asset_type, asset.name) for asset in assets})
-        if not unique_keys:
-            return {}
+        stock_names = sorted({asset.name for asset in assets if asset.asset_type == "stock"})
+        other_keys = sorted(
+            {(asset.asset_type, asset.name) for asset in assets if asset.asset_type != "stock"}
+        )
+
         results = await asyncio.gather(
-            *(self._get_unit_price(asset_type, name) for asset_type, name in unique_keys),
+            self._fetch_stock_price_map(stock_names),
+            self._fetch_other_price_map(other_keys),
             return_exceptions=True,
         )
-        return dict(zip(unique_keys, self._unwrap_or_raise(results), strict=True))
+        price_map: dict[tuple[str, str], Decimal] = {}
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+            price_map.update(result)
+        return price_map
+
+    async def _fetch_stock_price_map(self, names: Sequence[str]) -> dict[tuple[str, str], Decimal]:
+        """不論去重後有幾檔股票，都合併成 `PricingService.get_stock_prices()` 的一次呼叫
+        （該方法內部再依快取命中狀況決定要不要真的打外部 API，全部命中快取時完全不呼叫）。
+        """
+        if not names:
+            return {}
+        prices = await self._call_pricing(self._pricing_service.get_stock_prices(names))
+        return {("stock", name): price for name, price in prices.items()}
+
+    async def _fetch_other_price_map(
+        self, keys: Sequence[tuple[str, str]]
+    ) -> dict[tuple[str, str], Decimal]:
+        """美股／貴金屬逐檔平行查詢（沿用去重 + gather 的既有寫法）。"""
+        if not keys:
+            return {}
+        results = await asyncio.gather(
+            *(self._get_unit_price(asset_type, name) for asset_type, name in keys),
+            return_exceptions=True,
+        )
+        return dict(zip(keys, self._unwrap_or_raise(results), strict=True))
 
     @staticmethod
     def _unwrap_or_raise(results: Sequence[Decimal | BaseException]) -> list[Decimal]:
@@ -180,8 +225,7 @@ class NetWorthService:
         return [result for result in results if isinstance(result, Decimal)]
 
     async def _get_unit_price(self, asset_type: str, name: str) -> Decimal:
-        if asset_type == "stock":
-            return await self._call_pricing(self._pricing_service.get_stock_price(name))
+        """美股／貴金屬單價查詢（股票走 `_fetch_stock_price_map` 的批次路徑，不經此函式）。"""
         if asset_type == "us_stock":
             return await self._call_pricing(self._pricing_service.get_us_stock_price(name))
         symbol = _METAL_NAME_TO_SYMBOL.get(name)
@@ -190,7 +234,7 @@ class NetWorthService:
         return await self._call_pricing(self._pricing_service.get_metal_price_per_mace(symbol))
 
     @staticmethod
-    async def _call_pricing(call: Awaitable[Decimal]) -> Decimal:
+    async def _call_pricing[T](call: Awaitable[T]) -> T:
         try:
             return await call
         except AppError as e:

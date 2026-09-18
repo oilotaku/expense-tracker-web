@@ -7,8 +7,6 @@
 → `test_dashboard.py` 用同一個 override 目標）。
 """
 
-import asyncio
-import time
 from collections.abc import Callable
 from decimal import Decimal
 
@@ -48,6 +46,9 @@ class _FakePricingService:
     async def get_stock_price(self, ticker: str) -> Decimal:
         return self._stock_prices[ticker]
 
+    async def get_stock_prices(self, tickers: list[str]) -> dict[str, Decimal]:
+        return {ticker: self._stock_prices[ticker] for ticker in tickers}
+
     async def get_us_stock_price(self, ticker: str) -> Decimal:
         return self._us_stock_prices[ticker]
 
@@ -66,6 +67,9 @@ class _TimeoutPricingService:
     async def get_stock_price(self, ticker: str) -> Decimal:
         raise TwseMisTimeoutError()
 
+    async def get_stock_prices(self, tickers: list[str]) -> dict[str, Decimal]:
+        raise TwseMisTimeoutError()
+
     async def get_us_stock_price(self, ticker: str) -> Decimal:
         raise TwseMisTimeoutError()
 
@@ -76,19 +80,23 @@ class _TimeoutPricingService:
         raise TwseMisTimeoutError()
 
 
-class _CountingDelayPricingService:
-    """記錄 `get_stock_price` 每次呼叫的 ticker，並可模擬延遲，用來驗證
-    `net_worth_service.compute()` 對同一 `(asset_type, name)` 去重、且平行（非逐筆序列）
-    發起查詢（→ net_worth_service.py 模組頂註解「效能」段）。"""
+class _CountingBatchPricingService:
+    """記錄 `get_stock_prices` 每次批次呼叫收到的股號清單，用來驗證
+    `net_worth_service.compute()` 把持有的多檔不同股票合併成一次批次查詢，而非逐檔呼叫
+    （→ net_worth_service.py 模組頂註解「效能」第二輪；使用者實測回報「持有多檔不同股票時
+    淨資產卡片仍然很慢」後的修法——第一輪的平行化對「同一來源、不同標的」沒有幫助，因為
+    `TwseMisClient` 內部的自我限速鎖是同一個 client 實例共用，只有真正合併成一次外部請求
+    才能避開）。"""
 
-    def __init__(self, delay_seconds: float = 0.0) -> None:
-        self._delay_seconds = delay_seconds
-        self.stock_calls: list[str] = []
+    def __init__(self) -> None:
+        self.stock_batch_calls: list[list[str]] = []
 
     async def get_stock_price(self, ticker: str) -> Decimal:
-        self.stock_calls.append(ticker)
-        await asyncio.sleep(self._delay_seconds)
-        return Decimal("600.00")
+        raise AssertionError("預期走批次查詢 get_stock_prices，不應呼叫單檔 get_stock_price")
+
+    async def get_stock_prices(self, tickers: list[str]) -> dict[str, Decimal]:
+        self.stock_batch_calls.append(list(tickers))
+        return {ticker: Decimal("600.00") for ticker in tickers}
 
     async def get_us_stock_price(self, ticker: str) -> Decimal:
         return Decimal("0")
@@ -249,16 +257,21 @@ async def test_net_worth_mixed_account_stock_metal_and_liability(client: AsyncCl
     assert metal_item["gain_percent"] == "33.33"
 
 
-async def test_net_worth_dedupes_repeated_ticker_and_fetches_prices_concurrently(
+async def test_net_worth_batches_all_stock_tickers_into_a_single_pricing_call(
     client: AsyncClient,
 ) -> None:
-    """同一 (asset_type, name) 分次持有時只查一次報價（不重複打外部 API），且不同標的的
-    報價查詢彼此平行、不逐筆序列疊加等待（→ net_worth_service.py 模組頂註解「效能」段，
-    使用者回報浮動資產卡片載入過久後的修法）。
+    """持有多檔不同股票（含同一股號分次持有）時，只需要一次 `get_stock_prices` 批次呼叫，
+    不是逐檔呼叫（→ net_worth_service.py 模組頂註解「效能」第二輪）。這是使用者實測回報
+    「持有多檔不同股票時淨資產卡片仍然很慢」的修法——第一輪把逐筆序列 `await` 改成
+    `asyncio.gather` 平行發起（見同模組上一段記錄），對這個情境沒有實際幫助：
+    `TwseMisClient` 內部的自我限速鎖是同一個 client 實例共用，不同股號的查詢即使平行發起
+    仍會被同一個鎖排隊序列化，持有檔數越多疊加等待越久；真正的解法是把查詢方式本身改成
+    批次（TWSE MIS 的 `ex_ch` 支援 `|` 分隔多檔一次查詢，→ ADR-0001 補充），不論持有幾檔
+    都只需要固定次數的外部呼叫。
     """
-    await _register_and_login(client, "networth-dedup-parallel@example.com")
+    await _register_and_login(client, "networth-stock-batch@example.com")
 
-    # "2330" 分兩筆持有（例：分批買進），去重後應只查一次
+    # "2330" 分兩筆持有（例：分批買進），去重後應併入同一次批次查詢
     for _ in range(2):
         res = await client.post(
             "/api/v1/financial-assets",
@@ -285,18 +298,15 @@ async def test_net_worth_dedupes_repeated_ticker_and_fetches_prices_concurrently
         )
         assert res.status_code == 201
 
-    fake = _CountingDelayPricingService(delay_seconds=0.3)
+    fake = _CountingBatchPricingService()
     _override_pricing(lambda: fake)
 
-    start = time.monotonic()
     res = await client.get("/api/v1/net-worth")
-    elapsed = time.monotonic() - start
 
     assert res.status_code == 200
-    # 3 個不同標的（2330 分兩筆持有 + 2317 + 2454），去重後只查 3 次而非 4 次
-    assert sorted(fake.stock_calls) == ["2317", "2330", "2454"]
-    # 3 檔平行查詢、each 模擬延遲 0.3s：序列寫法至少需 3 * 0.3 = 0.9s，平行寫法應遠低於此
-    assert elapsed < 0.6
+    assert len(fake.stock_batch_calls) == 1  # 只打一次批次查詢，不是逐檔呼叫
+    # 3 個不同標的（2330 分兩筆持有 + 2317 + 2454），去重後批次查詢帶 3 檔而非 4 檔
+    assert sorted(fake.stock_batch_calls[0]) == ["2317", "2330", "2454"]
 
 
 @pytest.mark.parametrize(

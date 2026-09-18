@@ -65,6 +65,19 @@ def _mis_shell_body() -> str:
     return json.dumps({"msgArray": [{"tv": "-", "s": "-", "c": "", "z": "-"}], "rtcode": "0000"})
 
 
+def _mis_batch_body(entries: list[tuple[str, str, str] | None]) -> str:
+    """批次查詢的 msgArray：`None` 代表該位置回空殼物件（→ ADR-0001 補充，位置對應
+    請求順序，與單檔查詢的空殼回應同一種格式）。"""
+    msg_array: list[dict[str, str]] = []
+    for entry in entries:
+        if entry is None:
+            msg_array.append({"tv": "-", "s": "-", "c": "", "z": "-"})
+        else:
+            code, name, price = entry
+            msg_array.append({"c": code, "n": name, "z": price})
+    return json.dumps({"msgArray": msg_array, "rtcode": "0000", "rtmessage": "OK"})
+
+
 def _mis_response(text: str) -> httpx.Response:
     # 端點回傳 Content-Type 為 text/html 但內容是 JSON（ADR-0001）
     return httpx.Response(200, text=text, headers={"Content-Type": "text/html;charset=UTF-8"})
@@ -112,6 +125,123 @@ async def test_stock_price_not_found_when_both_markets_are_shell(redis_client: R
 
     with pytest.raises(TwseMisNotFoundError):
         await service.get_stock_price("0000")
+
+
+@respx.mock
+async def test_stock_prices_batches_all_misses_into_a_single_external_call(
+    redis_client: Redis,
+) -> None:
+    """使用者回報「持有多檔不同股票時淨資產卡片仍然很慢」的修法核心：全部快取未命中時，
+    不論幾檔股票都只打一次外部 API（→ ADR-0001 補充、net_worth_service.py 模組頂註解
+    「效能」第二輪），`ex_ch` 帶所有股號、用 `|` 分隔。"""
+    route = respx.get(url__regex=r"https://mis\.twse\.com\.tw/stock/api/getStockInfo\.jsp.*").mock(
+        return_value=_mis_response(
+            _mis_batch_body(
+                [
+                    ("2330", "台積電", "600.0000"),
+                    ("0050", "元大台灣50", "110.0000"),
+                    ("1101", "台泥", "24.5000"),
+                ]
+            )
+        )
+    )
+    service = PricingService(redis=redis_client)
+
+    prices = await service.get_stock_prices(["2330", "0050", "1101"])
+
+    assert prices == {
+        "2330": Decimal("600.0000"),
+        "0050": Decimal("110.0000"),
+        "1101": Decimal("24.5000"),
+    }
+    assert route.call_count == 1
+    ex_ch = route.calls[0].request.url.params["ex_ch"]
+    assert set(ex_ch.split("|")) == {"tse_2330.tw", "tse_0050.tw", "tse_1101.tw"}
+
+    for ticker in ("2330", "0050", "1101"):
+        ttl = await redis_client.ttl(_stock_quote_key(ticker))
+        assert 0 < ttl <= STOCK_QUOTE_TTL_SECONDS
+
+
+@respx.mock
+async def test_stock_prices_only_fetches_cache_misses(redis_client: Redis) -> None:
+    """部分股號已在快取中時，批次查詢只帶未命中的股號，不重查已快取的。"""
+    route = respx.get(url__regex=r"https://mis\.twse\.com\.tw/stock/api/getStockInfo\.jsp.*").mock(
+        side_effect=[
+            # 暖身：先個別查詢 2330，讓它進快取
+            _mis_response(_mis_body(code="2330", name="台積電", price="600.0000")),
+            # 批次查詢：2330 命中快取，這次只帶 0050
+            _mis_response(_mis_batch_body([("0050", "元大台灣50", "110.0000")])),
+        ]
+    )
+    service = PricingService(redis=redis_client)
+    await service.get_stock_price("2330")
+
+    prices = await service.get_stock_prices(["2330", "0050"])
+
+    assert prices == {"2330": Decimal("600.0000"), "0050": Decimal("110.0000")}
+    assert route.call_count == 2
+    second_ex_ch = route.calls[1].request.url.params["ex_ch"]
+    assert second_ex_ch == "tse_0050.tw"
+
+
+@respx.mock
+async def test_stock_prices_returns_all_from_cache_without_external_call(
+    redis_client: Redis,
+) -> None:
+    route = respx.get(url__regex=r"https://mis\.twse\.com\.tw/stock/api/getStockInfo\.jsp.*").mock(
+        return_value=_mis_response(
+            _mis_batch_body([("2330", "台積電", "600.0000"), ("0050", "元大台灣50", "110.0000")])
+        )
+    )
+    service = PricingService(redis=redis_client)
+    await service.get_stock_prices(["2330", "0050"])
+    assert route.call_count == 1
+
+    prices = await service.get_stock_prices(["2330", "0050"])
+
+    assert prices == {"2330": Decimal("600.0000"), "0050": Decimal("110.0000")}
+    assert route.call_count == 1  # 全部命中快取，沒有再打外部 API
+
+
+@respx.mock
+async def test_stock_prices_falls_back_to_otc_for_tickers_missing_in_tse_batch(
+    redis_client: Redis,
+) -> None:
+    """批次裡有股號在 tse_ 批次回空殼，該股號整批再試一次 otc_（其他已成功的股號不會被
+    重查），驗證位置對應解析在混合成功/空殼結果時仍正確（→ ADR-0001 補充的實測記錄）。"""
+    route = respx.get(url__regex=r"https://mis\.twse\.com\.tw/stock/api/getStockInfo\.jsp.*").mock(
+        side_effect=[
+            _mis_response(_mis_batch_body([("2330", "台積電", "600.0000"), None])),
+            _mis_response(_mis_batch_body([("3105", "穩懋", "446.5000")])),
+        ]
+    )
+    service = PricingService(redis=redis_client)
+
+    prices = await service.get_stock_prices(["2330", "3105"])
+
+    assert prices == {"2330": Decimal("600.0000"), "3105": Decimal("446.5000")}
+    assert route.call_count == 2
+    first_ex_ch = route.calls[0].request.url.params["ex_ch"]
+    assert first_ex_ch == "tse_2330.tw|tse_3105.tw"
+    second_ex_ch = route.calls[1].request.url.params["ex_ch"]
+    assert second_ex_ch == "otc_3105.tw"
+
+
+@respx.mock
+async def test_stock_prices_raises_not_found_when_missing_from_both_markets(
+    redis_client: Redis,
+) -> None:
+    respx.get(url__regex=r"https://mis\.twse\.com\.tw/stock/api/getStockInfo\.jsp.*").mock(
+        side_effect=[
+            _mis_response(_mis_batch_body([("2330", "台積電", "600.0000"), None])),
+            _mis_response(_mis_batch_body([None])),
+        ]
+    )
+    service = PricingService(redis=redis_client)
+
+    with pytest.raises(TwseMisNotFoundError):
+        await service.get_stock_prices(["2330", "0000"])
 
 
 def _yahoo_chart_body(price: str) -> dict[str, object]:
