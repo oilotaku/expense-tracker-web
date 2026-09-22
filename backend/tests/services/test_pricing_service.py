@@ -380,3 +380,27 @@ async def test_redis_unavailable_falls_back_to_source_without_error(redis_client
 
     assert price1 == price2 == Decimal("600.0000")
     assert route.call_count == 2  # 沒有快取可用，兩次都真打外部 API
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        # 漲停：無委賣、委買第一檔是市價單佔位 0（2026-09-22 力旺 3529 實際回應）
+        ({"z": "-", "a": "-", "b": "0.0000_3110.0000_3105.0000_", "y": "2830.0000"}, "3110.0000"),
+        # 跌停：無委買、委賣第一檔是市價單佔位 0
+        ({"z": "-", "a": "0.0000_2550.0000_2555.0000_", "b": "-", "y": "2830.0000"}, "2550.0000"),
+        # 兩側都沒有可用檔位：退到昨收
+        ({"z": "-", "a": "-", "b": "-", "y": "2830.0000"}, "2830.0000"),
+    ],
+)
+async def test_stock_price_falls_back_when_no_trade_price(
+    redis_client: Redis, row: dict[str, str], expected: str
+) -> None:
+    body = json.dumps({"msgArray": [{"c": "3529", "n": "力旺", **row}], "rtcode": "0000"})
+    respx.get(url__regex=r"https://mis\.twse\.com\.tw/stock/api/getStockInfo\.jsp.*").mock(
+        return_value=_mis_response(body)
+    )
+    service = PricingService(redis=redis_client)
+
+    assert await service.get_stock_price("3529") == Decimal(expected)
