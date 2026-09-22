@@ -4,7 +4,10 @@
   自動解析，一律 `json.loads(response.text)`。
 - 市場別未知（本專案未儲存股號所屬市場）：先試上市（`tse_`），空殼回應（`msgArray[0].c` 為空）
   再試上櫃（`otc_`）；兩者皆空殼視為查無資料。
-- `z`（最近成交價）為 `"-"` 時（當日尚無成交），退化取五檔委賣 `a` / 委買 `b` 的第一檔。
+- `z`（最近成交價）為 `"-"` 時（當日尚無成交，或 `delay=0` 兩筆成交之間的空窗），退化取
+  五檔委賣 `a` / 委買 `b` 中第一個**正數**檔位，再不行才退到昨收 `y`。漲停時 `a` 整欄是
+  `"-"`、`b` 第一檔是市價單佔位的 `0.0000`（跌停時兩者相反），2026-09-22 力旺（3529）漲停
+  實測，舊邏輯把 `"-"` 當成有值而短路、整張淨資產卡片 424；`0.0000` 也不可當成股價。
 - 自限速率 ~1 req/2s（ADR-0001 記載的社群觀察上限之保守下限，非官方公告值），
   避免同一 process 內連續抓多檔股票時對外部觸發速率限制（→ BE-068，單機 in-memory 即可）。
 
@@ -112,11 +115,19 @@ class _RateGate:
 
 
 def _first_quote_price(field: object) -> str | None:
-    """解析 `a`/`b` 五檔委賣/委買價字串（例："2395.0000_2400.0000_..."），取第一檔。"""
-    if not isinstance(field, str) or not field:
+    """解析 `a`/`b` 五檔委賣/委買價字串（例："2395.0000_2400.0000_..."），取第一個正數檔位。
+
+    `"-"`（該側無掛單）與 `0.0000`（漲跌停時的市價單佔位）都跳過（模組頂註解）。
+    """
+    if not isinstance(field, str):
         return None
-    first = field.split("_", 1)[0]
-    return first or None
+    for level in field.split("_"):
+        try:
+            if Decimal(level) > 0:
+                return level
+        except InvalidOperation:
+            continue
+    return None
 
 
 class TwseMisClient:
@@ -203,7 +214,11 @@ class TwseMisClient:
 
             price_raw = row.get("z")
             if price_raw in (None, "-", ""):
-                price_raw = _first_quote_price(row.get("a")) or _first_quote_price(row.get("b"))
+                price_raw = (
+                    _first_quote_price(row.get("a"))
+                    or _first_quote_price(row.get("b"))
+                    or _first_quote_price(row.get("y"))
+                )
             if price_raw in (None, "-", ""):
                 raise TwseMisError(f"股號 {ticker} 目前無可用報價")
 
