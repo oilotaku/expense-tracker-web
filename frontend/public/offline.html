@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#8257d6" />
+    <title>離線中 · 記帳</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #faf8fc; --text: #2b2740; --muted: #6b6480; --primary: #8257d6; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #1c1826; --text: #ece9f5; --muted: #a39db8; --primary: #c3aaf2; } }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+        font-family: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", sans-serif; padding: 16px; box-sizing: border-box; }
+      main { max-width: 22rem; text-align: center; }
+      img { width: 72px; height: 72px; border-radius: 18px; }
+      h1 { font-size: 1.25rem; margin: 16px 0 8px; }
+      p { color: var(--muted); line-height: 1.6; margin: 0 0 20px; }
+      a { display: inline-block; padding: 10px 20px; border-radius: 999px; background: var(--primary); color: #fff; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>目前沒有網路連線</h1>
+      <p>記帳需要連到家裡的伺服器。請確認網路與 Tailscale 已連上，再重新整理。</p>
+      <a href="/">重新整理</a>
+    </main>
+  </body>
+</html>
