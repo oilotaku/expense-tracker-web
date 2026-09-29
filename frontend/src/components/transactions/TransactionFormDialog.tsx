@@ -704,8 +704,9 @@ export function TransactionFormDialog({
         )}
 
         {/* 儲存區固定在抽屜可視範圍底部：內容長（展開更多欄位、固定收支）時不必捲到最底才找得到。
-            負 margin 蓋掉 Dialog 的 padding，自己補回同樣的 padding（含 safe-area），停靠時才不會露出縫。 */}
-        <div className="sticky bottom-0 z-10 -mx-6 -mb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col gap-2 border-t border-border bg-surface px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3 md:-mb-6 md:pb-6">
+            Dialog 的內容區才是捲動容器（面板本身不捲），sticky 停在內容區底端，safe-area 由面板的
+            padding 負責，這裡不用負 margin。 */}
+        <div className="sticky bottom-0 z-10 flex flex-col gap-2 border-t border-border bg-surface pt-3">
           <button
             type="submit"
             disabled={isSubmitting}

@@ -45,8 +45,10 @@ export function Dialog({ open, onOpenChange, title, description, children, class
             <div className="fixed inset-0 z-50 flex flex-col items-stretch justify-end md:items-center md:justify-center md:p-4">
               <RadixDialog.Content asChild forceMount>
                 <motion.div
-                  // 行動端 BottomSheet 貼齊螢幕底，底部 padding 多加 safe-area 避開 iPhone Home 橫條
-                  className={`relative max-h-[90dvh] w-full overflow-y-auto rounded-t-xl bg-surface p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-float md:max-w-md md:rounded-xl md:pb-6 ${className ?? ''}`}
+                  // 行動端 BottomSheet 貼齊螢幕底，底部 padding 多加 safe-area 避開 iPhone Home 橫條。
+                  // 面板本身不捲動：標題固定，只有下方內容區捲（見下），內容裡的 sticky 元素才能乾淨地
+                  // 停在內容區底端、不必用負 margin 去蓋面板的 padding（iOS 上會露出縫）。
+                  className={`relative flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-xl bg-surface p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-float md:max-w-md md:rounded-xl md:pb-6 ${className ?? ''}`}
                   initial={reducedMotion ? false : { opacity: 0, y: '12%', scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={reducedMotion ? undefined : { opacity: 0, y: '12%', scale: 0.98 }}
@@ -58,7 +60,9 @@ export function Dialog({ open, onOpenChange, title, description, children, class
                   <RadixDialog.Description className={description ? 'mt-1 text-sm text-text-secondary' : 'sr-only'}>
                     {description ?? ''}
                   </RadixDialog.Description>
-                  <div className="mt-4">{children}</div>
+                  {/* overscroll-contain：捲到盡頭時不把捲動傳給後面的頁面（iOS 會讓底下的頁面跟著動，
+                      看起來像抽屜底部透出來） */}
+                  <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
                   <RadixDialog.Close
                     aria-label="關閉"
                     className="absolute right-4 top-4 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-text-secondary hover:text-text-primary md:min-h-8 md:min-w-8"
