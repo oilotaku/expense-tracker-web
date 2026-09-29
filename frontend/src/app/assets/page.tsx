@@ -9,6 +9,7 @@ import { AppShell } from '@/components/common/AppShell'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { usePriceColorPreference } from '@/hooks/usePriceColorPreference'
+import { useToast } from '@/hooks/useToast'
 import {
   useCreateFinancialAssetMutation,
   useCreateLiabilityMutation,
@@ -70,24 +71,59 @@ const submitButtonClassName = cva(
   },
 )
 
+/**
+ * 同類型、同名稱（忽略前後空白與大小寫）的既有持股。後端 2026-09-29 起新增時會直接合併進這一筆
+ * （→ backend/app/api/v1/financial_assets.py），前端在送出前就先告訴使用者，免得以為多了一筆或
+ * 舊資料被蓋掉。比對規則與後端 `find_active_by_name` 相同。
+ */
+function useExistingAsset(assetType: AssetType, name: string): FinancialAssetResponse | undefined {
+  const { data } = useListFinancialAssetsQuery()
+  const key = name.trim().toLowerCase()
+  if (key === '') return undefined
+  return data?.items.find(
+    (item) => item.asset_type === assetType && item.name.trim().toLowerCase() === key,
+  )
+}
+
+function MergeHint({ existing }: { existing: FinancialAssetResponse | undefined }): ReactNode {
+  if (!existing) return null
+  return (
+    <p role="note" className="-mt-2 text-xs text-primary-700">
+      已有「{existing.name}」{existing.input_quantity} {existing.input_unit}，送出後會合併數量與本金，不會另開一筆
+    </p>
+  )
+}
+
+function assetSavedMessage(
+  existing: FinancialAssetResponse | undefined,
+  created: FinancialAssetResponse,
+): string {
+  return existing
+    ? `已合併到「${created.name}」，合計 ${created.input_quantity} ${created.input_unit}`
+    : `已新增「${created.name}」${created.input_quantity} ${created.input_unit}`
+}
+
 function StockAssetForm(): ReactNode {
   const [createFinancialAsset, { isLoading, error }] = useCreateFinancialAssetMutation()
+  const toast = useToast()
 
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState<StockUnit>('張')
   const [principalAmount, setPrincipalAmount] = useState('')
+  const existing = useExistingAsset('stock', name)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     try {
-      await createFinancialAsset({
+      const created = await createFinancialAsset({
         asset_type: 'stock',
         name,
         input_quantity: quantity,
         input_unit: unit,
         principal_amount: principalAmount,
       }).unwrap()
+      toast.success(assetSavedMessage(existing, created))
       setName('')
       setQuantity('')
       setUnit('張')
@@ -118,6 +154,7 @@ function StockAssetForm(): ReactNode {
         <p className="-mt-2 text-xs text-text-secondary">
           用來查報價，須為證券代號（例：2330），輸入公司名稱會查不到報價
         </p>
+        <MergeHint existing={existing} />
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">數量</span>
           <input
@@ -168,15 +205,17 @@ function StockAssetForm(): ReactNode {
 
 function UsStockAssetForm(): ReactNode {
   const [createFinancialAsset, { isLoading, error }] = useCreateFinancialAssetMutation()
+  const toast = useToast()
 
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState('')
   const [principalAmount, setPrincipalAmount] = useState('')
+  const existing = useExistingAsset('us_stock', name)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     try {
-      await createFinancialAsset({
+      const created = await createFinancialAsset({
         asset_type: 'us_stock',
         name: name.toUpperCase(),
         input_quantity: quantity,
@@ -184,6 +223,7 @@ function UsStockAssetForm(): ReactNode {
         input_unit: '股',
         principal_amount: principalAmount,
       }).unwrap()
+      toast.success(assetSavedMessage(existing, created))
       setName('')
       setQuantity('')
       setPrincipalAmount('')
@@ -210,6 +250,7 @@ function UsStockAssetForm(): ReactNode {
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
           />
         </label>
+        <MergeHint existing={existing} />
         <p className="-mt-2 text-xs text-text-secondary">
           用來查報價，須為證券代號（例：AAPL），輸入公司名稱會查不到報價
         </p>
@@ -252,22 +293,25 @@ function UsStockAssetForm(): ReactNode {
 
 function MetalAssetForm(): ReactNode {
   const [createFinancialAsset, { isLoading, error }] = useCreateFinancialAssetMutation()
+  const toast = useToast()
 
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState<MetalUnit>('錢')
   const [principalAmount, setPrincipalAmount] = useState('')
+  const existing = useExistingAsset('metal', name)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     try {
-      await createFinancialAsset({
+      const created = await createFinancialAsset({
         asset_type: 'metal',
         name,
         input_quantity: quantity,
         input_unit: unit,
         principal_amount: principalAmount,
       }).unwrap()
+      toast.success(assetSavedMessage(existing, created))
       setName('')
       setQuantity('')
       setUnit('錢')
@@ -292,6 +336,7 @@ function MetalAssetForm(): ReactNode {
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
           />
         </label>
+        <MergeHint existing={existing} />
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">數量</span>
           <input

@@ -1,5 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Toaster } from '@/components/common/Toaster'
+import { __resetToastStoreForTests } from '@/hooks/useToast'
 import { TransactionFormDialog } from './TransactionFormDialog'
 
 // 同 TransactionForm.test.tsx 既有慣例：mock RTK Query hook 的回傳值來驗證表單邏輯。本元件
@@ -49,21 +51,24 @@ describe('TransactionFormDialog', () => {
     } catch {
       // jsdom 環境下 localStorage 一般可用，clear 失敗不影響測試本身
     }
+    __resetToastStoreForTests()
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('三必填欄位驗證：收支類型未選、金額為空時擋下送出並顯示錯誤', async () => {
+  it('收支類型預設「支出」；金額為空時擋下送出並顯示錯誤', async () => {
     const onSubmit = vi.fn()
     render(<TransactionFormDialog open onOpenChange={() => {}} onSubmit={onSubmit} />)
+
+    expect(screen.getByRole('radio', { name: '支出' })).toHaveAttribute('aria-checked', 'true')
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '儲存' }))
     })
 
-    expect(screen.getByText('請選擇收支類型')).toBeInTheDocument()
+    expect(screen.queryByText('請選擇收支類型')).not.toBeInTheDocument()
     expect(screen.getByText('請輸入金額')).toBeInTheDocument()
     expect(onSubmit).not.toHaveBeenCalled()
   })
@@ -195,5 +200,99 @@ describe('TransactionFormDialog', () => {
     expect(screen.getByLabelText('固定收支')).toBeChecked()
     expect(screen.getByRole('button', { name: '年' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByLabelText('起算日')).toHaveValue('2026-01-01')
+  })
+
+  // 2026-09-29 記帳流程優化：分類常駐按鈕、成功 toast、儲存並再記一筆、金額計算機。
+  it('分類以常駐按鈕顯示：點「餐飲」送出帶該分類，並記入最近使用', async () => {
+    const onSubmit = vi.fn()
+    render(<TransactionFormDialog open onOpenChange={() => {}} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '餐飲' }))
+    await typeAmount('120')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '儲存' }))
+    })
+
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ transaction_type: 'expense', category_uid: 'c1' })
+    expect(JSON.parse(window.localStorage.getItem('recent-category-uids') ?? '[]')).toEqual(['c1'])
+  })
+
+  it('最近用過的分類排在最前面', () => {
+    window.localStorage.setItem('recent-category-uids', JSON.stringify(['c-other']))
+    render(<TransactionFormDialog open onOpenChange={() => {}} onSubmit={vi.fn()} />)
+
+    const chips = within(screen.getByRole('radiogroup', { name: '分類' })).getAllByRole('radio')
+    expect(chips.map((chip) => chip.textContent)).toEqual(['其他', '餐飲'])
+  })
+
+  it('儲存成功後顯示 toast 回饋（類型・分類 金額）', async () => {
+    render(
+      <>
+        <Toaster />
+        <TransactionFormDialog open onOpenChange={() => {}} onSubmit={vi.fn()} />
+      </>,
+    )
+
+    fireEvent.click(screen.getByRole('radio', { name: '餐飲' }))
+    await typeAmount('1200')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '儲存' }))
+    })
+
+    expect(screen.getByText('已儲存 支出・餐飲 1,200')).toBeInTheDocument()
+  })
+
+  it('「儲存並再記一筆」：送出後對話框不關閉，保留類型與帳戶、清空金額與分類', async () => {
+    const onSubmit = vi.fn()
+    const onOpenChange = vi.fn()
+    render(<TransactionFormDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '收入' }))
+    fireEvent.click(screen.getByRole('radio', { name: '餐飲' }))
+    await typeAmount('50')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '儲存並再記一筆' }))
+    })
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole('radio', { name: '收入' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '餐飲' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByLabelText('金額')).toHaveValue('')
+    expect(screen.getByLabelText('帳戶')).toHaveValue('a1')
+  })
+
+  it('「儲存並再記一筆」驗證沒過時不送出，之後按「儲存」仍照常關閉', async () => {
+    const onSubmit = vi.fn()
+    const onOpenChange = vi.fn()
+    render(<TransactionFormDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '儲存並再記一筆' }))
+    })
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await typeAmount('30')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '儲存' }))
+    })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('金額鍵盤可以直接計算：120 + 35 送出 155', async () => {
+    const onSubmit = vi.fn()
+    render(<TransactionFormDialog open onOpenChange={() => {}} onSubmit={onSubmit} />)
+
+    await typeAmount('120')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '加' }))
+    })
+    await typeAmount('35')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '儲存' }))
+    })
+
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ amount: '155' })
   })
 })

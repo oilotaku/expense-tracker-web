@@ -59,9 +59,31 @@ function ControlledPin({
   )
 }
 
-function ControlledAmount({ onComplete }: { onComplete?: (value: string) => void }): ReactNode {
+function ControlledAmount({
+  onComplete,
+  onValue,
+}: {
+  onComplete?: (value: string) => void
+  /** 觀察對外送出的金額（計算機測試用）。 */
+  onValue?: (value: string) => void
+}): ReactNode {
   const [value, setValue] = useState('')
-  return <NumericKeypad mode="amount" value={value} onChange={setValue} onComplete={onComplete} />
+  return (
+    <>
+      <NumericKeypad
+        mode="amount"
+        value={value}
+        onChange={(next) => {
+          setValue(next)
+          onValue?.(next)
+        }}
+        onComplete={onComplete}
+      />
+      <button type="button" onClick={() => setValue('')}>
+        重設
+      </button>
+    </>
+  )
 }
 
 describe('NumericKeypad', () => {
@@ -189,11 +211,17 @@ describe('NumericKeypad', () => {
       expect(input).toHaveAttribute('autocomplete', 'off')
     })
 
-    it('鍵盤含小數點鍵與「完成」全寬按鍵', () => {
+    it('鍵盤含小數點鍵；有給 onComplete 時才顯示「完成」全寬按鍵', () => {
       stubMatchMedia(false)
-      render(<ControlledAmount />)
+      render(<ControlledAmount onComplete={vi.fn()} />)
       expect(screen.getByRole('button', { name: '小數點' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: '完成' })).toBeInTheDocument()
+    })
+
+    it('沒給 onComplete（例：交易表單自己有儲存鈕）時不顯示「完成」鍵', () => {
+      stubMatchMedia(false)
+      render(<ControlledAmount />)
+      expect(screen.queryByRole('button', { name: '完成' })).not.toBeInTheDocument()
     })
 
     it('輸入數字後不會自動送出，需點擊「完成」才觸發 onComplete', () => {
@@ -232,8 +260,115 @@ describe('NumericKeypad', () => {
 
     it('空值時「完成」鍵停用（邊界情境）', () => {
       stubMatchMedia(false)
-      render(<ControlledAmount />)
+      render(<ControlledAmount onComplete={vi.fn()} />)
       expect(screen.getByRole('button', { name: '完成' })).toBeDisabled()
+    })
+  })
+
+  // 2026-09-29 使用者要求：記帳時可以直接在金額鍵盤上算「120+35」。輸入框顯示算式，
+  // 對外的 value 永遠是算好的金額。
+  describe('mode="amount" 計算機', () => {
+    function click(name: string): void {
+      fireEvent.click(screen.getByRole('button', { name }))
+    }
+
+    function typeDigits(digits: string): void {
+      for (const digit of digits) click(`數字 ${digit}`)
+    }
+
+    it('120 + 35：輸入框顯示算式、下方預覽 = 155、onChange 收到 155', () => {
+      stubMatchMedia(false)
+      const onValue = vi.fn()
+      render(<ControlledAmount onValue={onValue} />)
+      typeDigits('120')
+      click('加')
+      typeDigits('35')
+      expect(screen.getByLabelText('金額')).toHaveValue('120+35')
+      expect(screen.getByText('= 155')).toBeInTheDocument()
+      expect(onValue).toHaveBeenLastCalledWith('155')
+    })
+
+    it('先乘除後加減：2 + 3 × 4 = 14', () => {
+      stubMatchMedia(false)
+      const onValue = vi.fn()
+      render(<ControlledAmount onValue={onValue} />)
+      typeDigits('2')
+      click('加')
+      typeDigits('3')
+      click('乘')
+      typeDigits('4')
+      expect(onValue).toHaveBeenLastCalledWith('14')
+    })
+
+    it('按「=」把算式收斂成結果，「=」鍵隨之消失', () => {
+      stubMatchMedia(false)
+      render(<ControlledAmount />)
+      typeDigits('120')
+      click('加')
+      typeDigits('35')
+      click('等於')
+      expect(screen.getByLabelText('金額')).toHaveValue('155')
+      expect(screen.queryByRole('button', { name: '等於' })).not.toBeInTheDocument()
+    })
+
+    it('算式結尾多一個運算子時，以前面算好的值送出；連按運算子取後者', () => {
+      stubMatchMedia(false)
+      const onValue = vi.fn()
+      render(<ControlledAmount onValue={onValue} />)
+      typeDigits('12')
+      click('加')
+      expect(onValue).toHaveBeenLastCalledWith('12')
+      click('乘')
+      expect(screen.getByLabelText('金額')).toHaveValue('12×')
+    })
+
+    it('小數點以目前正在輸入的數字為準：1.5 + 2.5 = 4', () => {
+      stubMatchMedia(false)
+      const onValue = vi.fn()
+      render(<ControlledAmount onValue={onValue} />)
+      typeDigits('1')
+      click('小數點')
+      typeDigits('5')
+      click('加')
+      typeDigits('2')
+      click('小數點')
+      typeDigits('5')
+      expect(screen.getByLabelText('金額')).toHaveValue('1.5+2.5')
+      expect(onValue).toHaveBeenLastCalledWith('4')
+    })
+
+    it('除以 0 或算出非正數時預覽顯示 —、onChange 收到空字串（交由表單驗證擋下）', () => {
+      stubMatchMedia(false)
+      const onValue = vi.fn()
+      render(<ControlledAmount onValue={onValue} />)
+      typeDigits('5')
+      click('除')
+      typeDigits('0')
+      expect(screen.getByText('= —')).toBeInTheDocument()
+      expect(onValue).toHaveBeenLastCalledWith('')
+      expect(screen.getByRole('button', { name: '等於' })).toBeDisabled()
+    })
+
+    it('刪除鍵刪掉運算子後回到純數字', () => {
+      stubMatchMedia(false)
+      const onValue = vi.fn()
+      render(<ControlledAmount onValue={onValue} />)
+      typeDigits('12')
+      click('加')
+      click('刪除')
+      expect(screen.getByLabelText('金額')).toHaveValue('12')
+      expect(onValue).toHaveBeenLastCalledWith('12')
+    })
+
+    it('父層把 value 清空（表單 reset）時，算式也一起清空', () => {
+      stubMatchMedia(false)
+      render(<ControlledAmount />)
+      typeDigits('12')
+      click('加')
+      typeDigits('3')
+      fireEvent.click(screen.getByRole('button', { name: '重設' }))
+      expect(screen.getByLabelText('金額')).toHaveValue('')
+      expect(screen.queryByRole('button', { name: '等於' })).not.toBeInTheDocument()
     })
   })
 })

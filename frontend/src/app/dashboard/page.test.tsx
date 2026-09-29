@@ -95,6 +95,8 @@ const NET_WORTH = {
   total_liabilities: '50000.00',
   net_worth: '100000.00',
   assets: [],
+  // NetWorthCard 自 629dbdc（外幣帳戶換算 NT$）起會讀 accounts；夾具當時沒補，整組測試一直紅著
+  accounts: [],
 }
 
 const ACCOUNTS = {

@@ -199,7 +199,8 @@ describe('TransactionList', () => {
     expect(screen.getByText('編輯交易')).toBeInTheDocument()
     expect(dialog.getByLabelText('明細')).toHaveValue('午餐')
     expect(dialog.getByLabelText('帳戶')).toHaveValue('a1')
-    expect(dialog.getByLabelText('分類')).toHaveValue('c1')
+    // 分類 2026-09-29 起改為常駐按鈕（radio），不再是下拉選單
+    expect(dialog.getByRole('radio', { name: '餐飲' })).toHaveAttribute('aria-checked', 'true')
     expect(dialog.getByLabelText('金額')).toHaveValue('120.50')
   })
 

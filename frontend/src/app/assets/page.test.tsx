@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Toaster } from '@/components/common/Toaster'
+import { __resetToastStoreForTests } from '@/hooks/useToast'
 import AssetsPage from './page'
 
 // tsconfig `strict`（noUncheckedIndexedAccess）讓 `getAllByLabelText(...)[n]` 型別為
@@ -112,6 +114,7 @@ describe('AssetsPage', () => {
   beforeEach(() => {
     stubMatchMedia()
     window.localStorage.clear()
+    __resetToastStoreForTests()
     replace.mockClear()
     useGetMeQuery.mockReset().mockReturnValue({ isLoading: false, isError: false })
 
@@ -203,6 +206,53 @@ describe('AssetsPage', () => {
       input_unit: '張',
       principal_amount: '400000',
     })
+  })
+
+  // 後端 2026-09-29 起同類型同名稱自動合併（→ backend/app/api/v1/financial_assets.py）：
+  // 送出前提示會合併、送出後以 toast 顯示合併後總量，使用者才不會以為多了一筆或舊資料被蓋掉。
+  it('輸入已持有的標的（忽略前後空白）時顯示合併提示，送出後 toast 顯示合併後總量', async () => {
+    render(
+      <>
+        <Toaster />
+        <AssetsPage />
+      </>,
+    )
+
+    fireEvent.change(screen.getByLabelText('股票代號 / 名稱'), { target: { value: ' 台積電 ' } })
+    expect(screen.getByRole('note')).toHaveTextContent('已有「台積電」2.0000 張，送出後會合併數量與本金')
+
+    const stockForm = getFormByHeading('新增股票持股')
+    fireEvent.change(within(stockForm).getByLabelText('數量'), { target: { value: '1' } })
+    fireEvent.change(within(stockForm).getByLabelText('本金'), { target: { value: '200000' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '新增股票' }))
+    })
+
+    expect(screen.getByText('已合併到「台積電」，合計 2.0000 張')).toBeInTheDocument()
+  })
+
+  it('輸入尚未持有的標的時不顯示合併提示，送出後 toast 顯示已新增', async () => {
+    createFinancialAsset.mockReturnValue({
+      unwrap: () => Promise.resolve({ ...STOCK_ASSET, name: '2454', input_quantity: '1.0000' }),
+    })
+    render(
+      <>
+        <Toaster />
+        <AssetsPage />
+      </>,
+    )
+
+    fireEvent.change(screen.getByLabelText('股票代號 / 名稱'), { target: { value: '2454' } })
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+
+    const stockForm = getFormByHeading('新增股票持股')
+    fireEvent.change(within(stockForm).getByLabelText('數量'), { target: { value: '1' } })
+    fireEvent.change(within(stockForm).getByLabelText('本金'), { target: { value: '5000' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '新增股票' }))
+    })
+
+    expect(screen.getByText('已新增「2454」1.0000 張')).toBeInTheDocument()
   })
 
   it('送出美股表單觸發 createFinancialAsset mutation（asset_type: us_stock，代號轉大寫）', async () => {

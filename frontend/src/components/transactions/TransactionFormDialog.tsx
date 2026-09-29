@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Dialog } from '@/components/common/Dialog'
 import { NumericKeypad } from '@/components/common/NumericKeypad'
 import { useBreakpoint } from '@/hooks/useBreakpoint'
+import { useToast } from '@/hooks/useToast'
 import {
   useListAccountOptionsQuery,
   useListCategoryOptionsQuery,
@@ -30,6 +31,14 @@ const DEFAULT_ACCOUNT_STORAGE_KEY = 'default-account-uid'
 const DEFAULT_CATEGORY_NAME = '其他'
 const DEFAULT_ACCOUNT_NAME = '現金'
 
+// 分類改成常駐按鈕（2026-09-29）：最近用過的排最前面。使用資料顯示常用的前 3 個分類佔了近 8 成
+// 的筆數，放在第一排就不必每筆都展開下拉選單去找。同樣只有本元件讀寫，放 localStorage。
+const RECENT_CATEGORY_STORAGE_KEY = 'recent-category-uids'
+const RECENT_CATEGORY_LIMIT = 8
+const CATEGORY_CHIP_INITIAL_COUNT = 8
+
+const TYPE_LABEL: Record<string, string> = { expense: '支出', income: '收入', transfer: '轉帳' }
+
 const PAYMENT_METHOD_OPTIONS = ['現金', '信用卡', '金融卡', '行動支付', '銀行轉帳', '其他'] as const
 
 const AMOUNT_PATTERN = /^\d+(\.\d*)?$/
@@ -50,6 +59,32 @@ function writeRememberedAccountUid(accountUid: string): void {
     // 私密瀏覽模式等場景寫入失敗時降級為「不記住」，不影響本次表單操作本身。
   }
 }
+
+function readRecentCategoryUids(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_CATEGORY_STORAGE_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** 把剛用過的分類移到最前面，回傳更新後的清單（寫入失敗時仍回傳，只是下次開啟不會記得）。 */
+function writeRecentCategoryUid(categoryUid: string): string[] {
+  const next = [categoryUid, ...readRecentCategoryUids().filter((uid) => uid !== categoryUid)].slice(
+    0,
+    RECENT_CATEGORY_LIMIT,
+  )
+  try {
+    window.localStorage.setItem(RECENT_CATEGORY_STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    // 同 writeRememberedAccountUid：私密瀏覽等場景寫不進去就算了
+  }
+  return next
+}
+
+const AMOUNT_FORMATTER = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 })
 
 function todayDateInput(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -123,7 +158,8 @@ type FormInput = z.infer<typeof transactionFormSchema>
 
 function defaultFormInput(): FormInput {
   return {
-    transactionType: '',
+    // 預設「支出」（2026-09-29）：使用者的紀錄九成以上是支出，原本預設空白讓每筆都多點一次。
+    transactionType: 'expense',
     transactionDate: todayDateInput(),
     amount: '',
     categoryUid: '',
@@ -225,13 +261,24 @@ export function TransactionFormDialog({
 
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const toast = useToast()
+
+  // 一開始就是開啟狀態時（測試、或父層直接以 open 掛載）不會經過下面的 open 轉換，這裡先讀一次。
+  const [recentCategoryUids, setRecentCategoryUids] = useState<string[]>(() =>
+    open ? readRecentCategoryUids() : [],
+  )
+  const [showAllCategories, setShowAllCategories] = useState(false)
 
   // 依 React 文件建議的「render 期間依 prop 變化調整 state」寫法（非 useEffect 內同步
   // setState），同 ColorSwatchPicker.tsx 既有慣例：對話框從關閉變為開啟時清空上次的送出錯誤。
   const [wasOpen, setWasOpen] = useState(open)
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setSubmitError(null)
+    if (open) {
+      setSubmitError(null)
+      setRecentCategoryUids(readRecentCategoryUids())
+      setShowAllCategories(false)
+    }
   }
 
   const {
@@ -270,6 +317,28 @@ export function TransactionFormDialog({
     () => categories?.find((category) => category.name === DEFAULT_CATEGORY_NAME)?.category_uid ?? '',
     [categories],
   )
+
+  // 分類按鈕的順序：最近用過的在前，其餘依 API 順序；預設只顯示前幾個，「更多」展開全部，
+  // 但目前選中的那個一定看得到（編輯既有交易時分類可能排在後面）。
+  const orderedCategories = useMemo(() => {
+    const all = categories ?? []
+    const byUid = new Map(all.map((category) => [category.category_uid, category]))
+    const head = recentCategoryUids.flatMap((uid) => {
+      const category = byUid.get(uid)
+      return category ? [category] : []
+    })
+    const headUids = new Set(head.map((category) => category.category_uid))
+    return [...head, ...all.filter((category) => !headUids.has(category.category_uid))]
+  }, [categories, recentCategoryUids])
+  const selectedCategoryUid = useWatch({ control, name: 'categoryUid' })
+  const visibleCategories = useMemo(() => {
+    if (showAllCategories) return orderedCategories
+    const head = orderedCategories.slice(0, CATEGORY_CHIP_INITIAL_COUNT)
+    const selected = orderedCategories.find((category) => category.category_uid === selectedCategoryUid)
+    if (selected && !head.includes(selected)) head.push(selected)
+    return head
+  }, [orderedCategories, showAllCategories, selectedCategoryUid])
+  const hiddenCategoryCount = orderedCategories.length - visibleCategories.length
 
   // 對話框每次開啟時重置表單：create 模式回到空白預設值、edit 模式預帶 initialValues。
   useEffect(() => {
@@ -331,7 +400,8 @@ export function TransactionFormDialog({
     writeRememberedAccountUid(event.target.value)
   }
 
-  async function handleValidSubmit(data: FormInput): Promise<void> {
+  /** `keepOpen`：「儲存並再記一筆」為 true，送出成功後清掉逐筆不同的欄位、對話框不關閉。 */
+  async function handleValidSubmit(data: FormInput, keepOpen: boolean): Promise<void> {
     const payload: TransactionFormValues =
       data.transactionType === 'transfer'
         ? {
@@ -364,7 +434,32 @@ export function TransactionFormDialog({
     setIsSubmitting(true)
     try {
       await onSubmit(payload)
-      onOpenChange(false)
+      const categoryName =
+        data.transactionType === 'transfer'
+          ? null
+          : ((categories ?? []).find(
+              (category) => category.category_uid === (data.categoryUid || defaultCategoryUid),
+            )?.name ?? null)
+      toast.success(
+        `已儲存 ${TYPE_LABEL[data.transactionType] ?? ''}${categoryName ? `・${categoryName}` : ''} ${AMOUNT_FORMATTER.format(Number(data.amount))}`,
+      )
+      if (data.transactionType !== 'transfer' && data.categoryUid) {
+        setRecentCategoryUids(writeRecentCategoryUid(data.categoryUid))
+      }
+      if (keepOpen) {
+        // 保留類型／日期／帳戶／支付方式，只清掉每筆都不同的金額、分類、明細
+        reset({
+          ...getValues(),
+          amount: '',
+          categoryUid: '',
+          description: '',
+          isRecurring: false,
+          recurring: defaultRecurringValue(),
+        })
+        setShowAllCategories(false)
+      } else {
+        onOpenChange(false)
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : '發生錯誤，請稍後再試')
     } finally {
@@ -372,9 +467,17 @@ export function TransactionFormDialog({
     }
   }
 
+  function handleSaveAndClose(event: FormEvent<HTMLFormElement>): void {
+    void handleSubmit((data) => handleValidSubmit(data, false))(event)
+  }
+
+  function handleSaveAndContinue(): void {
+    void handleSubmit((data) => handleValidSubmit(data, true))()
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={mode === 'edit' ? '編輯交易' : '新增交易'}>
-      <form onSubmit={handleSubmit(handleValidSubmit)} noValidate className="flex flex-col gap-4">
+      <form onSubmit={handleSaveAndClose} noValidate className="flex flex-col gap-4">
         <Controller
           control={control}
           name="transactionType"
@@ -439,33 +542,61 @@ export function TransactionFormDialog({
           )}
         </div>
 
+        {!isTransfer && (
+          <Controller
+            control={control}
+            name="categoryUid"
+            render={({ field }) => (
+              <div className="flex flex-col gap-2">
+                <span className="text-sm text-text-secondary">
+                  分類{field.value === '' && <span className="text-text-secondary/70">（未選會記為「其他」）</span>}
+                </span>
+                <div role="radiogroup" aria-label="分類" className="flex flex-wrap gap-2">
+                  {visibleCategories.map((category) => {
+                    const selected = field.value === category.category_uid
+                    return (
+                      <button
+                        key={category.category_uid}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => field.onChange(selected ? '' : category.category_uid)}
+                        className={`min-h-[40px] rounded-full border px-4 text-sm font-medium transition-colors ${
+                          selected
+                            ? 'border-primary-500 bg-primary-100 text-primary-700'
+                            : 'border-border bg-surface text-text-secondary'
+                        }`}
+                      >
+                        {category.name}
+                      </button>
+                    )
+                  })}
+                  {(hiddenCategoryCount > 0 || showAllCategories) && (
+                    <button
+                      type="button"
+                      aria-expanded={showAllCategories}
+                      onClick={() => setShowAllCategories((v) => !v)}
+                      className="min-h-[40px] rounded-full px-3 text-sm font-medium text-primary-600"
+                    >
+                      {showAllCategories ? '收合 ▴' : `更多 ${hiddenCategoryCount} 個 ▾`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          />
+        )}
+
         <button
           type="button"
           aria-expanded={showMoreFields}
           onClick={() => setMobileMoreOpen((v) => !v)}
           className="self-start text-sm font-medium text-primary-600 md:hidden"
         >
-          {showMoreFields ? '收合欄位 ▴' : '更多欄位（分類/明細/帳戶/支付方式） ▾'}
+          {showMoreFields ? '收合欄位 ▴' : '更多欄位（明細/帳戶/支付方式） ▾'}
         </button>
 
         <div className={`flex-col gap-4 md:flex ${showMoreFields ? 'flex' : 'hidden'}`}>
-          {!isTransfer && (
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-text-secondary">分類</span>
-              <select
-                {...register('categoryUid')}
-                className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
-              >
-                <option value="">未選（送出時補「其他」）</option>
-                {(categories ?? []).map((category) => (
-                  <option key={category.category_uid} value={category.category_uid}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">明細</span>
             <input
@@ -572,13 +703,25 @@ export function TransactionFormDialog({
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="min-h-[44px] w-full rounded-md bg-primary-600 text-base font-semibold text-text-inverse disabled:opacity-50"
-        >
-          {isSubmitting ? '儲存中…' : '儲存'}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="min-h-[44px] w-full rounded-md bg-primary-600 text-base font-semibold text-text-inverse disabled:opacity-50"
+          >
+            {isSubmitting ? '儲存中…' : '儲存'}
+          </button>
+          {mode === 'create' && (
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={handleSaveAndContinue}
+              className="min-h-[44px] w-full rounded-md border border-primary-500 bg-surface text-base font-semibold text-primary-700 disabled:opacity-50"
+            >
+              儲存並再記一筆
+            </button>
+          )}
+        </div>
       </form>
     </Dialog>
   )

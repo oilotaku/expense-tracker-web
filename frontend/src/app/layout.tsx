@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { Manrope } from 'next/font/google'
+import { Toaster } from '@/components/common/Toaster'
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister'
 import { StoreProvider } from '@/store/provider'
 import './globals.css'
@@ -41,6 +42,9 @@ export default function RootLayout({ children }: RootLayoutProps): ReactNode {
       <body>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <StoreProvider>{children}</StoreProvider>
+        {/* 全域通知容器：useToast() 推的訊息都在這裡顯示。2026-09-29 之前從未掛上，
+            記帳成功等回饋其實都沒出現過。 */}
+        <Toaster />
         <ServiceWorkerRegister />
       </body>
     </html>
