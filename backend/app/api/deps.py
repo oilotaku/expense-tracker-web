@@ -75,10 +75,13 @@ def _client_ip(request: Request) -> str:
     `X-Forwarded-For`／`X-Real-IP` 這類 header——這些 header 由 client 自己送出，
     沒有受信任的反向代理覆寫前**不可信**，直接採信會讓限流被輪換偽造 header 繞過。
 
-    `docker-compose.yml` 目前沒有反向代理層，`backend` 直接對外，`request.client`
-    就是真正的來源 IP。**之後若在前面加反向代理**（nginx / CDN 等），這裡必須改成
-    只信任該代理設定的、且代理本身會覆寫（不會單純轉發 client 端送來的值）的 header，
-    否則所有使用者會共用代理的單一來源 IP（限流形同虛設或誤傷所有人）。
+    瀏覽器端 API 現在走前端同源 `/api/v1`，由 Next.js rewrites 轉給 backend（為了讓
+    頁面能走 HTTPS / PWA），所以經前端進來的請求 `request.client` 都是 frontend 容器
+    的位址，**所有使用者共用同一個限流桶**。這是刻意接受的取捨：Next 轉發時用
+    `x-forwarded-for ??= socket 位址`，client 自己送的 header 會原樣保留，改信任它
+    等於讓人輪換偽造值繞過限流；共用桶則最壞只是「有人連錯 10 次，大家被擋 60 秒」，
+    沒辦法繞過。直接打 backend 的 8000 port 時仍是真實來源 IP。
+    之後若換成會**覆寫**（而非保留）該 header 的反向代理，才能改成只信任它設定的值。
     """
     return request.client.host if request.client is not None else "unknown"
 

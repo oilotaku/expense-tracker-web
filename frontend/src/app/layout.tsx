@@ -1,6 +1,7 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { Manrope } from 'next/font/google'
+import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister'
 import { StoreProvider } from '@/store/provider'
 import './globals.css'
 
@@ -12,6 +13,17 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: 'expense-tracker-web',
+  applicationName: '記帳',
+  // manifest 由 app/manifest.ts、apple-touch-icon 由 app/apple-icon.png 自動產生 <link>；
+  // iOS 加入主畫面後的名稱與狀態列另外靠這組 meta
+  appleWebApp: { capable: true, title: '記帳', statusBarStyle: 'default' },
+}
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#faf8fc' },
+    { media: '(prefers-color-scheme: dark)', color: '#1c1826' },
+  ],
 }
 
 interface RootLayoutProps {
@@ -29,6 +41,7 @@ export default function RootLayout({ children }: RootLayoutProps): ReactNode {
       <body>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <StoreProvider>{children}</StoreProvider>
+        <ServiceWorkerRegister />
       </body>
     </html>
   )

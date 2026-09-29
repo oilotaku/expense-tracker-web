@@ -6,13 +6,25 @@ import { apiOriginFromUrl, securityHeaders } from './src/lib/security/csp'
 const isDev = process.env.APP_ENV !== 'production'
 const apiOrigin = apiOriginFromUrl(process.env.NEXT_PUBLIC_API_URL)
 
+// 瀏覽器端 API 走同源 `/api/v1`（NEXT_PUBLIC_API_URL=/api/v1），由 Next 轉給 compose 內網的 backend。
+// 同源才能讓頁面改走 HTTPS（tailscale serve）時不被混合內容擋下，也是 PWA 的前提。
+// rewrites 在 build 時寫進 routes-manifest，所以內網位址要在 build 階段就確定。
+const apiProxyTarget = process.env.API_PROXY_TARGET ?? 'http://backend:8000/api/v1'
+
 const nextConfig: NextConfig = {
   // docker/frontend/Dockerfile 用 standalone 輸出
   output: 'standalone',
   poweredByHeader: false,
+  async rewrites() {
+    return [{ source: '/api/v1/:path*', destination: `${apiProxyTarget}/:path*` }]
+  },
   // 安全 header 基線（含 CSP）；內容與測試都在 src/lib/security/csp.ts
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders({ isDev, apiOrigin }) }]
+    return [
+      { source: '/:path*', headers: securityHeaders({ isDev, apiOrigin }) },
+      // Service Worker 腳本不能被 HTTP 快取，否則更新版要等快取過期才生效
+      { source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    ]
   },
 }
 
