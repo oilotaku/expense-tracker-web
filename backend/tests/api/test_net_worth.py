@@ -279,7 +279,7 @@ async def test_net_worth_batches_all_stock_tickers_into_a_single_pricing_call(
     """
     await _register_and_login(client, "networth-stock-batch@example.com")
 
-    # "2330" 分兩筆持有（例：分批買進），去重後應併入同一次批次查詢
+    # "2330" 分兩次新增（例：分批買進）；新增時會合併成同一筆，批次查詢仍只帶一次
     for _ in range(2):
         res = await client.post(
             "/api/v1/financial-assets",

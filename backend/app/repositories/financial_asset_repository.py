@@ -47,6 +47,26 @@ class FinancialAssetRepository:
         )
         return (await self.db.execute(stmt)).scalars().all()
 
+    async def find_active_by_name(
+        self, user_uid: UUID, asset_type: str, name: str
+    ) -> FinancialAsset | None:
+        """同一使用者、同資產類型、同名稱(忽略前後空白與大小寫)的未刪除資產;新增時用來合併。
+
+        既有資料可能已有多筆同名(合併上線前建立的),取最早建立的那筆。
+        """
+        stmt = (
+            select(FinancialAsset)
+            .where(
+                FinancialAsset.user_uid == user_uid,
+                FinancialAsset.asset_type == asset_type,
+                func.lower(func.trim(FinancialAsset.name)) == name.strip().lower(),
+                FinancialAsset.is_deleted.is_(False),
+            )
+            .order_by(FinancialAsset.created_at)
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def find_by_financial_asset_uid(
         self, financial_asset_uid: UUID, user_uid: UUID
     ) -> FinancialAsset | None:

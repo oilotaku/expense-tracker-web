@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db
 from app.core.exceptions import AppError, NotFoundError
 from app.core.response import success
+from app.models.financial_asset import FinancialAsset
 from app.models.user import User
 from app.repositories.financial_asset_repository import FinancialAssetRepository
 from app.schemas.financial_asset import (
@@ -46,11 +47,44 @@ def _to_base_quantity(asset_type: AssetType, quantity: Decimal, unit: str) -> De
     return metal_to_mace(quantity, MetalUnit(unit))
 
 
+_BASE_UNIT: dict[str, str] = {
+    "stock": StockUnit.SHARE.value,
+    "us_stock": UsStockUnit.SHARE.value,
+    "metal": MetalUnit.MACE.value,
+}
+
+
+def _merged_quantity(
+    existing: FinancialAsset,
+    asset_type: AssetType,
+    input_quantity: Decimal,
+    input_unit: str,
+    base_quantity: Decimal,
+) -> tuple[Decimal, str, Decimal]:
+    """合併數量,回傳 (input_quantity, input_unit, base_quantity)。
+
+    單位相同就直接相加輸入數量;單位不同(如 張 + 股)改以基本單位記錄。
+    """
+    total_base = existing.base_quantity + base_quantity
+    if existing.input_unit == input_unit:
+        return existing.input_quantity + input_quantity, input_unit, total_base
+    return total_base, _BASE_UNIT[asset_type], total_base
+
+
+def _merged_principal(existing: Decimal | None, added: Decimal | None) -> Decimal | None:
+    """成本:兩邊都有就相加;只有一邊有就用那一邊;都沒有維持空值。"""
+    if existing is None:
+        return added
+    if added is None:
+        return existing
+    return existing + added
+
+
 @router.post(
     "",
     response_model=ApiResponse[FinancialAssetResponse],
     status_code=201,
-    summary="新增金融資產",
+    summary="新增金融資產(同類型同名稱已存在時合併數量與成本)",
 )
 async def create_financial_asset(
     payload: FinancialAssetCreateRequest, db: DbSession, current_user: CurrentUser
@@ -58,7 +92,26 @@ async def create_financial_asset(
     base_quantity = _to_base_quantity(
         payload.asset_type, payload.input_quantity, payload.input_unit
     )
-    asset = await FinancialAssetRepository(db).create(
+    repo = FinancialAssetRepository(db)
+    # 同一標的(同類型、同名稱)不另開一筆,直接加到既有那筆(使用者要求:分次買進應合併)
+    existing = await repo.find_active_by_name(
+        current_user.user_uid, payload.asset_type, payload.name
+    )
+    if existing is not None:
+        merged_input, merged_unit, merged_base = _merged_quantity(
+            existing, payload.asset_type, payload.input_quantity, payload.input_unit, base_quantity
+        )
+        merged = await repo.update_fields(
+            existing,
+            name=None,
+            input_quantity=merged_input,
+            input_unit=merged_unit,
+            base_quantity=merged_base,
+            principal_amount=_merged_principal(existing.principal_amount, payload.principal_amount),
+            updated_by=current_user.user_uid,
+        )
+        return success(data=FinancialAssetResponse.model_validate(merged), response_code=201)
+    asset = await repo.create(
         user_uid=current_user.user_uid,
         asset_type=payload.asset_type,
         name=payload.name,
