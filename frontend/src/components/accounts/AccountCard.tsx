@@ -310,8 +310,9 @@ export function AccountCard({
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">餘額</span>
             <input
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               disabled={isSaving}
               value={draftBalance}
               onChange={(event) => setDraftBalance(event.target.value)}

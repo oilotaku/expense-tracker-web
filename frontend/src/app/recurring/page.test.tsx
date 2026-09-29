@@ -261,7 +261,8 @@ describe('RecurringRulesPage', () => {
     render(<RecurringRulesPage />)
 
     fireEvent.click(screen.getByLabelText('編輯 房租'))
-    expect(screen.getByLabelText('房租 金額')).toHaveValue(15000)
+    // 金額欄 2026-09-29 起改 type="text" inputMode="decimal"（iPhone 數字鍵盤），值為字串
+    expect(screen.getByLabelText('房租 金額')).toHaveValue('15000.00')
 
     fireEvent.change(screen.getByLabelText('房租 金額'), { target: { value: '16000' } })
 

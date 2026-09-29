@@ -5,6 +5,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { CHART_SWATCH_COLORS, ColorSwatchPicker } from '@/components/common/ColorSwatchPicker'
@@ -121,13 +122,15 @@ interface CategoryGridProps {
   categories: CategoryResponse[]
   isLoading: boolean
   error: FetchBaseQueryError | SerializedError | undefined
+  /** 清單載入失敗時「重試」要做的事（父層傳 RTK Query 的 refetch）。 */
+  onRetry: () => void
 }
 
 /**
  * design-spec §8：桌機四欄 grid + hover 顯示刪除、行動端兩欄 grid + 長按顯示刪除
  * （長按互動實作在 <CategoryChip> 內）；刪除走 <ConfirmDialog>，不影響既有交易紀錄。
  */
-function CategoryGrid({ categories, isLoading, error }: CategoryGridProps): ReactNode {
+function CategoryGrid({ categories, isLoading, error, onRetry }: CategoryGridProps): ReactNode {
   const [updateCategory] = useUpdateCategoryMutation()
   const [deleteCategory, { isLoading: isDeleting }] = useDeleteCategoryMutation()
   const [pendingDelete, setPendingDelete] = useState<CategoryResponse | null>(null)
@@ -171,14 +174,12 @@ function CategoryGrid({ categories, isLoading, error }: CategoryGridProps): Reac
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold text-text-primary">分類清單</h2>
-      {isLoading && <p className="text-text-secondary">載入中…</p>}
+      {isLoading && <LoadingState />}
       {error && (
-        <p role="alert" className="text-sm text-danger-700">
-          {getErrorMessage(error)}
-        </p>
+        <ErrorState message={getErrorMessage(error)} onRetry={onRetry} />
       )}
       {!isLoading && !error && categories.length === 0 && (
-        <p className="text-text-secondary">尚未建立任何分類</p>
+        <EmptyState title="尚未建立任何分類" description="用上方表單新增分類，記帳時才有得選" />
       )}
       {!isLoading && !error && categories.length > 0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -208,7 +209,7 @@ function CategoryGrid({ categories, isLoading, error }: CategoryGridProps): Reac
 }
 
 export default function CategoriesPage(): ReactNode {
-  const { data, isLoading, error } = useListCategoriesQuery()
+  const { data, isLoading, error, refetch } = useListCategoriesQuery()
   const categories = useMemo(() => data?.items ?? [], [data])
   const existingNames = useMemo(() => categories.map((category) => category.name), [categories])
 
@@ -218,7 +219,14 @@ export default function CategoriesPage(): ReactNode {
         <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-10 bg-bg p-6">
           <h1 className="text-2xl font-bold text-text-primary md:text-3xl">分類管理</h1>
           <CategoryCreateForm existingNames={existingNames} />
-          <CategoryGrid categories={categories} isLoading={isLoading} error={error} />
+          <CategoryGrid
+            categories={categories}
+            isLoading={isLoading}
+            error={error}
+            onRetry={() => {
+              void refetch()
+            }}
+          />
         </main>
       </AppShell>
     </AuthGuard>

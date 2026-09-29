@@ -9,6 +9,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { Dialog } from '@/components/common/Dialog'
 import { CategoryBarChart } from '@/components/dashboard/CategoryBarChart'
@@ -213,6 +214,7 @@ function DashboardContent(): ReactNode {
     data: summary,
     isLoading: isSummaryLoading,
     error: summaryError,
+    refetch: refetchSummary,
   } = useGetDashboardSummaryQuery({
     period: selection.period,
     dateFrom: range.dateFrom,
@@ -348,12 +350,15 @@ function DashboardContent(): ReactNode {
           </header>
 
           {summaryError && (
-            <p role="alert" className="text-sm text-danger-700">
-              {getErrorMessage(summaryError)}
-            </p>
+            <ErrorState
+              message={getErrorMessage(summaryError)}
+              onRetry={() => {
+                void refetchSummary()
+              }}
+            />
           )}
 
-          {isSummaryLoading && <p className="text-text-secondary">載入中…</p>}
+          {isSummaryLoading && <LoadingState rows={2} />}
 
           {!isSummaryLoading && !summaryError && (
             // 行動端垂直堆疊、結餘拉大成 Hero 並置頂（order-first）；桌機 grid-cols-4 四張並排
@@ -410,7 +415,7 @@ function DashboardContent(): ReactNode {
               </Link>
             </div>
             {(recentTransactions?.items ?? []).length === 0 ? (
-              <p className="text-sm text-text-secondary md:text-base">尚無交易紀錄</p>
+              <EmptyState title="尚無交易紀錄" description="按下方「＋」記第一筆" />
             ) : (
               <ul className="flex flex-col gap-3" role="list">
                 {(recentTransactions?.items ?? []).map((transaction) => (

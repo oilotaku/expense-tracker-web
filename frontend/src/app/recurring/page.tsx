@@ -6,6 +6,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import {
@@ -230,10 +231,10 @@ function RecurringRuleForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">金額</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -527,10 +528,10 @@ function RecurringRuleCard({
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">金額</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             aria-label={`${rule.description} 金額`}
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
@@ -623,7 +624,7 @@ function RecurringRuleList(): ReactNode {
   const { data: accounts } = useListAccountOptionsQuery()
   const { data: categories } = useListCategoryOptionsQuery()
   const { data: liabilities } = useListLiabilitiesQuery()
-  const { data, isLoading, error } = useListRecurringRulesQuery()
+  const { data, isLoading, error, refetch } = useListRecurringRulesQuery()
   const [deleteRecurringRule, { isLoading: isDeleting }] = useDeleteRecurringRuleMutation()
   const [pendingDelete, setPendingDelete] = useState<RecurringRuleResponse | null>(null)
 
@@ -649,14 +650,17 @@ function RecurringRuleList(): ReactNode {
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold text-text-primary">週期性交易規則清單</h2>
-      {isLoading && <p className="text-text-secondary">載入中…</p>}
+      {isLoading && <LoadingState />}
       {error && (
-        <p role="alert" className="text-sm text-danger-700">
-          {getErrorMessage(error)}
-        </p>
+        <ErrorState
+          message={getErrorMessage(error)}
+          onRetry={() => {
+            void refetch()
+          }}
+        />
       )}
       {!isLoading && !error && items.length === 0 && (
-        <p className="text-text-secondary">尚未設定任何週期性交易規則</p>
+        <EmptyState title="尚未設定任何週期性交易規則" description="房租、訂閱這類固定支出可用上方表單設定，到期自動入帳" />
       )}
       {!isLoading && !error && items.length > 0 && (
         <ul className="flex flex-col gap-3">

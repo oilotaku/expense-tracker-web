@@ -6,6 +6,7 @@ import type { SerializedError } from '@reduxjs/toolkit'
 import { baseApi } from '@/lib/api/baseApi'
 import { unwrapData, type ApiResponse } from '@/lib/api/types'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { Dialog } from '@/components/common/Dialog'
 import {
@@ -391,6 +392,7 @@ export function TransactionList(): ReactNode {
     data,
     isLoading,
     error: listError,
+    refetch: refetchList,
   } = useListTransactionsQuery({
     category_uid: filters.categoryUid || undefined,
     date_from: filters.dateFrom ? dateFromStartOfDayIso(filters.dateFrom) : undefined,
@@ -540,14 +542,17 @@ export function TransactionList(): ReactNode {
         </div>
       </Dialog>
 
-      {isLoading && <p className="text-text-secondary">載入中…</p>}
+      {isLoading && <LoadingState rows={5} />}
       {listError && (
-        <p role="alert" className="text-sm text-danger-700">
-          {getErrorMessage(listError)}
-        </p>
+        <ErrorState
+          message={getErrorMessage(listError)}
+          onRetry={() => {
+            void refetchList()
+          }}
+        />
       )}
       {!isLoading && !listError && items.length === 0 && (
-        <p className="text-text-secondary">沒有符合條件的交易</p>
+        <EmptyState title="沒有符合條件的交易" description="調整上方篩選，或按「＋」記一筆" />
       )}
 
       {!isLoading && !listError && items.length > 0 && (

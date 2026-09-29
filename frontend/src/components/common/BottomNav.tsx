@@ -76,7 +76,7 @@ export function BottomNav({ items, moreItems, onAddClick, onLogout }: BottomNavP
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 flex h-20 items-stretch border-t border-border bg-surface md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex h-[calc(5rem+env(safe-area-inset-bottom))] items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label="行動導覽"
       >
         {leftItems.map((item) => (

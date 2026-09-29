@@ -45,7 +45,8 @@ export function Dialog({ open, onOpenChange, title, description, children, class
             <div className="fixed inset-0 z-50 flex flex-col items-stretch justify-end md:items-center md:justify-center md:p-4">
               <RadixDialog.Content asChild forceMount>
                 <motion.div
-                  className={`relative max-h-[90dvh] w-full overflow-y-auto rounded-t-xl bg-surface p-6 shadow-float md:max-w-md md:rounded-xl ${className ?? ''}`}
+                  // 行動端 BottomSheet 貼齊螢幕底，底部 padding 多加 safe-area 避開 iPhone Home 橫條
+                  className={`relative max-h-[90dvh] w-full overflow-y-auto rounded-t-xl bg-surface p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-float md:max-w-md md:rounded-xl md:pb-6 ${className ?? ''}`}
                   initial={reducedMotion ? false : { opacity: 0, y: '12%', scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={reducedMotion ? undefined : { opacity: 0, y: '12%', scale: 0.98 }}

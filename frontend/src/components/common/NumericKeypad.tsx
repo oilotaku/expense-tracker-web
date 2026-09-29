@@ -446,7 +446,8 @@ export function NumericKeypad(props: NumericKeypadProps): ReactNode {
   const preview = exprHasOperator ? evaluateAmountExpression(expr) : ''
 
   return (
-    <div className={`flex flex-col gap-2 [padding-bottom:env(safe-area-inset-bottom)] ${className ?? ''}`}>
+    // 金額模式只用在 <Dialog> 內，safe-area 由 Dialog 的底部 padding 處理，這裡不再自己加（避免疊加兩次）
+    <div className={`flex flex-col gap-2 ${className ?? ''}`}>
       <input
         ref={inputRef}
         id={inputId}

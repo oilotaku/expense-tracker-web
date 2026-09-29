@@ -6,6 +6,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { usePriceColorPreference } from '@/hooks/usePriceColorPreference'
@@ -158,10 +159,10 @@ function StockAssetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">數量</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.0001"
-            step="0.0001"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -181,10 +182,10 @@ function StockAssetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">本金</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             value={principalAmount}
             onChange={(event) => setPrincipalAmount(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -257,10 +258,10 @@ function UsStockAssetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">數量（股）</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.0001"
-            step="0.0001"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -269,10 +270,10 @@ function UsStockAssetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">本金（新台幣）</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             value={principalAmount}
             onChange={(event) => setPrincipalAmount(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -340,10 +341,10 @@ function MetalAssetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">數量</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.0001"
-            step="0.0001"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -363,10 +364,10 @@ function MetalAssetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">本金</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             value={principalAmount}
             onChange={(event) => setPrincipalAmount(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -426,10 +427,10 @@ function LiabilityForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">金額</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -438,9 +439,9 @@ function LiabilityForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">利率（%，選填）</span>
           <input
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             value={interestRate}
             onChange={(event) => setInterestRate(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -580,10 +581,10 @@ function FinancialAssetRow({ asset, gainPercent }: FinancialAssetRowProps): Reac
         <label className="flex flex-1 flex-col gap-1">
           <span className="text-sm text-text-secondary">數量</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.0001"
-            step="0.0001"
             aria-label={`${asset.name} 數量`}
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
@@ -609,10 +610,10 @@ function FinancialAssetRow({ asset, gainPercent }: FinancialAssetRowProps): Reac
       <label className="flex flex-col gap-1">
         <span className="text-sm text-text-secondary">本金</span>
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
           required
-          min="0.01"
-          step="0.01"
           aria-label={`${asset.name} 本金`}
           value={principalAmount}
           onChange={(event) => setPrincipalAmount(event.target.value)}
@@ -648,7 +649,7 @@ function FinancialAssetRow({ asset, gainPercent }: FinancialAssetRowProps): Reac
 }
 
 function FinancialAssetList(): ReactNode {
-  const { data, isLoading, error } = useListFinancialAssetsQuery()
+  const { data, isLoading, error, refetch } = useListFinancialAssetsQuery()
   const items = data?.items ?? []
   // 漲跌幅是另一支彙總 API（會打外部報價來源，可能 424），跟資產 CRUD 分開查、失敗互不影響：
   // 報價暫時不可用時只是不顯示漲跌幅徽章，不影響資產清單本身正常顯示（→ task-014/016 既有分工）。
@@ -661,14 +662,17 @@ function FinancialAssetList(): ReactNode {
     <CurvedCard>
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold text-text-primary">金融資產清單</h2>
-        {isLoading && <p className="text-text-secondary">載入中…</p>}
+        {isLoading && <LoadingState />}
         {error && (
-          <p role="alert" className="text-sm text-danger-700">
-            {getErrorMessage(error)}
-          </p>
+          <ErrorState
+            message={getErrorMessage(error)}
+            onRetry={() => {
+              void refetch()
+            }}
+          />
         )}
         {!isLoading && !error && items.length === 0 && (
-          <p className="text-text-secondary">尚未新增任何金融資產</p>
+          <EmptyState title="尚未新增任何金融資產" description="用上方表單登記持股或貴金屬，淨資產才會算進去" />
         )}
         {!isLoading && !error && items.length > 0 && (
           <div className="flex flex-col gap-2">
@@ -855,10 +859,10 @@ function LiabilityRecurringSection({ liability }: { liability: LiabilityResponse
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">每期還款金額</span>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               required
-              min="0.01"
-              step="0.01"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
               className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -976,9 +980,9 @@ function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactN
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">還款金額</span>
             <input
-              type="number"
-              min="0.01"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               aria-label={`${liability.name} 還款金額`}
               value={paymentAmount}
               onChange={(event) => setPaymentAmount(event.target.value)}
@@ -1054,7 +1058,7 @@ function LiabilityRow({ liability, onRequestDelete }: LiabilityRowProps): ReactN
 }
 
 function LiabilityList(): ReactNode {
-  const { data, isLoading, error } = useListLiabilitiesQuery()
+  const { data, isLoading, error, refetch } = useListLiabilitiesQuery()
   const items = data?.items ?? []
   const [pendingDelete, setPendingDelete] = useState<LiabilityResponse | null>(null)
   const [deleteLiability, { isLoading: isDeleting }] = useDeleteLiabilityMutation()
@@ -1073,14 +1077,17 @@ function LiabilityList(): ReactNode {
     <CurvedCard>
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold text-text-primary">負債清單</h2>
-        {isLoading && <p className="text-text-secondary">載入中…</p>}
+        {isLoading && <LoadingState />}
         {error && (
-          <p role="alert" className="text-sm text-danger-700">
-            {getErrorMessage(error)}
-          </p>
+          <ErrorState
+            message={getErrorMessage(error)}
+            onRetry={() => {
+              void refetch()
+            }}
+          />
         )}
         {!isLoading && !error && items.length === 0 && (
-          <p className="text-text-secondary">尚未新增任何負債</p>
+          <EmptyState title="尚未新增任何負債" description="有學貸、信貸可在上方登記，淨資產會扣掉" />
         )}
         {!isLoading && !error && items.length > 0 && (
           <div className="flex flex-col gap-2">

@@ -5,6 +5,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { Dialog } from '@/components/common/Dialog'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CHART_SWATCH_COLORS, ColorSwatchPicker } from '@/components/common/ColorSwatchPicker'
@@ -113,9 +114,10 @@ function AccountCreateDialog({ open, defaultColor, onOpenChange }: AccountCreate
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">起始餘額</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            step="0.01"
             value={balance}
             onChange={(event) => setBalance(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -161,7 +163,7 @@ function AccountCreateDialog({ open, defaultColor, onOpenChange }: AccountCreate
 }
 
 export default function AccountsPage(): ReactNode {
-  const { data, isLoading, error } = useListAccountsQuery()
+  const { data, isLoading, error, refetch } = useListAccountsQuery()
   const accounts = useMemo(() => data?.items ?? [], [data])
   // design-spec §1 [A4]：現金/銀行帳戶通用，系統至少保留 1 個帳戶；只剩最後一個時刪除保護生效。
   const isOnlyAccount = accounts.length <= 1
@@ -233,14 +235,17 @@ export default function AccountsPage(): ReactNode {
             </button>
           </div>
 
-          {isLoading && <p className="text-text-secondary">載入中…</p>}
+          {isLoading && <LoadingState />}
           {error && (
-            <p role="alert" className="text-sm text-danger-700">
-              {getErrorMessage(error)}
-            </p>
+            <ErrorState
+              message={getErrorMessage(error)}
+              onRetry={() => {
+                void refetch()
+              }}
+            />
           )}
           {!isLoading && !error && accounts.length === 0 && (
-            <p className="text-text-secondary">尚未建立任何帳戶</p>
+            <EmptyState title="尚未建立任何帳戶" description="先新增一個帳戶（例如：現金、常用的銀行），才能記帳" />
           )}
           {!isLoading && !error && accounts.length > 0 && (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">

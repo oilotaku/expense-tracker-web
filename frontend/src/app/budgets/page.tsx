@@ -6,6 +6,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import type { SerializedError } from '@reduxjs/toolkit'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppShell } from '@/components/common/AppShell'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { useListCategoryOptionsQuery } from '@/lib/api/transactionsApi'
@@ -180,10 +181,10 @@ function BudgetForm(): ReactNode {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">上限金額</span>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             required
-            min="0.01"
-            step="0.01"
             value={limitAmount}
             onChange={(event) => setLimitAmount(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
@@ -214,7 +215,7 @@ interface BudgetProgressCardProps {
 // AccountCard 那樣把 mutation 呼叫拉到父層——這裡沒有「同時追蹤哪張卡片正在儲存」的需求
 // （RTK Query 的 mutation hook 本身的 isLoading 已經是「這個元件實例」專屬，不會互相干擾）。
 function BudgetProgressCard({ budget, categoryName }: BudgetProgressCardProps): ReactNode {
-  const { data: summary, isLoading, error } = useGetBudgetSummaryQuery(budget.budget_uid)
+  const { data: summary, isLoading, error, refetch } = useGetBudgetSummaryQuery(budget.budget_uid)
   const [updateBudget, { isLoading: isUpdating }] = useUpdateBudgetMutation()
   const [deleteBudget, { isLoading: isDeleting }] = useDeleteBudgetMutation()
 
@@ -289,9 +290,9 @@ function BudgetProgressCard({ budget, categoryName }: BudgetProgressCardProps): 
           <label className="flex flex-col gap-1">
             <span className="text-sm text-text-secondary">上限金額</span>
             <input
-              type="number"
-              min="0.01"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               disabled={isUpdating}
               value={draftLimit}
               onChange={(event) => setDraftLimit(event.target.value)}
@@ -307,11 +308,14 @@ function BudgetProgressCard({ budget, categoryName }: BudgetProgressCardProps): 
           </label>
         </div>
       )}
-      {isLoading && <p className="text-sm text-text-secondary">載入中…</p>}
+      {isLoading && <LoadingState rows={1} />}
       {error && (
-        <p role="alert" className="text-sm text-danger-700">
-          {getErrorMessage(error)}
-        </p>
+        <ErrorState
+          message={getErrorMessage(error)}
+          onRetry={() => {
+            void refetch()
+          }}
+        />
       )}
       {summary && (
         <>
@@ -353,7 +357,7 @@ function BudgetProgressCard({ budget, categoryName }: BudgetProgressCardProps): 
 
 function BudgetProgressList(): ReactNode {
   const { data: categories } = useListCategoryOptionsQuery()
-  const { data, isLoading, error } = useListBudgetsQuery()
+  const { data, isLoading, error, refetch } = useListBudgetsQuery()
 
   const categoryNameByUid = new Map((categories ?? []).map((c) => [c.category_uid, c.name]))
   const items = data?.items ?? []
@@ -361,14 +365,17 @@ function BudgetProgressList(): ReactNode {
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold text-text-primary">預算進度</h2>
-      {isLoading && <p className="text-text-secondary">載入中…</p>}
+      {isLoading && <LoadingState />}
       {error && (
-        <p role="alert" className="text-sm text-danger-700">
-          {getErrorMessage(error)}
-        </p>
+        <ErrorState
+          message={getErrorMessage(error)}
+          onRetry={() => {
+            void refetch()
+          }}
+        />
       )}
       {!isLoading && !error && items.length === 0 && (
-        <p className="text-text-secondary">尚未設定預算</p>
+        <EmptyState title="尚未設定預算" description="用上方表單為常花的分類設一個每月上限" />
       )}
       {!isLoading && !error && items.length > 0 && (
         <ul className="flex flex-col gap-3">

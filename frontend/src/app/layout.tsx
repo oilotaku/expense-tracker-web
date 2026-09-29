@@ -21,6 +21,8 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
+  // iPhone 加入主畫面後全螢幕顯示，讓 env(safe-area-inset-*) 有值，底部導覽與抽屜才能避開 Home 橫條
+  viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#faf8fc' },
     { media: '(prefers-color-scheme: dark)', color: '#1c1826' },
