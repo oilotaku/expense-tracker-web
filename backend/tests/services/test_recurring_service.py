@@ -418,3 +418,31 @@ class TestGenerateDueTransactionsSkipsInactiveRules:
         assert generated == []
         _, total = await TransactionRepository(db).list_by_user_uid(user_uid)
         assert total == 0
+
+
+class TestDeletedAccount:
+    async def test_skips_rule_bound_to_soft_deleted_account(self, db: AsyncSession) -> None:
+        # 2026-10-01 實際事故：帳戶已刪除，規則仍把交易記進使用者看不到的帳戶
+        user_uid = await _make_user(db, "recurring-deleted-acct@example.com")
+        deleted_account = await _make_account(db, user_uid)
+        live_account = await _make_account(db, user_uid)
+        category_uid = await _make_category(db, user_uid)
+        await _make_rule(
+            db,
+            user_uid=user_uid,
+            account_uid=deleted_account,
+            category_uid=category_uid,
+            day_of_month=1,
+        )
+        await _make_rule(
+            db,
+            user_uid=user_uid,
+            account_uid=live_account,
+            category_uid=category_uid,
+            day_of_month=1,
+        )
+        assert await AccountRepository(db).soft_delete(deleted_account, user_uid)
+
+        generated = await RecurringService(db).generate_due_transactions(as_of=date(2026, 10, 1))
+
+        assert [t.account_uid for t in generated] == [live_account]

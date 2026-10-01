@@ -9,6 +9,7 @@ from app.core.exceptions import NotFoundError
 from app.core.response import success
 from app.models.user import User
 from app.repositories.account_repository import AccountRepository
+from app.repositories.recurring_rule_repository import RecurringRuleRepository
 from app.schemas.account import (
     AccountCreateRequest,
     AccountListResponse,
@@ -108,4 +109,6 @@ async def delete_account(
     deleted = await AccountRepository(db).soft_delete(account_uid, current_user.user_uid)
     if not deleted:
         raise NotFoundError("帳戶不存在")
+    # 綁在此帳戶上的週期性規則改為暫停，避免之後的交易記進已刪除的帳戶
+    await RecurringRuleRepository(db).pause_by_account_uid(account_uid, current_user.user_uid)
     return success(data=None)

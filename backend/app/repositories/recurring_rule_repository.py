@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.recurring_rule import RecurringIntervalUnit, RecurringRule
 from app.models.transaction import TransactionType
 
@@ -126,15 +127,41 @@ class RecurringRuleRepository:
             rule.updated_by = deleted_by
         await self.db.flush()
 
-    async def list_pending_for_year_month(self, year_month: str) -> Sequence[RecurringRule]:
-        """回傳尚未於該年月產生過交易、且未被使用者暫停的規則（含從未產生過）；
-        是否到期（含月底夾日）交給呼叫端判斷。"""
+    async def pause_by_account_uid(self, account_uid: UUID, user_uid: UUID) -> int:
+        """帳戶刪除時連動暫停綁在該帳戶上的規則，回傳暫停筆數。
+
+        刻意暫停而非軟刪：規則本身仍有意義，使用者改選帳戶後即可重新啟用。
+        """
         stmt = select(RecurringRule).where(
+            RecurringRule.account_uid == account_uid,
+            RecurringRule.user_uid == user_uid,
             RecurringRule.is_deleted.is_(False),
             RecurringRule.is_active.is_(True),
-            or_(
-                RecurringRule.last_generated_year_month.is_(None),
-                RecurringRule.last_generated_year_month != year_month,
-            ),
+        )
+        rules = (await self.db.execute(stmt)).scalars().all()
+        for rule in rules:
+            rule.is_active = False
+            rule.updated_by = user_uid
+        await self.db.flush()
+        return len(rules)
+
+    async def list_pending_for_year_month(self, year_month: str) -> Sequence[RecurringRule]:
+        """回傳尚未於該年月產生過交易、且未被使用者暫停的規則（含從未產生過）；
+        是否到期（含月底夾日）交給呼叫端判斷。
+
+        綁在已刪除帳戶上的規則一律排除，否則交易會記進使用者看不到的帳戶。
+        """
+        stmt = (
+            select(RecurringRule)
+            .join(Account, Account.account_uid == RecurringRule.account_uid)
+            .where(
+                Account.is_deleted.is_(False),
+                RecurringRule.is_deleted.is_(False),
+                RecurringRule.is_active.is_(True),
+                or_(
+                    RecurringRule.last_generated_year_month.is_(None),
+                    RecurringRule.last_generated_year_month != year_month,
+                ),
+            )
         )
         return (await self.db.execute(stmt)).scalars().all()

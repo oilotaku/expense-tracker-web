@@ -380,3 +380,39 @@ async def test_pause_and_resume_rule_via_patch(client: AsyncClient) -> None:
     )
     assert resume_res.status_code == 200
     assert resume_res.json()["data"]["is_active"] is True
+
+
+async def test_deleting_account_pauses_its_recurring_rules(client: AsyncClient) -> None:
+    await _register_and_login(client, "recur-del-acct@example.com")
+    account_uid, category_uid = await _make_account_and_category(client)
+    other_res = await client.post(
+        "/api/v1/accounts",
+        json={"name": "其他", "balance": "0.00", "color": "#8B6ED6", "icon": "wallet"},
+    )
+    other_account_uid = other_res.json()["data"]["account_uid"]
+
+    rule_uids = {}
+    for acct in (account_uid, other_account_uid):
+        res = await client.post(
+            "/api/v1/recurring-rules",
+            json={
+                "account_uid": acct,
+                "category_uid": category_uid,
+                "description": "月票",
+                "amount": "1200.00",
+                "transaction_type": "expense",
+                "payment_method": "信用卡",
+                "anchor_date": "2026-10-01",
+            },
+        )
+        assert res.status_code == 201
+        rule_uids[acct] = res.json()["data"]["recurring_rule_uid"]
+
+    del_res = await client.delete(f"/api/v1/accounts/{account_uid}")
+    assert del_res.status_code == 200
+
+    list_res = await client.get("/api/v1/recurring-rules")
+    items = {item["recurring_rule_uid"]: item for item in list_res.json()["data"]["items"]}
+    # 規則保留但暫停，使用者改選帳戶後可重新啟用；其他帳戶的規則不受影響
+    assert items[rule_uids[account_uid]]["is_active"] is False
+    assert items[rule_uids[other_account_uid]]["is_active"] is True
