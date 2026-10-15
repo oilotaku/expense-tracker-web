@@ -22,6 +22,7 @@ import {
   useUpdateFinancialAssetMutation,
   type AssetType,
   type FinancialAssetResponse,
+  type FundUnit,
   type LiabilityResponse,
   type MetalUnit,
   type StockUnit,
@@ -292,6 +293,96 @@ function UsStockAssetForm(): ReactNode {
   )
 }
 
+function FundAssetForm(): ReactNode {
+  const [createFinancialAsset, { isLoading, error }] = useCreateFinancialAssetMutation()
+  const toast = useToast()
+
+  const [name, setName] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [principalAmount, setPrincipalAmount] = useState('')
+  const existing = useExistingAsset('fund', name)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    try {
+      const created = await createFinancialAsset({
+        asset_type: 'fund',
+        // 鉅亨網代號區分大小寫與逗號，原樣送出、只去頭尾空白（→ ADR-0005）
+        name: name.trim(),
+        input_quantity: quantity,
+        // 基金只有「單位」一種單位（→ ADR-0005），不提供選單
+        input_unit: '單位',
+        principal_amount: principalAmount,
+      }).unwrap()
+      toast.success(assetSavedMessage(existing, created))
+      setName('')
+      setQuantity('')
+      setPrincipalAmount('')
+    } catch {
+      // 錯誤已透過 createFinancialAsset() 的 error 狀態顯示，這裡只需擋掉 unwrap() 的 rejection
+    }
+  }
+
+  return (
+    <CurvedCard>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        <h2 className="text-lg font-semibold text-text-primary">新增基金持有</h2>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">基金代號</span>
+          <input
+            type="text"
+            required
+            maxLength={100}
+            placeholder="例：A16003 或 B16,009"
+            pattern="[A-Za-z0-9]{2,7}(,[A-Za-z0-9]{1,4})?"
+            title="請照鉅亨網基金頁的代號輸入，例如 A16003 或 B16,009"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <MergeHint existing={existing} />
+        <p className="-mt-2 text-xs text-text-secondary">
+          請照鉅亨網基金頁（fund.cnyes.com）網址裡的代號輸入，境外基金含逗號（例：B16,009）；
+          輸入基金名稱會查不到淨值
+        </p>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">數量（單位）</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            required
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-text-secondary">本金（新台幣）</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            required
+            value={principalAmount}
+            onChange={(event) => setPrincipalAmount(event.target.value)}
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-text-primary"
+          />
+        </label>
+        {error && (
+          <p role="alert" className="text-sm text-danger-700">
+            {getErrorMessage(error)}
+          </p>
+        )}
+        <button type="submit" disabled={isLoading} className={submitButtonClassName({ isLoading })}>
+          {isLoading ? '送出中…' : '新增基金'}
+        </button>
+      </form>
+    </CurvedCard>
+  )
+}
+
 function MetalAssetForm(): ReactNode {
   const [createFinancialAsset, { isLoading, error }] = useCreateFinancialAssetMutation()
   const toast = useToast()
@@ -464,6 +555,7 @@ const ASSET_TYPE_LABEL: Record<AssetType, string> = {
   stock: '台股',
   us_stock: '美股',
   metal: '貴金屬',
+  fund: '基金',
 }
 
 function financialAssetTypeLabel(asset: FinancialAssetResponse): string {
@@ -472,10 +564,13 @@ function financialAssetTypeLabel(asset: FinancialAssetResponse): string {
 
 // 單位選項依該筆資產固定的 asset_type 決定（backend/app/utils/unit_conversion.py），asset_type
 // 本身不可編輯，故編輯表單不提供 asset_type 控制項。美股沒有「張」的整手概念，只有「股」
-// （使用者確認，本次 session；→ ADR-0003）。
-function unitOptionsFor(assetType: AssetType): readonly (StockUnit | UsStockUnit | MetalUnit)[] {
+// （使用者確認，本次 session；→ ADR-0003）；基金只有「單位」（→ ADR-0005）。
+function unitOptionsFor(
+  assetType: AssetType,
+): readonly (StockUnit | UsStockUnit | MetalUnit | FundUnit)[] {
   if (assetType === 'stock') return ['張', '股'] as const
   if (assetType === 'us_stock') return ['股'] as const
+  if (assetType === 'fund') return ['單位'] as const
   return ['兩', '錢'] as const
 }
 
@@ -502,15 +597,15 @@ function FinancialAssetRow({ asset, gainPercent }: FinancialAssetRowProps): Reac
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName] = useState(asset.name)
   const [quantity, setQuantity] = useState(asset.input_quantity)
-  const [unit, setUnit] = useState<StockUnit | UsStockUnit | MetalUnit>(
-    asset.input_unit as StockUnit | UsStockUnit | MetalUnit,
+  const [unit, setUnit] = useState<StockUnit | UsStockUnit | MetalUnit | FundUnit>(
+    asset.input_unit as StockUnit | UsStockUnit | MetalUnit | FundUnit,
   )
   const [principalAmount, setPrincipalAmount] = useState(asset.principal_amount ?? '')
 
   function startEdit(): void {
     setName(asset.name)
     setQuantity(asset.input_quantity)
-    setUnit(asset.input_unit as StockUnit | UsStockUnit | MetalUnit)
+    setUnit(asset.input_unit as StockUnit | UsStockUnit | MetalUnit | FundUnit)
     setPrincipalAmount(asset.principal_amount ?? '')
     setIsEditing(true)
   }
@@ -596,7 +691,7 @@ function FinancialAssetRow({ asset, gainPercent }: FinancialAssetRowProps): Reac
           <select
             aria-label={`${asset.name} 單位`}
             value={unit}
-            onChange={(event) => setUnit(event.target.value as StockUnit | UsStockUnit | MetalUnit)}
+            onChange={(event) => setUnit(event.target.value as StockUnit | UsStockUnit | MetalUnit | FundUnit)}
             className="min-h-11 rounded-md border border-border bg-surface px-2 text-text-primary"
           >
             {unitOptionsFor(asset.asset_type).map((option) => (
@@ -1122,6 +1217,7 @@ export default function AssetsPage(): ReactNode {
           <h1 className="text-2xl font-bold text-text-primary md:text-3xl">資產 / 負債</h1>
           <StockAssetForm />
           <UsStockAssetForm />
+          <FundAssetForm />
           <MetalAssetForm />
           <LiabilityForm />
           <FinancialAssetList />

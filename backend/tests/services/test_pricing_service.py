@@ -1,7 +1,8 @@
 """PricingService：cache-aside 是否真的避免重打外部 API，以及貴金屬換算公式。
 
 外部 HTTP 一律用 `respx` mock（→ AGENTS.md § Testing），**禁**真打 TWSE / gold-api /
-open.er-api.com / query1.finance.yahoo.com。Redis 走真實測試實例（→ CACHE-026），db index 1
+open.er-api.com / query1.finance.yahoo.com / fund.api.cnyes.com。Redis 走真實測試實例
+（→ CACHE-026），db index 1
 （與 production 的 db 0 隔開），測試前後清掉本檔用到的 `price:*` key（**禁**
 `FLUSHALL`/`FLUSHDB`，即使是測試 fixture 也一樣，→ CACHE-017）。
 """
@@ -15,11 +16,13 @@ import pytest
 import respx
 from redis.asyncio import Redis
 
+from app.clients.fund_nav_client import FundNavNotFoundError
 from app.clients.stock_price_client import TwseMisNotFoundError
 from app.clients.us_stock_price_client import UsStockPriceNotFoundError
 from app.core.cache import create_redis
 from app.core.config import get_settings
 from app.services.pricing_service import (
+    FUND_NAV_TTL_SECONDS,
     GRAMS_PER_TAEL,
     MACE_PER_TAEL,
     METAL_PRICE_TTL_SECONDS,
@@ -27,6 +30,7 @@ from app.services.pricing_service import (
     TROY_OUNCE_GRAMS,
     US_STOCK_QUOTE_TTL_SECONDS,
     PricingService,
+    _fund_nav_key,
     _fx_rate_key,
     _metal_price_key,
     _stock_quote_key,
@@ -323,6 +327,76 @@ async def test_us_stock_price_not_found_returns_404(redis_client: Redis) -> None
 
     with pytest.raises(UsStockPriceNotFoundError):
         await service.get_us_stock_price("ZZZZZ")
+
+
+@respx.mock
+async def test_fund_price_cache_prevents_second_external_call_and_converts_to_twd(
+    redis_client: Redis,
+) -> None:
+    """境外基金（EUR 級別）：淨值取 `items.nav[0]`，用 EUR→TWD 匯率換算；代號含逗號原樣放路徑
+    （→ ADR-0005）。"""
+    nav_route = respx.get("https://fund.api.cnyes.com/fund/api/v1/funds/B16,009/nav").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "items": {
+                    "cnyesId": "B16,009",
+                    "nav": [41.48, 41.23],
+                    "classCurrency": "EUR",
+                    "displayNameLocal": "景順全歐洲小型企業基金",
+                }
+            },
+        )
+    )
+    fx_route = respx.get("https://open.er-api.com/v6/latest/EUR").mock(
+        return_value=httpx.Response(
+            200, json={"result": "success", "base_code": "EUR", "rates": {"TWD": 34.2}}
+        )
+    )
+    service = PricingService(redis=redis_client)
+
+    price1 = await service.get_fund_price("B16,009")
+    price2 = await service.get_fund_price("B16,009")
+
+    assert price1 == price2 == Decimal("41.48") * Decimal("34.2")
+    assert nav_route.call_count == 1
+    assert fx_route.call_count == 1
+
+    ttl = await redis_client.ttl(_fund_nav_key("B16,009"))
+    assert 0 < ttl <= FUND_NAV_TTL_SECONDS
+
+
+@respx.mock
+async def test_fund_price_twd_fund_skips_exchange_rate(redis_client: Redis) -> None:
+    nav_route = respx.get("https://fund.api.cnyes.com/fund/api/v1/funds/A16003/nav").mock(
+        return_value=httpx.Response(
+            200, json={"items": {"cnyesId": "A16003", "nav": [528.95], "classCurrency": "TWD"}}
+        )
+    )
+    fx_route = respx.get("https://open.er-api.com/v6/latest/TWD").mock(
+        return_value=httpx.Response(200, json={"result": "success", "rates": {"TWD": 1}})
+    )
+    service = PricingService(redis=redis_client)
+
+    price = await service.get_fund_price("A16003")
+
+    assert price == Decimal("528.95")
+    assert nav_route.call_count == 1
+    assert fx_route.call_count == 0
+
+
+@respx.mock
+async def test_fund_price_not_found_returns_404(redis_client: Redis) -> None:
+    """代號格式不符鉅亨網 cnyesId 時端點回 404 HTML（非 JSON），要對應成 404（→ ADR-0005）。"""
+    respx.get("https://fund.api.cnyes.com/fund/api/v1/funds/A16,003/nav").mock(
+        return_value=httpx.Response(
+            404, text="<html><body>404</body></html>", headers={"content-type": "text/html"}
+        )
+    )
+    service = PricingService(redis=redis_client)
+
+    with pytest.raises(FundNavNotFoundError):
+        await service.get_fund_price("A16,003")
 
 
 @respx.mock

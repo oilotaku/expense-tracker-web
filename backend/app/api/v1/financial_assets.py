@@ -22,9 +22,11 @@ from app.schemas.financial_asset import (
 )
 from app.schemas.response import ApiResponse
 from app.utils.unit_conversion import (
+    FundUnit,
     MetalUnit,
     StockUnit,
     UsStockUnit,
+    fund_to_units,
     metal_to_mace,
     stock_to_shares,
     us_stock_to_shares,
@@ -44,6 +46,8 @@ def _to_base_quantity(asset_type: AssetType, quantity: Decimal, unit: str) -> De
         return stock_to_shares(quantity, StockUnit(unit))
     if asset_type == "us_stock":
         return us_stock_to_shares(quantity, UsStockUnit(unit))
+    if asset_type == "fund":
+        return fund_to_units(quantity, FundUnit(unit))
     return metal_to_mace(quantity, MetalUnit(unit))
 
 
@@ -51,6 +55,7 @@ _BASE_UNIT: dict[str, str] = {
     "stock": StockUnit.SHARE.value,
     "us_stock": UsStockUnit.SHARE.value,
     "metal": MetalUnit.MACE.value,
+    "fund": FundUnit.UNIT.value,
 }
 
 

@@ -1,9 +1,9 @@
 """淨資產彙總服務：帳戶餘額加總 + 金融資產市值（呼叫 task-014 `pricing_service`）－ 負債。
 
-金融資產市值 = `base_quantity`（股數 / 錢數，已由 task-013 換算完成，→
+金融資產市值 = `base_quantity`（股數 / 錢數 / 單位數，已由 task-013 換算完成，→
 `app/utils/unit_conversion.py` 模組頂註解）× 報價服務回傳的單位市價（台股／美股：每股價，
 美股已含 USD→TWD 換算，→ ADR-0003；貴金屬：每錢價，`pricing_service.get_metal_price_per_mace`
-已完成 troy oz → 錢的換算），此處不需再次換算。
+已完成 troy oz → 錢的換算；基金：每單位淨值，已換算成 TWD，→ ADR-0005），此處不需再次換算。
 
 貴金屬的 `financial_assets.name` 存的是品項名稱（例："黃金"），但
 `app.clients.metal_price_client.MetalSymbol` 只認 `XAU` / `XAG` 代碼；本檔維護兩者對應
@@ -21,7 +21,7 @@
 第一輪：報價 / 匯率查詢一律用 `asyncio.gather` 平行發起，不逐筆序列 `await`——序列寫法在
 Redis 快取未命中時（TTL 過期後第一次載入）會讓 `TwseMisClient` / `YahooFinanceClient` 各自
 的自我限速鎖（ADR-0001 ~1 req/2s、ADR-0003 1 req/s）在同一次請求內疊加等待，資產種類/檔數
-越多越慢。平行發起後，不同外部來源（台股／美股／貴金屬／匯率）彼此不互等。同時對
+越多越慢。平行發起後，不同外部來源（台股／美股／基金／貴金屬／匯率）彼此不互等。同時對
 `(asset_type, name)` 去重，同一標的分次持有時不重複打外部 API。
 
 第二輪（使用者實測回報「持有多檔不同股票時仍然很慢」）：第一輪的平行化對「同一來源、不同
@@ -31,7 +31,7 @@ Redis 快取未命中時（TTL 過期後第一次載入）會讓 `TwseMisClient`
 支援用 `|` 分隔多個股號一次查詢（2026-09-18 實測驗證，→ ADR-0001 補充 /
 `stock_price_client.py` 模組頂註解），不論持有幾檔股票都只需要最多 2 次外部呼叫（`tse_`
 一次、查無資料的再試 `otc_` 一次），而不是 N 次——`→ _fetch_stock_price_map` /
-`PricingService.get_stock_prices`。美股／貴金屬持有檔數通常很少，維持第一輪的逐檔平行查詢。
+`PricingService.get_stock_prices`。美股／基金／貴金屬持有檔數通常很少，維持第一輪的逐檔平行查詢。
 
 不論哪一輪，都用 `asyncio.gather(..., return_exceptions=True)` 手動找出第一個例外重新拋出，
 而非讓 `asyncio.gather` 直接拋——後者在有例外時不會等其他 still-pending 的 task，會留下
@@ -184,7 +184,7 @@ class NetWorthService:
         `PricingService.get_stock_prices` / ADR-0001 補充）——這是使用者回報「持有多檔不同
         股票時淨資產卡片仍然很慢」的根因：即使個別報價查詢平行發起，`TwseMisClient` 內部的
         自我限速鎖是同一個 client 實例共用，仍會把「同一來源、不同標的」的查詢序列化，只有
-        真正合併成一次外部請求才能避開。美股／貴金屬目前持有檔數通常很少（貴金屬固定只有
+        真正合併成一次外部請求才能避開。美股／基金／貴金屬目前持有檔數通常很少（貴金屬固定只有
         XAU/XAG 兩種符號），維持逐檔查詢，但彼此平行、且與股票批次查詢平行（模組頂註解
         「效能」段：不同來源彼此不互等）。
         """
@@ -217,7 +217,7 @@ class NetWorthService:
     async def _fetch_other_price_map(
         self, keys: Sequence[tuple[str, str]]
     ) -> dict[tuple[str, str], Decimal]:
-        """美股／貴金屬逐檔平行查詢（沿用去重 + gather 的既有寫法）。"""
+        """美股／基金／貴金屬逐檔平行查詢（沿用去重 + gather 的既有寫法）。"""
         if not keys:
             return {}
         results = await asyncio.gather(
@@ -237,9 +237,11 @@ class NetWorthService:
         return [result for result in results if isinstance(result, Decimal)]
 
     async def _get_unit_price(self, asset_type: str, name: str) -> Decimal:
-        """美股／貴金屬單價查詢（股票走 `_fetch_stock_price_map` 的批次路徑，不經此函式）。"""
+        """美股／基金／貴金屬單價查詢（股票走 `_fetch_stock_price_map` 的批次路徑，不經此函式）。"""
         if asset_type == "us_stock":
             return await self._call_pricing(self._pricing_service.get_us_stock_price(name))
+        if asset_type == "fund":
+            return await self._call_pricing(self._pricing_service.get_fund_price(name))
         symbol = _METAL_NAME_TO_SYMBOL.get(name)
         if symbol is None:
             raise UnsupportedMetalAssetError(name)

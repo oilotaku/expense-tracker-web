@@ -12,8 +12,10 @@ TTL 依 ADR 記載的自限速率設定：
 - 貴金屬現貨價（ADR-0002）：`METAL_PRICE_TTL_SECONDS` = 5 分鐘（每來源最多每 5 分鐘 1 次）。
 - 匯率（ADR-0002）：`FX_RATE_TTL_SECONDS`，`open.er-api.com` 每日才更新一次；美股 USD→TWD
   換算複用同一支 `_get_usd_twd_rate()`，不另開匯率快取。
+- 基金（ADR-0005）：`FUND_NAV_TTL_SECONDS` = 10 分鐘（淨值每日才更新一次）；非 TWD 級別用
+  同一套匯率快取（`get_exchange_rate`）換算。
 
-回傳的單價已是 `financial_assets.base_quantity`（股數 / 錢數）可直接相乘的基本單位市價，
+回傳的單價已是 `financial_assets.base_quantity`（股數 / 錢數 / 單位數）可直接相乘的基本單位市價，
 不需呼叫端再次換算（→ `app/utils/unit_conversion.py` 模組頂註解）。
 """
 
@@ -27,6 +29,7 @@ from typing import Final
 from pydantic import BaseModel, field_serializer
 from redis.asyncio import Redis
 
+from app.clients.fund_nav_client import CnyesFundClient
 from app.clients.metal_price_client import ExchangeRateClient, GoldApiClient, MetalSymbol
 from app.clients.stock_price_client import StockQuote, TwseMisClient
 from app.clients.us_stock_price_client import YahooFinanceClient
@@ -41,6 +44,7 @@ _VERSION: Final[str] = "v1"
 STOCK_QUOTE_TTL_SECONDS: Final[int] = 90  # ADR-0001：~1 req/2s 自限 + 可接受數分鐘延遲
 US_STOCK_QUOTE_TTL_SECONDS: Final[int] = 90  # ADR-0003：沿用同一數值
 METAL_PRICE_TTL_SECONDS: Final[int] = 300  # ADR-0002：每來源最多每 5 分鐘 1 次
+FUND_NAV_TTL_SECONDS: Final[int] = 600  # ADR-0005：淨值每日更新，10 分鐘足夠
 FX_RATE_TTL_SECONDS: Final[int] = 43200  # ADR-0002：open.er-api.com 每日更新一次，取 12 小時
 
 # 換算常數（ADR-0002）
@@ -55,6 +59,10 @@ def _stock_quote_key(ticker: str) -> str:
 
 def _us_stock_quote_key(ticker: str) -> str:
     return f"{_APP}:{_VERSION}:price:us_stock:{ticker}"
+
+
+def _fund_nav_key(fund_id: str) -> str:
+    return f"{_APP}:{_VERSION}:price:fund:{fund_id}"
 
 
 def _metal_price_key(symbol: MetalSymbol) -> str:
@@ -87,7 +95,7 @@ async def _set_cached_decimal(redis: Redis | None, key: str, value: Decimal, ttl
 
 
 class PricingService:
-    """股票 / 貴金屬報價服務，皆為純加速型快取（→ CACHE-007）。"""
+    """股票 / 基金 / 貴金屬報價服務，皆為純加速型快取（→ CACHE-007）。"""
 
     def __init__(
         self,
@@ -96,12 +104,14 @@ class PricingService:
         us_stock_client: YahooFinanceClient | None = None,
         gold_client: GoldApiClient | None = None,
         fx_client: ExchangeRateClient | None = None,
+        fund_client: CnyesFundClient | None = None,
     ) -> None:
         self._redis = redis
         self._stock_client = stock_client or TwseMisClient()
         self._us_stock_client = us_stock_client or YahooFinanceClient()
         self._gold_client = gold_client or GoldApiClient()
         self._fx_client = fx_client or ExchangeRateClient()
+        self._fund_client = fund_client or CnyesFundClient()
 
     async def get_stock_price(self, ticker: str) -> Decimal:
         """回傳台股每股市價（TWD）；命中快取 TTL 內不重打 TWSE MIS。"""
@@ -156,6 +166,21 @@ class PricingService:
         usd_twd_rate = await self._get_usd_twd_rate()
         price_twd = price_usd * usd_twd_rate
         await _set_cached_decimal(self._redis, key, price_twd, US_STOCK_QUOTE_TTL_SECONDS)
+        return price_twd
+
+    async def get_fund_price(self, fund_id: str) -> Decimal:
+        """回傳基金每單位淨值（TWD，非 TWD 級別已用匯率換算，→ ADR-0005）；命中快取 TTL 內
+        不重打鉅亨網。TWD 級別不查匯率。
+        """
+        key = _fund_nav_key(fund_id)
+        cached = await _get_cached_decimal(self._redis, key)
+        if cached is not None:
+            return cached
+        quote = await self._fund_client.get_nav(fund_id)
+        price_twd = quote.nav
+        if quote.currency != "TWD":
+            price_twd = quote.nav * await self.get_exchange_rate(quote.currency, "TWD")
+        await _set_cached_decimal(self._redis, key, price_twd, FUND_NAV_TTL_SECONDS)
         return price_twd
 
     async def get_metal_price_per_mace(self, symbol: MetalSymbol) -> Decimal:

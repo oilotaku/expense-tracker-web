@@ -280,6 +280,31 @@ describe('AssetsPage', () => {
     })
   })
 
+  it('送出基金表單觸發 createFinancialAsset mutation（asset_type: fund，代號原樣）', async () => {
+    render(<AssetsPage />)
+
+    fireEvent.change(screen.getByLabelText('基金代號'), { target: { value: 'B16,009' } })
+    const fundForm = getFormByHeading('新增基金持有')
+    fireEvent.change(within(fundForm).getByLabelText('數量（單位）'), {
+      target: { value: '10' },
+    })
+    fireEvent.change(within(fundForm).getByLabelText('本金（新台幣）'), {
+      target: { value: '10000' },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '新增基金' }))
+    })
+
+    expect(createFinancialAsset).toHaveBeenCalledWith({
+      asset_type: 'fund',
+      name: 'B16,009',
+      input_quantity: '10',
+      input_unit: '單位',
+      principal_amount: '10000',
+    })
+  })
+
   it('送出貴金屬表單觸發 createFinancialAsset mutation（asset_type: metal）', async () => {
     render(<AssetsPage />)
 
