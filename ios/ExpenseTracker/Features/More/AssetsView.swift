@@ -35,6 +35,7 @@ struct AssetsView: View {
     @State private var liabilities: [Liability] = []
     @State private var rules: [RecurringRule] = []
     @State private var gains: [UUID: Decimal] = [:]
+    @AppStorage("quoteSource") private var quoteSource = "device"
     @State private var error: String?
 
     @State private var showAddAsset = false
@@ -162,7 +163,12 @@ struct AssetsView: View {
         } catch {
             self.error = error.localizedDescription
         }
-        if let nw: NetWorth = try? await APIClient.shared.get("/net-worth") {
+        var nw: NetWorth?
+        if quoteSource == "device" {
+            nw = try? await QuoteService.shared.netWorth(accounts: state.accounts, assets: assets, liabilities: liabilities).netWorth
+        }
+        if nw == nil { nw = try? await APIClient.shared.get("/net-worth") }
+        if let nw {
             var g: [UUID: Decimal] = [:]
             for item in nw.assets { if let p = item.gain_percent { g[item.financial_asset_uid] = p.value } }
             gains = g

@@ -16,6 +16,7 @@ enum DashboardPeriod: String, CaseIterable, Identifiable {
 struct DashboardView: View {
     @Environment(AppState.self) private var state
     @AppStorage("chartType") private var chartType = "pie"
+    @AppStorage("quoteSource") private var quoteSource = "device"
 
     @State private var period: DashboardPeriod = .month
     @State private var anchor = Date()
@@ -27,6 +28,7 @@ struct DashboardView: View {
     @State private var trend: [TrendPoint] = []
     @State private var netWorth: NetWorth?
     @State private var netWorthError: String?
+    @State private var netWorthNote: String?
     @State private var recent: [Transaction] = []
     @State private var error: String?
 
@@ -427,6 +429,9 @@ struct DashboardView: View {
                     row("總資產", nw.total_assets.value, Theme.textPrimary)
                     row("總負債", nw.total_liabilities.value, Theme.expense)
                     row("淨資產", nw.net_worth.value, Theme.primary, bold: true)
+                    if let netWorthNote {
+                        Text(netWorthNote).font(.caption2).foregroundStyle(Theme.textMuted)
+                    }
                 }
             }
         }
@@ -482,8 +487,23 @@ struct DashboardView: View {
     }
 
     private func loadNetWorth() async {
+        var fallbackNote: String?
+        if quoteSource == "device" {
+            do {
+                async let a: ListResponse<FinancialAsset> = APIClient.shared.get("/financial-assets")
+                async let l: ListResponse<Liability> = APIClient.shared.get("/liabilities")
+                let r = try await QuoteService.shared.netWorth(accounts: state.accounts, assets: try await a.items, liabilities: try await l.items)
+                netWorth = r.netWorth
+                netWorthNote = r.staleSince.map { "報價：手機直抓（部分為 \(DateCoding.display($0, "M/d HH:mm")) 的快取）" } ?? "報價：手機直抓"
+                netWorthError = nil
+                return
+            } catch {
+                fallbackNote = "手機直抓失敗（\(error.localizedDescription)），改用伺服器報價"
+            }
+        }
         do {
             netWorth = try await APIClient.shared.get("/net-worth")
+            netWorthNote = fallbackNote ?? "報價：伺服器"
             netWorthError = nil
         } catch let e as APIError where e.status == 424 {
             netWorthError = "報價服務暫時無法使用，總資產 / 淨資產暫時無法計算，請稍後再試。"

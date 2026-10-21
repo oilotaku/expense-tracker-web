@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppState.self) private var state
     @AppStorage("defaultAccountUID") private var defaultAccountUID = ""
     @AppStorage("appearance") private var appearance = "system"
+    @AppStorage("quoteSource") private var quoteSource = "device"
 
     @State private var pinSheet: PinSheet.Mode?
     @State private var showServer = false
@@ -33,6 +34,19 @@ struct SettingsView: View {
                     Text("自動（現金 → 第一個）").tag("")
                     ForEach(state.accounts) { Text($0.name).tag($0.account_uid.uuidString) }
                 }
+            }
+
+            Section {
+                Picker("報價來源", selection: $quoteSource) {
+                    Text("手機直抓").tag("device")
+                    Text("伺服器").tag("server")
+                }
+                .pickerStyle(.segmented)
+                Button("清除報價快取") { Task { await QuoteService.shared.clearCache() } }
+            } header: {
+                Text("金融報價")
+            } footer: {
+                Text("手機直抓：用這台手機自己的網路向證交所、Yahoo、鉅亨網、gold-api、open.er-api 取價，不經過伺服器；失敗時自動改用伺服器報價。")
             }
 
             Section("外觀") {
