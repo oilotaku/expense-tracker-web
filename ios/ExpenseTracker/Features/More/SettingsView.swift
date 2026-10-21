@@ -45,7 +45,9 @@ struct SettingsView: View {
             }
 
             Section("伺服器") {
-                LabeledContent("位址", value: state.serverURL)
+                LabeledContent("位址") {
+                    Text(state.serverURL).lineLimit(1).truncationMode(.middle)
+                }
                 Button("變更伺服器") { showServer = true }
             }
 

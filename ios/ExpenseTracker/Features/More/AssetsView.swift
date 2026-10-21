@@ -55,7 +55,7 @@ struct AssetsView: View {
                             HStack(spacing: 6) {
                                 Text(a.asset_type.label).font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(Theme.primarySoft, in: Capsule()).foregroundStyle(Theme.primary)
-                                Text(a.name).font(.headline)
+                                Text(a.name).font(.headline).lineLimit(1)
                             }
                             Text("\(MoneyFormat.plain(a.input_quantity.value)) \(a.input_unit)・本金 \(a.principal_amount.map { MoneyFormat.number($0.value) } ?? "—")")
                                 .font(.caption).foregroundStyle(Theme.textSecondary)
@@ -105,7 +105,7 @@ struct AssetsView: View {
         let plan = rules.first { $0.liability_uid == l.liability_uid }
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(l.name).font(.headline)
+                Text(l.name).font(.headline).lineLimit(1)
                 Text("年利率 \(l.interest_rate.map { MoneyFormat.plain($0.value) + "%" } ?? "—")")
                     .font(.caption).foregroundStyle(Theme.textSecondary)
                 Spacer()

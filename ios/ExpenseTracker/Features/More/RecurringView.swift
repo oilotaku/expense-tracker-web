@@ -50,7 +50,7 @@ struct RecurringView: View {
         }
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(title).font(.headline)
+                Text(title).font(.headline).lineLimit(1)
                 if !r.is_active {
                     Text("已暫停").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Theme.sunken, in: Capsule())
@@ -150,7 +150,7 @@ struct RecurringFormView: View {
                     }
                 }
                 Section("週期") {
-                    Stepper("每 \(count) 個", value: $count, in: 1...99)
+                    Stepper(RecurringText.interval(unit, count, anchor: DateCoding.dayString(anchor)), value: $count, in: 1...99)
                     Picker("單位", selection: $unit) {
                         ForEach(IntervalUnit.allCases) { Text($0.label).tag($0) }
                     }

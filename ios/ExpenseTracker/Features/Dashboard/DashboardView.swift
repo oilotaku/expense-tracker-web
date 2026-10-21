@@ -79,11 +79,11 @@ struct DashboardView: View {
                 }
                 .padding(.horizontal, 8)
             case .custom:
-                HStack {
-                    DatePicker("", selection: $customFrom, displayedComponents: .date).labelsHidden()
-                    Text("至")
-                    DatePicker("", selection: $customTo, in: customFrom..., displayedComponents: .date).labelsHidden()
+                VStack(spacing: 6) {
+                    DatePicker("起始", selection: $customFrom, displayedComponents: .date)
+                    DatePicker("結束", selection: $customTo, in: customFrom..., displayedComponents: .date)
                 }
+                .font(.subheadline)
             }
         }
     }
@@ -234,6 +234,8 @@ struct DashboardView: View {
                     }
             }
             .chartXAxis(.hidden)
+            // leave room on the right for the amount annotations
+            .chartXScale(domain: 0...((data.map(\.amount).max() ?? 1) * 1.4))
             .frame(height: CGFloat(data.count) * 34 + 10)
         }
     }
@@ -274,8 +276,8 @@ struct DashboardView: View {
                 ForEach(state.accounts.prefix(4)) { a in
                     HStack {
                         ColorDot(hex: a.color)
-                        Text(a.name)
-                        Spacer()
+                        Text(a.name).lineLimit(1)
+                        Spacer(minLength: 8)
                         VStack(alignment: .trailing, spacing: 2) {
                             Text("\(MoneyFormat.number(a.balance.value)) \(a.currency.rawValue)")
                                 .font(.subheadline.monospacedDigit())
@@ -301,8 +303,8 @@ struct DashboardView: View {
                         Text("浮動資產").font(.subheadline.bold())
                         ForEach(nw.assets, id: \.financial_asset_uid) { a in
                             HStack {
-                                Text(a.name).font(.subheadline)
-                                Spacer()
+                                Text(a.name).font(.subheadline).lineLimit(1)
+                                Spacer(minLength: 8)
                                 Text(MoneyFormat.currency(a.market_value.value)).font(.subheadline.monospacedDigit())
                                 GainBadge(percent: a.gain_percent?.value)
                             }

@@ -43,11 +43,12 @@ struct TransactionRow: View {
                 IconBadge(icon: "other", color: Theme.chartOther, size: 34)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary)
+                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary).lineLimit(1)
                 Text(subtitle).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             Text(amountText)
+                .layoutPriority(1)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
                 .foregroundStyle(Theme.amountColor(transaction.transaction_type))
                 .lineLimit(1)

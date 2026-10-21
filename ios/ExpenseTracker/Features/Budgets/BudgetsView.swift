@@ -74,11 +74,12 @@ private struct BudgetRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 IconBadge(icon: cat?.icon ?? "other", color: cat?.color ?? Theme.chartOther, size: 30)
-                Text(cat?.name ?? "未分類").font(.headline)
+                Text(cat?.name ?? "未分類").font(.headline).lineLimit(1)
                 Text(budget.period_type.label).font(.caption).foregroundStyle(Theme.textMuted)
-                Spacer()
+                Spacer(minLength: 8)
                 Text("\(MoneyFormat.currency(Decimal(spent))) / \(MoneyFormat.currency(budget.limit_amount.value))")
                     .font(.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8).layoutPriority(1)
             }
             ProgressView(value: min(max(pct, 0), 100), total: 100).tint(color)
             Group {

@@ -182,14 +182,12 @@ struct TransactionFormView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("固定收支", isOn: $recurring)
                 if recurring {
-                    HStack {
-                        Text("每")
-                        Stepper("\(intervalCount)", value: $intervalCount, in: 1...99).fixedSize()
-                        Picker("", selection: $intervalUnit) {
-                            ForEach(IntervalUnit.allCases) { Text($0.label).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                    Picker("週期", selection: $intervalUnit) {
+                        ForEach(IntervalUnit.allCases) { Text($0.label).tag($0) }
                     }
+                    .pickerStyle(.segmented)
+                    Stepper(RecurringText.interval(intervalUnit, intervalCount, anchor: DateCoding.dayString(DateCoding.startOfDay(anchorDate))),
+                            value: $intervalCount, in: 1...99)
                     DatePicker("起算日", selection: $anchorDate, displayedComponents: .date)
                     Text("起算日是今天或更早會同時記下這一筆；之後由伺服器每天 01:00 依週期自動產生。")
                         .font(.caption).foregroundStyle(Theme.textMuted)
