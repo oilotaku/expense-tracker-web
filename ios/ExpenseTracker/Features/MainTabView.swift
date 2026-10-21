@@ -4,11 +4,18 @@ struct MainTabView: View {
     enum Tab: Hashable { case dashboard, transactions, add, budgets, more }
 
     @State private var tab: Tab = .dashboard
-    @State private var lastTab: Tab = .dashboard
     @State private var showAdd = false
 
+    /// The「記一筆」tab never becomes selected: tapping it only opens the sheet,
+    /// so the tab bar doesn't flash to an empty page and back.
+    private var selection: Binding<Tab> {
+        Binding(get: { tab }, set: { new in
+            if new == .add { showAdd = true } else { tab = new }
+        })
+    }
+
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: selection) {
             NavigationStack { DashboardView() }
                 .tabItem { Label("首頁", systemImage: "square.grid.2x2") }
                 .tag(Tab.dashboard)
@@ -24,14 +31,6 @@ struct MainTabView: View {
             NavigationStack { MoreView() }
                 .tabItem { Label("更多", systemImage: "ellipsis") }
                 .tag(Tab.more)
-        }
-        .onChange(of: tab) { _, new in
-            if new == .add {
-                showAdd = true
-                tab = lastTab
-            } else {
-                lastTab = new
-            }
         }
         .sheet(isPresented: $showAdd) {
             TransactionFormView(mode: .create)

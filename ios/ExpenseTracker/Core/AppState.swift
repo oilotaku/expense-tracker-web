@@ -8,8 +8,10 @@ final class AppState {
 
     var phase: Phase = .launching
     var user: User?
-    var accounts: [Account] = []
-    var categories: [Category] = []
+    var accounts: [Account] = [] { didSet { accountIndex = Dictionary(uniqueKeysWithValues: accounts.map { ($0.account_uid, $0) }) } }
+    var categories: [Category] = [] { didSet { categoryIndex = Dictionary(uniqueKeysWithValues: categories.map { ($0.category_uid, $0) }) } }
+    private var accountIndex: [UUID: Account] = [:]
+    private var categoryIndex: [UUID: Category] = [:]
     /// Bumped after any write so list screens know to reload.
     var revision = 0
 
@@ -77,8 +79,8 @@ final class AppState {
         Task { await reloadReferenceData() }
     }
 
-    func account(_ uid: UUID?) -> Account? { accounts.first { $0.account_uid == uid } }
-    func category(_ uid: UUID?) -> Category? { categories.first { $0.category_uid == uid } }
+    func account(_ uid: UUID?) -> Account? { uid.flatMap { accountIndex[$0] } }
+    func category(_ uid: UUID?) -> Category? { uid.flatMap { categoryIndex[$0] } }
 
     private func didLogin(_ me: User) async {
         user = me

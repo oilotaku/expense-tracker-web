@@ -51,6 +51,8 @@ struct DashboardView: View {
             .padding(16)
         }
         .screenBackground()
+        .animation(.snappy, value: summary)
+        .animation(.snappy, value: chartType)
         .navigationTitle("總覽")
         .refreshable { await load() }
         .task(id: "\(period.rawValue)\(range.0)\(range.1)\(state.revision)") { await load() }
@@ -98,6 +100,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     FieldLabel(text: "結餘")
                     Text(MoneyFormat.currency(summary?.balance.value ?? 0, signed: true))
+                        .contentTransition(.numericText())
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.textPrimary)
                         .minimumScaleFactor(0.5)
@@ -128,6 +131,7 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 6) {
                 FieldLabel(text: label)
                 Text(MoneyFormat.currency(value ?? 0))
+                    .contentTransition(.numericText())
                     .font(.title3.bold())
                     .foregroundStyle(color)
                     .minimumScaleFactor(0.5)
@@ -175,11 +179,15 @@ struct DashboardView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 150)
                 }
-                switch chartType {
-                case "line": trendChart
-                case "bar": barChart
-                default: pieChart
+                Group {
+                    switch chartType {
+                    case "line": trendChart
+                    case "bar": barChart
+                    default: pieChart
+                    }
                 }
+                .id(chartType)
+                .transition(.opacity)
             }
         }
     }

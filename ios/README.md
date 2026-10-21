@@ -8,7 +8,7 @@
 
 ## 建置
 
-push `ios-app` 分支（有改到 `ios/**`）會觸發 `.github/workflows/ios-build.yml`，在 macOS runner 產生未簽名 IPA（artifact `ExpenseTracker-unsigned`），再自行簽名安裝。
+手動觸發 `.github/workflows/ios-build.yml`（`gh workflow run ios-build.yml --ref ios-app`），在 macOS runner 產生未簽名 IPA（artifact `ExpenseTracker-unsigned`），再自行簽名安裝。
 
 本機有 Xcode 時：
 

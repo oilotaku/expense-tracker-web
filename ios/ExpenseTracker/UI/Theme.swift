@@ -49,8 +49,13 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+            // Shadow on the shape only; putting it on the whole card makes SwiftUI
+            // rasterize every child (text, icons) into the shadow pass.
+            .background {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Theme.surface)
+                    .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+            }
     }
 }
 
