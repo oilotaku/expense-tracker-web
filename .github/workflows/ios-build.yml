@@ -23,7 +23,10 @@ jobs:
       - name: Generate project
         run: |
           brew install xcodegen
-          sips -z 1024 1024 icon-source.png --out ExpenseTracker/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+          sips -z 1024 1024 icon-source.png --out /tmp/icon-1024.png
+          # App icons must be opaque; the PWA source has an alpha channel
+          magick /tmp/icon-1024.png -background "#8257D6" -alpha remove -alpha off \
+            ExpenseTracker/Assets.xcassets/AppIcon.appiconset/AppIcon.png
           xcodegen generate
       - name: Archive
         run: |

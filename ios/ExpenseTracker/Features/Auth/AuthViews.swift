@@ -35,7 +35,8 @@ struct ServerSetupView: View {
         checking = true
         defer { checking = false }
         var u = url.trimmingCharacters(in: .whitespaces)
-        if !u.hasPrefix("http") { u = "https://" + u }
+        if u.lowercased().hasPrefix("http://") { error = "只支援 https（登入 cookie 為 Secure，http 無法登入）"; return }
+        if !u.lowercased().hasPrefix("https://") { u = "https://" + u }
         while u.hasSuffix("/") { u.removeLast() }
         let previous = state.serverURL
         state.serverURL = u
@@ -68,6 +69,14 @@ struct LoginView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    if let msg = state.bootstrapError {
+                        Card(padding: 12) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("連不上伺服器：\(msg)").font(.footnote).foregroundStyle(Theme.warning)
+                                Button("重試連線") { Task { await state.bootstrap() } }.font(.footnote)
+                            }
+                        }
+                    }
                     VStack(spacing: 6) {
                         Image(systemName: "yensign.circle.fill")
                             .font(.system(size: 56))

@@ -219,6 +219,7 @@ struct TransactionFormView: View {
     }
 
     private func save(again: Bool) async {
+        toast = nil
         guard let amount else { error = expression.isEmpty ? "請輸入金額" : "金額需大於 0"; return }
         guard let accountUID else { error = "請選擇帳戶"; return }
         let day = DateCoding.startOfDay(date)

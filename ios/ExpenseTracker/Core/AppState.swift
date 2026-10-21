@@ -7,6 +7,8 @@ final class AppState {
     enum Phase { case launching, needsServer, loggedOut, loggedIn }
 
     var phase: Phase = .launching
+    /// Set when the last session check failed for a reason other than 401 (cookie may still be valid).
+    var bootstrapError: String?
     var user: User?
     var accounts: [Account] = [] { didSet { accountIndex = Dictionary(uniqueKeysWithValues: accounts.map { ($0.account_uid, $0) }) } }
     var categories: [Category] = [] { didSet { categoryIndex = Dictionary(uniqueKeysWithValues: categories.map { ($0.category_uid, $0) }) } }
@@ -37,13 +39,20 @@ final class AppState {
         guard api.baseURL != nil else { phase = .needsServer; return }
         do {
             let me: User = try await api.get("/auth/me")
+            bootstrapError = nil
             await didLogin(me)
+        } catch let e as APIError where e.status == 401 {
+            bootstrapError = nil
+            phase = .loggedOut
         } catch {
+            // network/Tailscale not ready: keep the cookie, let the user retry from the login screen
+            bootstrapError = error.localizedDescription
             phase = .loggedOut
         }
     }
 
     func login(email: String, password: String) async throws {
+        bootstrapError = nil
         let me: User = try await api.post("/auth/login", LoginRequest(email: email, password: password))
         await didLogin(me)
     }
