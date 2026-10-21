@@ -15,6 +15,6 @@
 ```bash
 cd ios
 brew install xcodegen
-sips -z 1024 1024 icon-source.png --out ExpenseTracker/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+cp icon-source.png ExpenseTracker/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 xcodegen generate && open ExpenseTracker.xcodeproj
 ```
