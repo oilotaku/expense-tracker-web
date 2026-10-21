@@ -1,0 +1,4 @@
+# Generated on the CI runner by xcodegen / sips
+ExpenseTracker.xcodeproj/
+ExpenseTracker/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+build/
