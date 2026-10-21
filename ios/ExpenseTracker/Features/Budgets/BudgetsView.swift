@@ -27,21 +27,26 @@ struct BudgetsView: View {
         .toolbar { Button { showCreate = true } label: { Image(systemName: "plus") } }
         .refreshable { await load() }
         .task(id: state.revision) { await load() }
-        .sheet(isPresented: $showCreate) { BudgetFormView(budget: nil, existing: budgets) { await load() } }
-        .sheet(item: $editing) { b in BudgetFormView(budget: b, existing: budgets) { await load() } }
+        .sheet(isPresented: $showCreate) { BudgetFormView(budget: nil) { await load() } }
+        .sheet(item: $editing) { b in BudgetFormView(budget: b) { await load() } }
     }
 
     private func load() async {
         do {
-            let r: ListResponse<Budget> = try await APIClient.shared.get("/budgets", query: ["limit": "100"])
-            budgets = r.items
-            var map: [UUID: BudgetSummary] = [:]
-            for b in r.items {
-                if let s: BudgetSummary = try? await APIClient.shared.get("/budgets/\(b.budget_uid.uuidString)/summary") {
-                    map[s.budget_uid] = s
+            let all = try await state.fetchAll(Budget.self, "/budgets")
+            let r = ListResponse(items: all, total: all.count)
+            budgets = all
+            summaries = await withTaskGroup(of: BudgetSummary?.self, returning: [UUID: BudgetSummary].self) { group in
+                for b in r.items {
+                    group.addTask {
+                        let s: BudgetSummary? = try? await APIClient.shared.get("/budgets/\(b.budget_uid.uuidString)/summary")
+                        return s
+                    }
                 }
+                var map: [UUID: BudgetSummary] = [:]
+                for await s in group { if let s { map[s.budget_uid] = s } }
+                return map
             }
-            summaries = map
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -83,7 +88,9 @@ private struct BudgetRow: View {
             }
             ProgressView(value: min(max(pct, 0), 100), total: 100).tint(color)
             Group {
-                if over, let s = summary {
+                if summary == nil {
+                    Text("無法取得花費彙總，下拉重新整理").foregroundStyle(Theme.warning)
+                } else if over, let s = summary {
                     Text("🔴 已超支 \(MoneyFormat.currency(abs(s.remaining_amount.value)))")
                 } else if pct >= 80 {
                     Text("⚠ 已使用 \(Int(pct))%")
@@ -102,7 +109,6 @@ private struct BudgetFormView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     let budget: Budget?
-    let existing: [Budget]
     let onSaved: () async -> Void
 
     @State private var categoryUID: UUID?
@@ -114,10 +120,7 @@ private struct BudgetFormView: View {
         NavigationStack {
             Form {
                 if budget == nil {
-                    Picker("分類", selection: $categoryUID) {
-                        Text("請選擇").tag(UUID?.none)
-                        ForEach(state.categories) { Text($0.name).tag(UUID?.some($0.category_uid)) }
-                    }
+                    CategoryPicker(selection: $categoryUID)
                     Picker("週期", selection: $period) {
                         ForEach(BudgetPeriod.allCases) { Text($0.label).tag($0) }
                     }

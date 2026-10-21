@@ -337,20 +337,9 @@ private struct RepayFormView: View {
                 Section {
                     LabeledContent("目前金額", value: MoneyFormat.number(liability.amount.value))
                     TextField("還款金額", text: $amount).keyboardType(.decimalPad)
-                    Picker("帳戶", selection: $accountUID) {
-                        Text("請選擇").tag(UUID?.none)
-                        ForEach(state.accounts) { Text($0.name).tag(UUID?.some($0.account_uid)) }
-                    }
-                    Picker("分類", selection: $categoryUID) {
-                        Text("請選擇").tag(UUID?.none)
-                        ForEach(state.categories) { Text($0.name).tag(UUID?.some($0.category_uid)) }
-                    }
-                    HStack {
-                        TextField("支付方式", text: $paymentMethod)
-                        Menu {
-                            ForEach(TransactionFormView.paymentSuggestions, id: \.self) { s in Button(s) { paymentMethod = s } }
-                        } label: { Image(systemName: "chevron.down.circle") }
-                    }
+                    AccountPicker(selection: $accountUID)
+                    CategoryPicker(selection: $categoryUID)
+                    PaymentMethodField(text: $paymentMethod)
                 } footer: {
                     Text("還款金額須大於 0 且小於目前金額；全部還清請改用「刪除」。會同時記一筆支出。")
                 }

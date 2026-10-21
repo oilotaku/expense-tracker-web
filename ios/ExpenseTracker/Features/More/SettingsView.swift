@@ -118,6 +118,9 @@ struct PinSheet: View {
     }
 
     private func submit() async {
+        if mode == .change {
+            guard currentPin.count == 6 else { error = "目前 PIN 需為 6 位數字"; return }
+        }
         if mode != .disable {
             guard pin.count == 6 else { error = "PIN 需為 6 位數字"; return }
             guard pin == pin2 else { error = "兩次輸入的 PIN 不一致，請重新輸入"; pin = ""; pin2 = ""; return }

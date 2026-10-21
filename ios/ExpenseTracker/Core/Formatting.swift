@@ -47,12 +47,19 @@ enum DateCoding {
     static func day(_ s: String) -> Date? { dayFormatter.date(from: String(s.prefix(10))) }
     static func dayString(_ d: Date) -> String { dayFormatter.string(from: d) }
 
+    private static var displayFormatters: [String: DateFormatter] = [:]
+    private static let displayLock = NSLock()
+
     static func display(_ d: Date, _ format: String) -> String {
+        displayLock.lock()
+        defer { displayLock.unlock() }
+        if let f = displayFormatters[format] { return f.string(from: d) }
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         f.locale = Locale(identifier: "zh_Hant_TW")
         f.timeZone = tz
         f.dateFormat = format
+        displayFormatters[format] = f
         return f.string(from: d)
     }
 

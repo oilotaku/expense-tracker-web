@@ -134,20 +134,9 @@ struct RecurringFormView: View {
                         LabeledContent("負債", value: l.name)
                     }
                     TextField(liability == nil ? "金額" : "每期金額", text: $amount).keyboardType(.decimalPad)
-                    Picker("分類", selection: $categoryUID) {
-                        Text("請選擇").tag(UUID?.none)
-                        ForEach(state.categories) { Text($0.name).tag(UUID?.some($0.category_uid)) }
-                    }
-                    Picker(liability == nil ? "帳戶" : "扣款帳戶", selection: $accountUID) {
-                        Text("請選擇").tag(UUID?.none)
-                        ForEach(state.accounts) { Text($0.name).tag(UUID?.some($0.account_uid)) }
-                    }
-                    HStack {
-                        TextField("支付方式", text: $paymentMethod)
-                        Menu {
-                            ForEach(TransactionFormView.paymentSuggestions, id: \.self) { s in Button(s) { paymentMethod = s } }
-                        } label: { Image(systemName: "chevron.down.circle") }
-                    }
+                    CategoryPicker(selection: $categoryUID)
+                    AccountPicker(label: liability == nil ? "帳戶" : "扣款帳戶", selection: $accountUID)
+                    PaymentMethodField(text: $paymentMethod)
                 }
                 Section("週期") {
                     Stepper(RecurringText.interval(unit, count, anchor: DateCoding.dayString(anchor)), value: $count, in: 1...99)

@@ -69,9 +69,19 @@ final class AppState {
 
     func reloadReferenceData() async {
         async let a: ListResponse<Account> = api.get("/accounts")
-        async let c: ListResponse<Category> = api.get("/categories", query: ["limit": "100"])
+        async let c = fetchAll(Category.self, "/categories")
         if let a = try? await a { accounts = a.items }
-        if let c = try? await c { categories = c.items }
+        if let c = try? await c { categories = c }
+    }
+
+    /// The API caps `limit` at 100; keep paging until `total` is reached.
+    func fetchAll<T: Decodable>(_: T.Type, _ path: String) async throws -> [T] {
+        var items: [T] = []
+        while true {
+            let page: ListResponse<T> = try await api.get(path, query: ["limit": "100", "offset": String(items.count)])
+            items += page.items
+            if page.items.isEmpty || items.count >= page.total { return items }
+        }
     }
 
     func didChange() {

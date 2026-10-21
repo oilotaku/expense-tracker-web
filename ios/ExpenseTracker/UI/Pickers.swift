@@ -187,3 +187,46 @@ struct FieldLabel: View {
     let text: String
     var body: some View { Text(text).font(.footnote).foregroundStyle(Theme.textSecondary) }
 }
+
+struct PaymentMethodField: View {
+    @Binding var text: String
+    static let suggestions = ["現金", "信用卡", "金融卡", "行動支付", "銀行轉帳", "其他"]
+
+    var body: some View {
+        HStack {
+            TextField("支付方式", text: $text)
+            Menu {
+                ForEach(Self.suggestions, id: \.self) { s in Button(s) { text = s } }
+            } label: { Image(systemName: "chevron.down.circle") }
+        }
+    }
+}
+
+struct AccountPicker: View {
+    @Environment(AppState.self) private var state
+    var label = "帳戶"
+    var showCurrency = false
+    @Binding var selection: UUID?
+
+    var body: some View {
+        Picker(label, selection: $selection) {
+            Text("請選擇").tag(UUID?.none)
+            ForEach(state.accounts) { a in
+                Text(showCurrency ? "\(a.name)（\(a.currency.rawValue)）" : a.name).tag(UUID?.some(a.account_uid))
+            }
+        }
+    }
+}
+
+struct CategoryPicker: View {
+    @Environment(AppState.self) private var state
+    var label = "分類"
+    @Binding var selection: UUID?
+
+    var body: some View {
+        Picker(label, selection: $selection) {
+            Text("請選擇").tag(UUID?.none)
+            ForEach(state.categories) { Text($0.name).tag(UUID?.some($0.category_uid)) }
+        }
+    }
+}

@@ -31,6 +31,12 @@ enum Theme {
 
     static let palette = ["#8B6ED6", "#E8834B", "#2FA98A", "#D9A428", "#3E8FD0", "#D65FA0", "#8AAE3C", "#5A4FA0"]
     static let chartOther = "#9C96AF"
+    private static let paletteDark = ["#a78bea", "#f0985f", "#45c6a5", "#e8bb4a", "#5ca8e8", "#e687ba", "#a3c65c", "#7a6fc0"]
+    private static let chartColors: [Color] = zip(palette, paletteDark).map { Color.adaptive(light: $0, dark: $1) }
+    static let chartOtherColor = Color.adaptive(light: chartOther, dark: "#6e667f")
+
+    /// Rank-based chart color that brightens in dark mode like the web app.
+    static func chartColor(_ rank: Int) -> Color { chartColors[rank % chartColors.count] }
 
     static func amountColor(_ type: TransactionType) -> Color {
         switch type {
@@ -60,9 +66,11 @@ struct Card<Content: View>: View {
 }
 
 struct ColorDot: View {
-    let hex: String
+    let color: Color
     var size: CGFloat = 10
-    var body: some View { Circle().fill(Color(hex: hex)).frame(width: size, height: size) }
+    init(color: Color, size: CGFloat = 10) { self.color = color; self.size = size }
+    init(hex: String, size: CGFloat = 10) { self.init(color: Color(hex: hex), size: size) }
+    var body: some View { Circle().fill(color).frame(width: size, height: size) }
 }
 
 struct ErrorBanner: View {

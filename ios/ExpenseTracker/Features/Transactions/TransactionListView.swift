@@ -107,7 +107,7 @@ struct TransactionListView: View {
                         ProgressView()
                         Spacer()
                     }
-                    .task { await loadMore() }
+                    .task(id: items.count) { await loadMore() }
                 }
             } footer: {
                 if !loading && visible.isEmpty {

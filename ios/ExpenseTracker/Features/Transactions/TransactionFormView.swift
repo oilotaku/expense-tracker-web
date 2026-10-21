@@ -33,8 +33,6 @@ struct TransactionFormView: View {
     @AppStorage("defaultAccountUID") private var defaultAccountUID = ""
     @AppStorage("recentCategoryUIDs") private var recentCategoryRaw = ""
 
-    static let paymentSuggestions = ["現金", "信用卡", "金融卡", "行動支付", "銀行轉帳", "其他"]
-
     private var editing: Transaction? {
         if case let .edit(t) = mode { return t }
         return nil
@@ -72,21 +70,16 @@ struct TransactionFormView: View {
                             TextField("明細", text: $description)
                                 .onChange(of: description) { _, v in if v.count > 255 { description = String(v.prefix(255)) } }
                             Divider()
-                            accountPicker(type == .transfer ? "轉出帳戶" : "帳戶", selection: $accountUID)
+                            AccountPicker(label: type == .transfer ? "轉出帳戶" : "帳戶", showCurrency: true, selection: $accountUID)
                             if type == .transfer {
-                                accountPicker("轉入帳戶", selection: $toAccountUID)
+                                AccountPicker(label: "轉入帳戶", showCurrency: true, selection: $toAccountUID)
                                 if let a = state.account(accountUID), let b = state.account(toAccountUID), a.currency != b.currency {
                                     Text("\(a.currency.rawValue) → \(b.currency.rawValue)：將以即時匯率換算成 \(b.currency.rawValue)")
                                         .font(.caption).foregroundStyle(Theme.warning)
                                 }
                             }
                             Divider()
-                            HStack {
-                                TextField("支付方式", text: $paymentMethod)
-                                Menu {
-                                    ForEach(Self.paymentSuggestions, id: \.self) { s in Button(s) { paymentMethod = s } }
-                                } label: { Image(systemName: "chevron.down.circle") }
-                            }
+                            PaymentMethodField(text: $paymentMethod)
                         }
                     }
 
@@ -167,13 +160,6 @@ struct TransactionFormView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-        }
-    }
-
-    private func accountPicker(_ label: String, selection: Binding<UUID?>) -> some View {
-        Picker(label, selection: selection) {
-            Text("請選擇").tag(UUID?.none)
-            ForEach(state.accounts) { a in Text("\(a.name)（\(a.currency.rawValue)）").tag(UUID?.some(a.account_uid)) }
         }
     }
 

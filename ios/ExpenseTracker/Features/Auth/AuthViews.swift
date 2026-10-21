@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ServerSetupView: View {
     @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
     @State private var url = ""
     @State private var error: String?
     @State private var checking = false
@@ -36,12 +37,18 @@ struct ServerSetupView: View {
         var u = url.trimmingCharacters(in: .whitespaces)
         if !u.hasPrefix("http") { u = "https://" + u }
         while u.hasSuffix("/") { u.removeLast() }
+        let previous = state.serverURL
         state.serverURL = u
         do {
             let _: [String: String] = try await APIClient.shared.get("/health")
             error = nil
-            await state.bootstrap()
+            if u != previous || state.phase != .loggedIn {
+                // cookies are per host, so a different server means logging in again
+                await state.bootstrap()
+            }
+            dismiss()
         } catch {
+            state.serverURL = previous
             self.error = error.localizedDescription
         }
     }
@@ -186,6 +193,7 @@ struct ChangePasswordView: View {
     }
 
     private func submit() async {
+        guard new1.count >= 8, new1.count <= 72 else { error = "新密碼需為 8～72 個字元"; return }
         guard new1 == new2 else { error = "兩次輸入的新密碼不一致"; return }
         busy = true
         defer { busy = false }

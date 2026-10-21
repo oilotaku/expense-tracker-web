@@ -346,7 +346,3 @@ struct TrendPoint: Codable, Hashable {
 }
 
 struct ItemsResponse<T: Decodable>: Decodable { let items: [T] }
-
-struct ExchangeRates: Decodable {
-    let rates: [String: Money]
-}
