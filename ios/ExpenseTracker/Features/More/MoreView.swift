@@ -29,6 +29,7 @@ struct AccountsView: View {
     @State private var showCreate = false
     @State private var deleting: Account?
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         List {
@@ -37,12 +38,13 @@ struct AccountsView: View {
                 HStack(spacing: 12) {
                     IconBadge(icon: a.icon, color: a.color, size: 40)
                     VStack(alignment: .leading) {
-                        Text(a.name).font(.headline)
+                        Text(a.name).font(.headline).lineLimit(1)
                         Text(a.currency.rawValue).font(.caption).foregroundStyle(Theme.textMuted)
                     }
                     Spacer()
                     Text(MoneyFormat.number(a.balance.value))
                         .font(.body.monospacedDigit())
+                        .lineLimit(1).layoutPriority(1)
                         .foregroundStyle(a.balance.value < 0 ? Theme.expense : Theme.textPrimary)
                 }
                 .contentShape(Rectangle())
@@ -57,9 +59,9 @@ struct AccountsView: View {
         .refreshable { await state.reloadReferenceData() }
         .sheet(isPresented: $showCreate) { AccountFormView(account: nil) }
         .sheet(item: $editing) { AccountFormView(account: $0) }
-        .confirmationDialog("刪除帳戶「\(deleting?.name ?? "")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            Button("刪除", role: .destructive) { if let a = deleting { Task { await delete(a) } } }
-        } message: {
+        .confirmationDialog("刪除帳戶「\(deleting?.name ?? "")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { a in
+            Button("刪除", role: .destructive) { Task { await delete(a) } }
+        } message: { _ in
             Text("綁定這個帳戶的固定收支會一起暫停。")
         }
     }
@@ -87,6 +89,7 @@ private struct AccountFormView: View {
     @State private var color = Theme.palette[0]
     @State private var icon = "other"
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         NavigationStack {
@@ -112,7 +115,7 @@ private struct AccountFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } }.disabled(busy) }
             }
             .onAppear(perform: populate)
         }
@@ -132,9 +135,12 @@ private struct AccountFormView: View {
     }
 
     private func save() async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { error = "請輸入名稱"; return }
-        guard let b = MoneyFormat.parse(balance) else { error = "餘額格式錯誤"; return }
+        guard let b = MoneyFormat.parseAmount(balance) else { error = "餘額格式錯誤"; return }
         do {
             if let a = account {
                 let body = AccountUpdateRequest(name: trimmed, balance: Money(b), color: color, icon: icon)
@@ -159,6 +165,7 @@ struct CategoriesView: View {
     @State private var showCreate = false
     @State private var deleting: Category?
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         List {
@@ -181,9 +188,9 @@ struct CategoriesView: View {
         .refreshable { await state.reloadReferenceData() }
         .sheet(isPresented: $showCreate) { CategoryFormView(category: nil) }
         .sheet(item: $editing) { CategoryFormView(category: $0) }
-        .confirmationDialog("刪除分類「\(deleting?.name ?? "")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            Button("刪除", role: .destructive) { if let c = deleting { Task { await delete(c) } } }
-        } message: {
+        .confirmationDialog("刪除分類「\(deleting?.name ?? "")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { c in
+            Button("刪除", role: .destructive) { Task { await delete(c) } }
+        } message: { _ in
             Text("刪除後不影響既有交易紀錄，但無法用此分類建立新交易。")
         }
     }
@@ -208,6 +215,7 @@ private struct CategoryFormView: View {
     @State private var color = Theme.palette[0]
     @State private var icon = "other"
     @State private var error: String?
+    @State private var busy = false
 
     private var duplicate: Bool {
         let n = name.trimmingCharacters(in: .whitespaces)
@@ -229,7 +237,7 @@ private struct CategoryFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } }.disabled(busy) }
             }
             .onAppear {
                 if let c = category { name = c.name; color = c.color; icon = c.icon }
@@ -238,6 +246,9 @@ private struct CategoryFormView: View {
     }
 
     private func save() async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { error = "請輸入名稱"; return }
         do {

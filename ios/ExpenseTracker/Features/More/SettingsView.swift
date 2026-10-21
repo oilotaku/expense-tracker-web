@@ -72,6 +72,9 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("設定")
+        .onAppear {
+            if !defaultAccountUID.isEmpty, UUID(uuidString: defaultAccountUID).flatMap({ state.account($0) }) == nil { defaultAccountUID = "" }
+        }
         .sheet(item: $pinSheet) { PinSheet(mode: $0) }
         .sheet(isPresented: $showServer) { ServerSetupView() }
     }
@@ -134,6 +137,8 @@ struct PinSheet: View {
     private func submit() async {
         if mode == .change {
             guard currentPin.count == 6 else { error = "目前 PIN 需為 6 位數字"; return }
+        } else {
+            guard !password.isEmpty else { error = "請輸入密碼"; return }
         }
         if mode != .disable {
             guard pin.count == 6 else { error = "PIN 需為 6 位數字"; return }

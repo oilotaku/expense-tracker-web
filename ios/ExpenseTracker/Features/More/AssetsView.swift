@@ -37,6 +37,7 @@ struct AssetsView: View {
     @State private var gains: [UUID: Decimal] = [:]
     @AppStorage("quoteSource") private var quoteSource = "device"
     @State private var error: String?
+    @State private var busy = false
 
     @State private var showAddAsset = false
     @State private var editingAsset: FinancialAsset?
@@ -66,7 +67,7 @@ struct AssetsView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { editingAsset = a }
-                    .swipeActions {
+                    .swipeActions(allowsFullSwipe: false) {
                         Button(role: .destructive) { Task { await run { try await APIClient.shared.delete("/financial-assets/\(a.financial_asset_uid.uuidString)") } } } label: {
                             Label("刪除", systemImage: "trash")
                         }
@@ -110,7 +111,7 @@ struct AssetsView: View {
                 Text("年利率 \(l.interest_rate.map { MoneyFormat.plain($0.value) + "%" } ?? "—")")
                     .font(.caption).foregroundStyle(Theme.textSecondary)
                 Spacer()
-                Text(MoneyFormat.number(l.amount.value)).font(.body.monospacedDigit()).foregroundStyle(Theme.expense)
+                Text(MoneyFormat.number(l.amount.value)).font(.body.monospacedDigit()).foregroundStyle(Theme.expense).lineLimit(1).layoutPriority(1)
             }
             if let p = plan {
                 HStack {
@@ -135,7 +136,7 @@ struct AssetsView: View {
             .font(.footnote)
             .buttonStyle(.borderless)
         }
-        .swipeActions {
+        .swipeActions(allowsFullSwipe: false) {
             Button(role: .destructive) { Task { await run { try await APIClient.shared.delete("/liabilities/\(l.liability_uid.uuidString)") } } } label: {
                 Label("刪除", systemImage: "trash")
             }
@@ -188,6 +189,7 @@ private struct AssetFormView: View {
     @State private var unit = "張"
     @State private var principal = ""
     @State private var error: String?
+    @State private var busy = false
 
     private var normalizedName: String {
         let n = name.trimmingCharacters(in: .whitespaces)
@@ -235,7 +237,7 @@ private struct AssetFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } }.disabled(busy) }
             }
             .onAppear {
                 if let a = asset {
@@ -250,9 +252,12 @@ private struct AssetFormView: View {
     }
 
     private func save() async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         guard !normalizedName.isEmpty else { error = "請輸入名稱或代號"; return }
         guard let q = MoneyFormat.parse(quantity), q > 0 else { error = "數量需大於 0"; return }
-        let p = MoneyFormat.parse(principal)
+        let p = MoneyFormat.parseAmount(principal)
         do {
             if let a = asset {
                 let body = FinancialAssetUpdateRequest(name: normalizedName, input_quantity: Money(q), input_unit: unit, principal_amount: p.map(Money.init))
@@ -279,6 +284,7 @@ private struct LiabilityFormView: View {
     @State private var amount = ""
     @State private var rate = ""
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         NavigationStack {
@@ -292,7 +298,7 @@ private struct LiabilityFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } }.disabled(busy) }
             }
             .onAppear {
                 if let l = liability {
@@ -305,10 +311,13 @@ private struct LiabilityFormView: View {
     }
 
     private func save() async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { error = "請輸入名稱"; return }
-        guard let a = MoneyFormat.parse(amount), a > 0 else { error = "金額需大於 0"; return }
-        let r = rate.isEmpty ? nil : MoneyFormat.parse(rate)
+        guard let a = MoneyFormat.parseAmount(amount), a > 0 else { error = "金額需大於 0"; return }
+        let r = rate.isEmpty ? nil : MoneyFormat.parseAmount(rate)
         if !rate.isEmpty && r == nil { error = "利率格式錯誤"; return }
         let body = LiabilityWrite(name: n, amount: Money(a), interest_rate: r.map(Money.init))
         do {
@@ -336,6 +345,7 @@ private struct RepayFormView: View {
     @State private var categoryUID: UUID?
     @State private var paymentMethod = ""
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         NavigationStack {
@@ -355,13 +365,16 @@ private struct RepayFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("還款") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("還款") { Task { await save() } }.disabled(busy) }
             }
         }
     }
 
     private func save() async {
-        guard let a = MoneyFormat.parse(amount), a > 0, a < liability.amount.value else {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        guard let a = MoneyFormat.parseAmount(amount), a > 0, a < liability.amount.value else {
             error = "還款金額須大於 0 且小於目前金額"
             return
         }

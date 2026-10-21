@@ -118,6 +118,14 @@ enum MoneyFormat {
         return Decimal(string: cleaned, locale: Locale(identifier: "en_US_POSIX"))
     }
 
+    /// Money fields: the API accepts at most 2 decimal places.
+    static func parseAmount(_ s: String) -> Decimal? {
+        guard var v = parse(s) else { return nil }
+        var out = Decimal()
+        NSDecimalRound(&out, &v, 2, .plain)
+        return out
+    }
+
     static func plain(_ v: Decimal) -> String {
         NSDecimalNumber(decimal: v).stringValue
     }

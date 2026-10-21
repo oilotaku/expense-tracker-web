@@ -91,6 +91,9 @@ struct DashboardView: View {
                     DatePicker("結束", selection: $customTo, in: customFrom...maxCustomTo, displayedComponents: .date)
                 }
                 .font(.subheadline)
+                .onChange(of: customFrom) { _, _ in
+                    if customTo > maxCustomTo { customTo = maxCustomTo }
+                }
             }
         }
     }
@@ -108,7 +111,7 @@ struct DashboardView: View {
                     FieldLabel(text: "結餘")
                     Text(MoneyFormat.currency(summary?.balance.value ?? 0, signed: true))
                         .contentTransition(.numericText())
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .foregroundStyle(Theme.textPrimary)
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
@@ -121,12 +124,15 @@ struct DashboardView: View {
             Card {
                 VStack(alignment: .leading, spacing: 6) {
                     FieldLabel(text: "預算結餘")
-                    if period == .custom || summary?.budget_remaining == nil {
+                    if period == .custom {
                         Text("—").font(.title2.bold()).foregroundStyle(Theme.textMuted)
                         Text("預算僅支援月／年度檢視").font(.caption).foregroundStyle(Theme.textMuted)
+                    } else if let v = summary?.budget_remaining?.value {
+                        Text(MoneyFormat.currency(v))
+                            .contentTransition(.numericText())
+                            .font(.title2.bold()).foregroundStyle(v < 0 ? Theme.danger : Theme.warning)
                     } else {
-                        Text(MoneyFormat.currency(summary?.budget_remaining?.value ?? 0))
-                            .font(.title2.bold()).foregroundStyle(Theme.warning)
+                        Text("—").font(.title2.bold()).foregroundStyle(Theme.textMuted)
                     }
                 }
             }
@@ -230,7 +236,8 @@ struct DashboardView: View {
                 .chartAngleSelection(value: $pieSelection)
                 .chartBackground { proxy in
                     GeometryReader { geo in
-                        let frame = geo[proxy.plotFrame!]
+                        let frame = proxy.plotFrame.map { geo[$0] } ?? geo.frame(in: .local)
+                        let hole = min(frame.width, frame.height) * 0.62
                         VStack(spacing: 2) {
                             Text(picked?.name ?? "支出合計").font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             Text(MoneyFormat.currency(Decimal(picked?.amount ?? total)))
@@ -241,7 +248,7 @@ struct DashboardView: View {
                                     .font(.caption2).foregroundStyle(Theme.textMuted)
                             }
                         }
-                        .frame(width: frame.width * 0.55)
+                        .frame(width: hole * 0.88)
                         .position(x: frame.midX, y: frame.midY)
                     }
                 }
@@ -258,7 +265,7 @@ struct DashboardView: View {
                                 .font(.caption.monospacedDigit()).foregroundStyle(Theme.textPrimary)
                             Text(String(format: "%.0f%%", s.amount / total * 100))
                                 .font(.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
-                                .frame(width: 38, alignment: .trailing)
+                                .frame(minWidth: 38, alignment: .trailing)
                         }
                         .opacity(picked == nil || picked?.id == s.id ? 1 : 0.5)
                     }
@@ -273,17 +280,25 @@ struct DashboardView: View {
             emptyChart("這段期間沒有支出")
         } else {
             Chart(data) { s in
-                BarMark(x: .value("金額", s.amount), y: .value("分類", s.name))
+                // keyed by id so two categories with the same name don't merge into one bar
+                BarMark(x: .value("金額", s.amount), y: .value("分類", s.id))
                     .foregroundStyle(s.color)
                     .cornerRadius(5)
-                    .annotation(position: .trailing, alignment: .leading, spacing: 6) {
+                    .annotation(position: .trailing, alignment: .leading, spacing: 6,
+                                overflowResolution: .init(x: .fit, y: .disabled)) {
                         Text(MoneyFormat.currency(Decimal(s.amount)))
                             .font(.caption2.monospacedDigit()).foregroundStyle(Theme.textSecondary)
                     }
             }
             .chartXAxis(.hidden)
             .chartYAxis {
-                AxisMarks { AxisValueLabel().font(.caption).foregroundStyle(Theme.textPrimary) }
+                AxisMarks(values: data.map(\.id)) { v in
+                    AxisValueLabel {
+                        Text(data.first { $0.id == v.as(String.self) }?.name ?? "")
+                            .font(.caption).foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1).frame(maxWidth: 90, alignment: .trailing)
+                    }
+                }
             }
             // leave room on the right for the amount annotations
             .chartXScale(domain: 0...((data.map(\.amount).max() ?? 1) * 1.45))
@@ -306,14 +321,14 @@ struct DashboardView: View {
             VStack(spacing: 8) {
                 Chart {
                     ForEach(points, id: \.date) { p in
-                        AreaMark(x: .value("日期", p.date), y: .value("金額", p.income), series: .value("類型", "收入"))
+                        AreaMark(x: .value("日期", p.date), y: .value("金額", p.income), series: .value("類型", "收入"), stacking: .unstacked)
                             .foregroundStyle(Theme.income.opacity(0.1))
                             .interpolationMethod(.monotone)
                         LineMark(x: .value("日期", p.date), y: .value("金額", p.income), series: .value("類型", "收入"))
                             .foregroundStyle(Theme.income)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                             .interpolationMethod(.monotone)
-                        AreaMark(x: .value("日期", p.date), y: .value("金額", p.expense), series: .value("類型", "支出"))
+                        AreaMark(x: .value("日期", p.date), y: .value("金額", p.expense), series: .value("類型", "支出"), stacking: .unstacked)
                             .foregroundStyle(Theme.expense.opacity(0.1))
                             .interpolationMethod(.monotone)
                         LineMark(x: .value("日期", p.date), y: .value("金額", p.expense), series: .value("類型", "支出"))
@@ -330,6 +345,7 @@ struct DashboardView: View {
                     }
                 }
                 .chartXSelection(value: $trendSelection)
+                .chartXScale(domain: range.0...range.1)
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 5)) {
                         AxisGridLine().foregroundStyle(Theme.border)
@@ -340,7 +356,7 @@ struct DashboardView: View {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) {
                         AxisGridLine().foregroundStyle(Theme.border)
-                        AxisValueLabel(format: .number.notation(.compactName).precision(.fractionLength(0...1)))
+                        AxisValueLabel(format: FloatingPointFormatStyle<Double>.number.notation(.compactName).precision(.fractionLength(0...1)))
                             .font(.caption2).foregroundStyle(Theme.textMuted)
                     }
                 }
@@ -367,7 +383,7 @@ struct DashboardView: View {
         HStack(spacing: 4) {
             ColorDot(color: color)
             Text(name).foregroundStyle(Theme.textSecondary)
-            if let value { Text(value).monospacedDigit().foregroundStyle(Theme.textPrimary) }
+            if let value { Text(value).monospacedDigit().foregroundStyle(Theme.textPrimary).lineLimit(1).minimumScaleFactor(0.7) }
         }
     }
 
@@ -465,6 +481,8 @@ struct DashboardView: View {
     // MARK: Loading
 
     private func load() async {
+        pieSelection = nil
+        trendSelection = nil
         let (from, to) = range
         let q: [String: String?] = ["date_from": DateCoding.format(from), "date_to": DateCoding.format(to)]
         var sq = q
@@ -475,13 +493,21 @@ struct DashboardView: View {
         async let t: ItemsResponse<TrendPoint> = api.get("/dashboard/trend", query: q)
         async let r: ListResponse<Transaction> = api.get("/transactions", query: ["limit": "5"])
         var firstError: String?
-        func take<T>(_ op: () async throws -> T) async -> T? {
-            do { return try await op() } catch { if firstError == nil { firstError = error.localizedDescription }; return nil }
-        }
-        if let v = await take({ try await s }) { summary = v }
-        if let v = await take({ try await b }) { breakdown = v.items }
-        if let v = await take({ try await t }) { trend = v.items }
-        if let v = await take({ try await r }) { recent = v.items }
+        func note(_ e: Error) { if firstError == nil { firstError = e.localizedDescription } }
+        let newSummary: DashboardSummary?
+        do { newSummary = try await s } catch { note(error); newSummary = nil }
+        let newBreakdown: [CategoryBreakdownItem]?
+        do { newBreakdown = try await b.items } catch { note(error); newBreakdown = nil }
+        let newTrend: [TrendPoint]?
+        do { newTrend = try await t.items } catch { note(error); newTrend = nil }
+        let newRecent: [Transaction]?
+        do { newRecent = try await r.items } catch { note(error); newRecent = nil }
+        // a newer period change cancelled us: don't flash its "已取消" error over the fresh load
+        guard !Task.isCancelled else { return }
+        if let newSummary { summary = newSummary }
+        if let newBreakdown { breakdown = newBreakdown }
+        if let newTrend { trend = newTrend }
+        if let newRecent { recent = newRecent }
         error = firstError
         await loadNetWorth()
     }

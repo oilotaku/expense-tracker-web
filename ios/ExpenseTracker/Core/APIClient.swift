@@ -122,7 +122,7 @@ final class APIClient {
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         let head = try? decoder.decode(EnvelopeHead.self, from: data)
         if !(200..<300).contains(status) || head?.success == false {
-            if status == 401, !path.hasPrefix("/auth/login") {
+            if status == 401, !path.hasPrefix("/auth/") {
                 let handler = onUnauthorized
                 await MainActor.run { handler?() }
             }

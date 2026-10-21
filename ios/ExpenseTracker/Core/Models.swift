@@ -151,7 +151,7 @@ struct TransactionWrite: Encodable {
     let amount: Money
     let transaction_type: TransactionType
     let payment_method: String
-    let tags: [String]
+    var tags: [String]? = nil
 }
 
 struct TransferWrite: Encodable {

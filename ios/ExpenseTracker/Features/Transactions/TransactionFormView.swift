@@ -31,6 +31,7 @@ struct TransactionFormView: View {
     @State private var loaded = false
 
     @AppStorage("defaultAccountUID") private var defaultAccountUID = ""
+    @AppStorage("lastAccountUID") private var lastAccountUID = ""
     @AppStorage("recentCategoryUIDs") private var recentCategoryRaw = ""
 
     private var editing: Transaction? {
@@ -175,7 +176,7 @@ struct TransactionFormView: View {
                     Stepper(RecurringText.interval(intervalUnit, intervalCount, anchor: DateCoding.dayString(DateCoding.startOfDay(anchorDate))),
                             value: $intervalCount, in: 1...99)
                     DatePicker("起算日", selection: $anchorDate, displayedComponents: .date)
-                    Text("起算日是今天或更早會同時記下這一筆；之後由伺服器每天 01:00 依週期自動產生。")
+                    Text("起算日是今天會立刻記下第一筆；其餘由伺服器每天 01:00 依週期自動產生。")
                         .font(.caption).foregroundStyle(Theme.textMuted)
                 }
             }
@@ -205,6 +206,7 @@ struct TransactionFormView: View {
             }
         } else {
             accountUID = UUID(uuidString: defaultAccountUID).flatMap { state.account($0)?.account_uid }
+                ?? UUID(uuidString: lastAccountUID).flatMap { state.account($0)?.account_uid }
                 ?? state.accounts.first { $0.name == "現金" }?.account_uid
                 ?? state.accounts.first?.account_uid
         }
@@ -239,17 +241,21 @@ struct TransactionFormView: View {
                     error = "請選擇分類"
                     return
                 }
-                let body = TransactionWrite(account_uid: accountUID, category_uid: category.category_uid, transaction_date: day,
-                                            description: description, amount: Money(amount), transaction_type: type,
-                                            payment_method: paymentMethod, tags: [])
                 let anchorDay = DateCoding.startOfDay(anchorDate)
-                let skipToday = recurring && anchorDay > DateCoding.startOfDay(Date())
+                let makeRule = recurring && !isEdit
+                // the 01:00 generator only sees rules that already exist, so a rule anchored today
+                // gets its first transaction written here; past/future anchors are left to the server
+                let writeNow = !makeRule || anchorDay == DateCoding.startOfDay(Date())
+                let body = TransactionWrite(account_uid: accountUID, category_uid: category.category_uid,
+                                            transaction_date: makeRule ? anchorDay : day,
+                                            description: description, amount: Money(amount), transaction_type: type,
+                                            payment_method: paymentMethod)
                 if let t = editing {
                     let _: Transaction = try await api.patch("/transactions/\(t.transaction_uid.uuidString)", body)
-                } else if !skipToday {
+                } else if writeNow {
                     let _: Transaction = try await api.post("/transactions", body)
                 }
-                if recurring && !isEdit {
+                if makeRule {
                     let rule = RecurringRuleWrite(account_uid: accountUID, category_uid: category.category_uid,
                                                   description: description, amount: Money(amount), transaction_type: type,
                                                   payment_method: paymentMethod, interval_unit: intervalUnit,
@@ -258,7 +264,7 @@ struct TransactionFormView: View {
                     let _: RecurringRule = try await api.post("/recurring-rules", rule)
                 }
                 rememberCategory(category.category_uid)
-                if !isEdit { defaultAccountUID = accountUID.uuidString }
+                if !isEdit { lastAccountUID = accountUID.uuidString }
             }
             state.didChange()
             error = nil

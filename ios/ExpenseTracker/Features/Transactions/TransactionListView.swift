@@ -96,7 +96,15 @@ struct TransactionListView: View {
             Section {
                 ForEach(visible) { t in
                     TransactionRow(transaction: t)
-                        .onTapGesture { editing = t }
+                        .onTapGesture {
+                            // transfer amounts are edited in the source currency, so always open the outbound row
+                            if t.transfer_direction == .in,
+                               let out = items.first(where: { $0.transfer_group_uid == t.transfer_group_uid && $0.transfer_direction == .out }) {
+                                editing = out
+                            } else {
+                                editing = t
+                            }
+                        }
                         .swipeActions {
                             Button(role: .destructive) { deleting = t } label: { Label("刪除", systemImage: "trash") }
                         }
@@ -129,11 +137,10 @@ struct TransactionListView: View {
         .confirmationDialog(
             "刪除「\(deleting?.description.isEmpty == false ? deleting!.description : "這筆交易")」？",
             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("刪除", role: .destructive) {
-                if let t = deleting { Task { await delete(t) } }
-            }
+            titleVisibility: .visible,
+            presenting: deleting
+        ) { t in
+            Button("刪除", role: .destructive) { Task { await delete(t) } }
         }
     }
 

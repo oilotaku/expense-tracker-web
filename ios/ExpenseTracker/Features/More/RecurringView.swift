@@ -13,6 +13,7 @@ struct RecurringView: View {
     @State private var rules: [RecurringRule] = []
     @State private var liabilities: [Liability] = []
     @State private var error: String?
+    @State private var busy = false
     @State private var showCreate = false
     @State private var editing: RecurringRule?
 
@@ -24,7 +25,7 @@ struct RecurringView: View {
                 row(r)
                     .contentShape(Rectangle())
                     .onTapGesture { if r.liability_uid == nil { editing = r } }
-                    .swipeActions {
+                    .swipeActions(allowsFullSwipe: false) {
                         Button(role: .destructive) { Task { await delete(r) } } label: { Label("刪除", systemImage: "trash") }
                         Button { Task { await toggle(r) } } label: {
                             Label(r.is_active ? "暫停" : "恢復", systemImage: r.is_active ? "pause" : "play")
@@ -59,6 +60,7 @@ struct RecurringView: View {
                 Text("\(r.transaction_type == .income ? "+" : "-")\(MoneyFormat.number(r.amount.value))")
                     .font(.body.monospacedDigit())
                     .foregroundStyle(Theme.amountColor(r.transaction_type))
+                    .lineLimit(1).layoutPriority(1)
             }
             Text([r.description.isEmpty ? nil : r.description,
                   state.account(r.account_uid)?.name,
@@ -118,6 +120,7 @@ struct RecurringFormView: View {
     @State private var count = 1
     @State private var anchor = Date()
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         NavigationStack {
@@ -152,7 +155,7 @@ struct RecurringFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } }.disabled(busy) }
             }
             .onAppear(perform: populate)
         }
@@ -175,7 +178,10 @@ struct RecurringFormView: View {
     }
 
     private func save() async {
-        guard let v = MoneyFormat.parse(amount), v > 0 else { error = "金額需大於 0"; return }
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        guard let v = MoneyFormat.parseAmount(amount), v > 0 else { error = "金額需大於 0"; return }
         guard let categoryUID else { error = "請選擇分類"; return }
         guard let accountUID else { error = "請選擇帳戶"; return }
         let body = RecurringRuleWrite(

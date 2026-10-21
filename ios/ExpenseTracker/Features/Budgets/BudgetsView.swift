@@ -5,6 +5,7 @@ struct BudgetsView: View {
     @State private var budgets: [Budget] = []
     @State private var summaries: [UUID: BudgetSummary] = [:]
     @State private var error: String?
+    @State private var busy = false
     @State private var showCreate = false
     @State private var editing: Budget?
 
@@ -18,7 +19,7 @@ struct BudgetsView: View {
                 BudgetRow(budget: b, summary: summaries[b.budget_uid])
                     .contentShape(Rectangle())
                     .onTapGesture { editing = b }
-                    .swipeActions {
+                    .swipeActions(allowsFullSwipe: false) {
                         Button(role: .destructive) { Task { await delete(b) } } label: { Label("刪除", systemImage: "trash") }
                     }
             }
@@ -34,10 +35,8 @@ struct BudgetsView: View {
     private func load() async {
         do {
             let all = try await state.fetchAll(Budget.self, "/budgets")
-            let r = ListResponse(items: all, total: all.count)
-            budgets = all
-            summaries = await withTaskGroup(of: BudgetSummary?.self, returning: [UUID: BudgetSummary].self) { group in
-                for b in r.items {
+            let fetched = await withTaskGroup(of: BudgetSummary?.self, returning: [UUID: BudgetSummary].self) { group in
+                for b in all {
                     group.addTask {
                         let s: BudgetSummary? = try? await APIClient.shared.get("/budgets/\(b.budget_uid.uuidString)/summary")
                         return s
@@ -47,6 +46,9 @@ struct BudgetsView: View {
                 for await s in group { if let s { map[s.budget_uid] = s } }
                 return map
             }
+            guard !Task.isCancelled else { return }
+            budgets = all
+            summaries = fetched
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -56,6 +58,7 @@ struct BudgetsView: View {
     private func delete(_ b: Budget) async {
         do {
             try await APIClient.shared.delete("/budgets/\(b.budget_uid.uuidString)")
+            state.didChange()
             await load()
         } catch {
             self.error = error.localizedDescription
@@ -115,6 +118,7 @@ private struct BudgetFormView: View {
     @State private var period: BudgetPeriod = .monthly
     @State private var limit = ""
     @State private var error: String?
+    @State private var busy = false
 
     var body: some View {
         NavigationStack {
@@ -136,7 +140,7 @@ private struct BudgetFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } } }
+                ToolbarItem(placement: .confirmationAction) { Button("儲存") { Task { await save() } }.disabled(busy) }
             }
             .onAppear {
                 if let b = budget { limit = MoneyFormat.plain(b.limit_amount.value) }
@@ -145,7 +149,10 @@ private struct BudgetFormView: View {
     }
 
     private func save() async {
-        guard let v = MoneyFormat.parse(limit), v > 0 else { error = "金額需大於 0"; return }
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        guard let v = MoneyFormat.parseAmount(limit), v > 0 else { error = "金額需大於 0"; return }
         do {
             if let b = budget {
                 let _: Budget = try await APIClient.shared.patch("/budgets/\(b.budget_uid.uuidString)", BudgetUpdateRequest(limit_amount: Money(v)))
@@ -153,6 +160,7 @@ private struct BudgetFormView: View {
                 guard let categoryUID else { error = "請選擇分類"; return }
                 let _: Budget = try await APIClient.shared.post("/budgets", BudgetCreateRequest(category_uid: categoryUID, period_type: period, limit_amount: Money(v)))
             }
+            state.didChange()
             await onSaved()
             dismiss()
         } catch {

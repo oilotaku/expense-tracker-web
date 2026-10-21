@@ -43,6 +43,7 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(scheme)
+        .environment(\.timeZone, DateCoding.tz)
         .task { await state.bootstrap() }
     }
 }

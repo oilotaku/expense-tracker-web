@@ -195,6 +195,7 @@ struct PaymentMethodField: View {
     var body: some View {
         HStack {
             TextField("支付方式", text: $text)
+                .onChange(of: text) { _, v in if v.count > 50 { text = String(v.prefix(50)) } }
             Menu {
                 ForEach(Self.suggestions, id: \.self) { s in Button(s) { text = s } }
             } label: { Image(systemName: "chevron.down.circle") }
