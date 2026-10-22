@@ -143,7 +143,7 @@ struct Transaction: Codable, Hashable, Identifiable {
     var id: UUID { transaction_uid }
 }
 
-struct TransactionWrite: Encodable {
+struct TransactionWrite: Codable, Hashable {
     let account_uid: UUID
     let category_uid: UUID
     let transaction_date: Date
@@ -154,7 +154,7 @@ struct TransactionWrite: Encodable {
     var tags: [String]? = nil
 }
 
-struct TransferWrite: Encodable {
+struct TransferWrite: Codable, Hashable {
     let from_account_uid: UUID
     let to_account_uid: UUID
     let transaction_date: Date

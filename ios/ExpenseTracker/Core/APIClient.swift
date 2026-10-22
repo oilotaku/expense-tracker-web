@@ -6,8 +6,12 @@ import FoundationNetworking
 struct APIError: LocalizedError {
     let status: Int
     let message: String
+    /// The request never left the phone (no network, DNS/Tailscale down, refused): safe to send again later.
+    var notSent = false
     var errorDescription: String? { message }
     var isUnauthorized: Bool { status == 401 }
+    /// Transport failure or the web proxy couldn't reach the backend.
+    var isUnreachable: Bool { status == -1 || (502...504).contains(status) }
 }
 
 /// Talks to the web app's same-origin `/api/v1` proxy; auth rides on the HttpOnly
@@ -21,6 +25,8 @@ final class APIClient {
     }
 
     var onUnauthorized: (() -> Void)?
+    /// Called after every request: reachable or not, and when a cached copy was served instead, how old it is.
+    var onReachability: ((_ online: Bool, _ cachedAt: Date?) -> Void)?
 
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -47,8 +53,20 @@ final class APIClient {
         }
     }
 
+    /// Successful GETs are kept on disk; when the server can't be reached the last copy is returned instead.
     func get<T: Decodable>(_ path: String, query: [String: String?] = [:]) async throws -> T {
-        try decode(await perform("GET", path, query: query, body: nil))
+        let cacheable = !path.hasPrefix("/health")
+        let key = "GET \(path)?" + query.compactMap { k, v in v.map { "\(k)=\($0)" } }.sorted().joined(separator: "&")
+        do {
+            let data = try await perform("GET", path, query: query, body: nil)
+            let value: T = try decode(data)
+            if cacheable { ResponseCache.shared.store(data, for: key) }
+            return value
+        } catch let e as APIError where e.isUnreachable && cacheable {
+            guard let hit = ResponseCache.shared.load(key), let value: T = try? decode(hit.data) else { throw e }
+            await report(online: false, cachedAt: hit.savedAt)
+            return value
+        }
     }
 
     func post<T: Decodable, B: Encodable>(_ path: String, _ body: B) async throws -> T {
@@ -116,10 +134,15 @@ final class APIClient {
         let resp: URLResponse
         do {
             (data, resp) = try await session.data(for: req)
+        } catch let e as URLError where e.code == .cancelled {
+            throw APIError(status: -2, message: "已取消")
         } catch {
-            throw APIError(status: -1, message: "連不上伺服器：\(error.localizedDescription)")
+            let notSent = (error as? URLError).map { Self.notSentCodes.contains($0.code) } ?? false
+            await report(online: false)
+            throw APIError(status: -1, message: "連不上伺服器：\(error.localizedDescription)", notSent: notSent)
         }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        await report(online: !(502...504).contains(status))
         let head = try? decoder.decode(EnvelopeHead.self, from: data)
         if !(200..<300).contains(status) || head?.success == false {
             if status == 401, !path.hasPrefix("/auth/") {
@@ -129,5 +152,17 @@ final class APIClient {
             throw APIError(status: status, message: head?.detail ?? "HTTP \(status)")
         }
         return data
+    }
+
+    /// Failures that happen before any byte of the request reaches the server.
+    /// Timeouts and dropped connections are excluded: the server may have acted on those.
+    private static let notSentCodes: Set<URLError.Code> = [
+        .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+        .dataNotAllowed, .internationalRoamingOff, .secureConnectionFailed,
+    ]
+
+    private func report(online: Bool, cachedAt: Date? = nil) async {
+        let handler = onReachability
+        await MainActor.run { handler?(online, cachedAt) }
     }
 }

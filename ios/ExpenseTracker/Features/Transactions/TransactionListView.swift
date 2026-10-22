@@ -76,6 +76,7 @@ struct TransactionListView: View {
 
     @State private var editing: Transaction?
     @State private var deleting: Transaction?
+    @State private var pendingAction: PendingWrite?
 
     private let pageSize = 100
 
@@ -92,6 +93,7 @@ struct TransactionListView: View {
     var body: some View {
         List {
             if showFilters { filterSection }
+            if state.isOffline || state.syncNote != nil || !state.myPending.isEmpty { pendingSection }
             if let error { Section { ErrorBanner(message: error) } }
             Section {
                 ForEach(visible) { t in
@@ -135,12 +137,47 @@ struct TransactionListView: View {
         .task(id: filterKey) { await reload() }
         .sheet(item: $editing) { t in TransactionFormView(mode: .edit(t)) }
         .confirmationDialog(
+            pendingAction?.status == .uncertain ? "上次上傳中途斷線，伺服器可能已經收到這筆" : "這筆離線記帳上傳失敗",
+            isPresented: Binding(get: { pendingAction != nil }, set: { if !$0 { pendingAction = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingAction
+        ) { p in
+            Button(p.status == .uncertain ? "確認伺服器沒有，重新上傳" : "重新上傳") { Task { await state.retryPending(p.id) } }
+            Button("刪除這筆", role: .destructive) { state.discardPending(p.id) }
+        } message: { p in
+            Text(p.status == .uncertain ? "先下拉重新整理交易清單，確認沒有這筆再重新上傳，避免重複記帳。" : (p.lastError ?? ""))
+        }
+        .confirmationDialog(
             "刪除「\(deleting?.description.isEmpty == false ? deleting!.description : "這筆交易")」？",
             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
             titleVisibility: .visible,
             presenting: deleting
         ) { t in
             Button("刪除", role: .destructive) { Task { await delete(t) } }
+        }
+    }
+
+    private var pendingSection: some View {
+        Section {
+            OfflineBanner()
+            ForEach(state.myPending) { p in
+                VStack(alignment: .leading, spacing: 4) {
+                    TransactionRow(transaction: p.preview)
+                    if p.status != .waiting {
+                        Text(p.status == .uncertain ? "不確定是否已上傳，點一下處理" : "上傳失敗：\(p.lastError ?? "")，點一下處理")
+                            .font(.caption).foregroundStyle(Theme.danger).lineLimit(2)
+                    }
+                }
+                .opacity(p.status == .waiting ? 0.7 : 1)
+                .onTapGesture { if p.status != .waiting { pendingAction = p } }
+                .swipeActions {
+                    Button(role: .destructive) { state.discardPending(p.id) } label: { Label("刪除", systemImage: "trash") }
+                }
+            }
+        } header: {
+            if !state.myPending.isEmpty { Text("待上傳") }
+        } footer: {
+            if !state.myPending.isEmpty { Text("離線時記的帳，連上伺服器後會自動依序上傳；上傳前不能編輯，記錯可左滑刪除後重記。") }
         }
     }
 

@@ -15,6 +15,7 @@ struct ExpenseTrackerApp: App {
 
 struct RootView: View {
     @Environment(AppState.self) private var state
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance = "system"
 
     private var scheme: ColorScheme? {
@@ -45,5 +46,9 @@ struct RootView: View {
         .preferredColorScheme(scheme)
         .environment(\.timeZone, DateCoding.tz)
         .task { await state.bootstrap() }
+        .onChange(of: scenePhase) { _, phase in
+            // back from the background: upload anything recorded offline, refresh if we were offline
+            if phase == .active { Task { await state.probe() } }
+        }
     }
 }

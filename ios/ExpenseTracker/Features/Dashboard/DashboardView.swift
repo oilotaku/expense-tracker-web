@@ -48,6 +48,7 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                OfflineBanner()
                 periodBar
                 ErrorBanner(message: error)
                 statTiles

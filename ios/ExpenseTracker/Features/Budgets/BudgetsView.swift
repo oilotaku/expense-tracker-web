@@ -11,6 +11,7 @@ struct BudgetsView: View {
 
     var body: some View {
         List {
+            if state.isOffline { Section { OfflineBanner() } }
             if let error { Section { ErrorBanner(message: error) } }
             if budgets.isEmpty {
                 Text("還沒有預算，按右上角 + 新增").foregroundStyle(Theme.textMuted)
