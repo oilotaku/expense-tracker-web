@@ -9,6 +9,7 @@ from . import (
     dashboard,
     financial_assets,
     health,
+    icons,
     internal,
     liabilities,
     net_worth,
@@ -22,6 +23,7 @@ router.include_router(auth.router, tags=["auth"])
 router.include_router(admin.router, tags=["admin"])
 router.include_router(accounts.router, tags=["accounts"])
 router.include_router(categories.router, tags=["categories"])
+router.include_router(icons.router, tags=["icons"])
 router.include_router(liabilities.router, tags=["liabilities"])
 router.include_router(transactions.router, tags=["transactions"])
 router.include_router(financial_assets.router, tags=["financial-assets"])

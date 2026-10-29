@@ -17,6 +17,7 @@ from app.schemas.account import (
     AccountUpdateRequest,
 )
 from app.schemas.response import ApiResponse
+from app.services.icon_service import ensure_icon_usable
 
 router = APIRouter(prefix="/accounts")
 
@@ -33,6 +34,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 async def create_account(
     payload: AccountCreateRequest, db: DbSession, current_user: CurrentUser
 ) -> ApiResponse[AccountResponse]:
+    await ensure_icon_usable(db, current_user.user_uid, payload.icon)
     account = await AccountRepository(db).create(
         user_uid=current_user.user_uid,
         name=payload.name,
@@ -87,6 +89,7 @@ async def update_account(
     account = await repo.find_by_account_uid(account_uid, current_user.user_uid)
     if account is None:
         raise NotFoundError("帳戶不存在")
+    await ensure_icon_usable(db, current_user.user_uid, payload.icon)
     account = await repo.update_fields(
         account,
         name=payload.name,

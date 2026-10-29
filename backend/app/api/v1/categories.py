@@ -19,6 +19,7 @@ from app.schemas.category import (
     CategoryUpdateRequest,
 )
 from app.schemas.response import ApiResponse
+from app.services.icon_service import ensure_icon_usable
 
 router = APIRouter(prefix="/categories")
 
@@ -38,6 +39,7 @@ _NOT_FOUND_DETAIL = "分類不存在"
 async def create_category(
     payload: CategoryCreateRequest, db: DbSession, current_user: CurrentUser
 ) -> ApiResponse[CategoryResponse]:
+    await ensure_icon_usable(db, current_user.user_uid, payload.icon)
     repo = CategoryRepository(db)
     try:
         category = await repo.create(
@@ -82,6 +84,7 @@ async def update_category(
     category = await repo.find_by_category_uid(current_user.user_uid, category_uid)
     if category is None:
         raise NotFoundError(_NOT_FOUND_DETAIL)
+    await ensure_icon_usable(db, current_user.user_uid, payload.icon)
     try:
         category = await repo.update_fields(
             category, name=payload.name, color=payload.color, icon=payload.icon

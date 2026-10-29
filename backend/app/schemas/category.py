@@ -2,6 +2,7 @@
 
 `color` / `icon`（design-spec §12.4）：`color` 後端驗證 hex 格式；`icon` 只驗證非空與長度上限，
 不做 enum 檢查，合法圖示清單由前端圖示選擇器維護（→ A9）。
+`custom:<user_icon_uid>` 是使用者自訂圖示，由 API 層 `ensure_icon_usable` 驗證歸屬（→ ADR-0006）。
 """
 
 import re
