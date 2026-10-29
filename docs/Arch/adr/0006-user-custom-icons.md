@@ -45,6 +45,7 @@
 
 | 方法 | 路徑 | 行為 |
 | --- | --- | --- |
+| `POST` | `/api/v1/icons/preview` | 同上傳的 multipart 欄位；跑完整處理管線但**不存檔**，直接回處理後的 `image/png`（`Cache-Control: no-store`） |
 | `POST` | `/api/v1/icons` | multipart 欄位 `file`，選填 `remove_white_background: bool`；回 `{user_icon_uid, icon_key, url}`，201 |
 | `GET` | `/api/v1/icons` | 列出本人有效圖示（不含圖片內容），每張附 `usage_count` |
 | `GET` | `/api/v1/icons/{user_icon_uid}` | 回 `image/png` |
@@ -59,7 +60,7 @@
   （與欄位 `server_default` 相同），再把圖示 `is_deleted = TRUE`；兩步一起成功或一起回滾，不會留下
   指向已刪除圖示的引用。前端刪除前先提示「有 N 個帳戶 / 分類會改回預設圖示」（數字由
   `GET /api/v1/icons` 每張附帶的 `usage_count` 提供），回應的重設筆數用來刷新帳戶 / 分類快取。
-- 上傳限流：Redis 每使用者每小時 20 次（→ CACHE 規則）。
+- 上傳限流：Redis 每使用者每小時 20 次；預覽另計每小時 60 次（切換選項會重新預覽）（→ CACHE 規則）。
 - 新 endpoint 依 → BE / API docs 規則補 OpenAPI 說明與錯誤碼。
 
 ### 4. 上傳處理管線（後端，Pillow）
@@ -80,6 +81,26 @@
    PNG 理論上限約 17 KB，所以實務上不會因「處理後太大」而失敗。
 8. 影像處理是 CPU 工作：以 `run_in_threadpool` 執行避免卡住事件迴圈，並以全域
    `asyncio.Semaphore(1)` 限制同時只處理一張（Pi 記憶體有限）。
+
+#### 確認前預覽
+
+使用者選圖後**先看到最終圖示，按「使用這張」才真正儲存**：
+
+1. 用戶端縮圖（長邊 1024）後送 `POST /api/v1/icons/preview`，畫面顯示後端回來的處理結果。
+2. 使用者切換「去除白色背景」時重新送預覽（防抖 300 ms），舊的請求取消。
+3. 按「使用這張」時把**同一份縮圖後的檔案與同一組選項**送 `POST /api/v1/icons`。處理管線是確定性的
+   （同版本 Pillow、同輸入、同參數 → 位元組相同的輸出），所以存下來的就是剛才看到的那張；回應的
+   `content_sha256` 可讓前端比對預覽圖的雜湊確認一致。按「重新選擇」或關閉則什麼都不存。
+
+預覽由後端產生而不是前端模擬：去白底 flood fill、調色盤量化、縮放演算法在 canvas 上很難做到與
+Pillow 完全一致，前端模擬會出現「預覽跟實際不一樣」。代價是確認時同一份檔案（通常 < 1 MB）
+多傳一次，在區網 / tailnet 上可忽略。
+
+預覽畫面同時呈現：
+- 原圖縮圖與處理後圖示並排；
+- 處理後圖示放進實際使用的樣式：帳戶卡片尺寸、分類標籤尺寸，各在淺色與深色底上各一份
+  （白底沒去乾淨、透明邊太大，在這裡就看得出來）；
+- 「去除白色背景」開關、「使用這張」、「重新選擇」按鈕；處理失敗時顯示錯誤訊息原文。
 
 #### 尺寸過大
 
@@ -102,7 +123,7 @@
 - 合併三份重複的圖示對照表為單一元件 `EntityIcon({icon, color, size})`：內建 key 照舊畫
   SVG + 彩色底；`custom:` 畫 `<img src="/api/v1/icons/<uid>" loading="lazy" alt="">`，
   **不加彩色底**（彩色插圖疊彩色圓底會很雜），載入失敗退回預設圖示。
-- `IconPicker` 新增「我的圖示」區：上傳按鈕（含「去除白色背景」勾選與預覽）、已上傳清單、刪除。
+- `IconPicker` 新增「我的圖示」區：上傳按鈕 → 預覽對話框（見「確認前預覽」）、已上傳清單、刪除。
 - RTK Query：`icons` tag，上傳 / 刪除後 invalidate；刪除另外 invalidate `accounts`、`categories`（圖示可能被改回預設）。
 - 圖片走同源 `/api/v1`（Next rewrites 轉後端），cookie 自然帶上，不需 CORS。
 - Service Worker 維持「`/api/` 不攔截不快取」；離線時靠瀏覽器 HTTP 快取（immutable 長快取），
@@ -113,7 +134,7 @@
 - `IconBadge` 遇到 `custom:` 改用自訂載入器：沿用 `APIClient` 的 `URLSession`（共用
   `HTTPCookieStorage.shared` 的登入 cookie），結果存 `Caches/` 以 uid 為檔名，因內容不可變永不
   重新驗證；失敗退回 `circle.fill`。
-- 挑選器加 `PhotosPicker` → multipart 上傳。
+- 挑選器加 `PhotosPicker` → 預覽 sheet（同一支 preview API、同樣的淺 / 深色實際尺寸呈現）→ 確認後上傳。
 - 依現有流程：push `ios-app` → GitHub Actions 編譯 → `ios-sideload sign` → 裝進 LiveContainer。
 
 ### 7. 新增相依
@@ -141,6 +162,8 @@
 - **接受 SVG 上傳**：SVG 可夾帶腳本，消毒成本與風險都高。
 - **直接提供原檔**：無法保證內容安全，也會帶出 EXIF。
 - **刪除時若仍被引用就拒絕（409）**：使用者得先逐一改掉帳戶 / 分類的圖示才能刪，操作繁瑣；改回預設圖示更直接（使用者決定）。
+- **前端用 canvas 模擬預覽**：去白底與調色盤量化難以與 Pillow 一致，預覽會跟實際存下的不同。
+- **預覽結果暫存 Redis、確認時只送 token**：省一次上傳，但多了暫存狀態與過期處理；檔案已縮到 < 1 MB，重送比較單純。
 - **前端裁切後只送處理好的圖**：仍須後端重新編碼才能信任，前端裁切只能當使用者體驗加分，不能
   取代後端管線。
 
@@ -155,10 +178,10 @@
 
 ## 實作分期
 
-1. **後端**：model + migration、Pillow 管線（含單元測試：各格式、EXIF、炸彈、透明化、比例）、
+1. **後端**：model + migration、Pillow 管線（預覽與上傳共用同一函式，加「同輸入兩次輸出位元組相同」測試）（含單元測試：各格式、EXIF、炸彈、透明化、比例）、
    四支 endpoint、`custom:` 引用驗證、限流、OpenAPI。
-2. **網頁**：`EntityIcon` 合併、`IconPicker` 上傳區、RTK Query、vitest + msw 測試。
-3. **iOS**：自訂載入器與快取、`PhotosPicker` 上傳。
+2. **網頁**：`EntityIcon` 合併、`IconPicker` 上傳區與預覽對話框、RTK Query、vitest + msw 測試。
+3. **iOS**：自訂載入器與快取、`PhotosPicker` 預覽與上傳。
 
 前兩期合計估 2~3 天，第三期約 1 天（含一輪 Actions 編譯與實機驗證）。
 
