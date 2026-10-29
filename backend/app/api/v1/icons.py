@@ -3,6 +3,7 @@
 全部限定當前使用者；別人的圖示一律 404（不回 403，避免探測 uid 是否存在）。
 """
 
+from collections.abc import AsyncGenerator
 from typing import Annotated, Final
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartException, MultiPartParser
 
 from app.api.deps import get_current_user, get_db
 from app.core.cache import get_redis
@@ -42,6 +44,8 @@ PREVIEW_RATE_LIMIT: Final[int] = 60
 _RATE_LIMIT_WINDOW_SECONDS: Final[int] = 3600
 _NOT_FOUND_DETAIL: Final[str] = "圖示不存在"
 _TRUE_VALUES: Final[frozenset[str]] = frozenset({"1", "true", "on", "yes"})
+# multipart 邊界與欄位的額外位元組；檔案本身另外以 MAX_UPLOAD_BYTES 檢查
+_MULTIPART_OVERHEAD_BYTES: Final[int] = 64 * 1024
 
 # 內容建立後不可變（換圖 = 新 uid），可以放心長快取
 _IMAGE_HEADERS: Final[dict[str, str]] = {
@@ -107,17 +111,36 @@ async def enforce_icon_preview_rate_limit(
     )
 
 
+async def _limited_stream(request: Request) -> AsyncGenerator[bytes]:
+    """邊讀邊計數：不論有沒有 Content-Length（chunked 也一樣），超過上限立刻中止。"""
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD_BYTES:
+            raise IconTooLargeError()
+        yield chunk
+
+
 async def _read_upload(request: Request) -> tuple[bytes, bool]:
-    """先看 Content-Length 再解析 multipart，超過上限的請求不必讀完整個 body。"""
+    """解析 multipart 上傳。Content-Length 先擋一次（不必讀 body），串流再擋一次（防繞過）。"""
     length = request.headers.get("content-length")
     if length is not None and length.isdigit() and int(length) > MAX_UPLOAD_BYTES:
         raise IconTooLargeError()
-    async with request.form(max_files=1, max_fields=2) as form:
+    if not request.headers.get("content-type", "").startswith("multipart/form-data"):
+        raise AppError("缺少圖片檔案", status_code=422, response_code=422)
+    parser = MultiPartParser(request.headers, _limited_stream(request), max_files=1, max_fields=2)
+    try:
+        form = await parser.parse()
+    except MultiPartException as e:
+        raise AppError("上傳格式錯誤", status_code=422, response_code=422) from e
+    try:
         upload = form.get("file")
         if not isinstance(upload, UploadFile):
             raise AppError("缺少圖片檔案", status_code=422, response_code=422)
         raw = await upload.read(MAX_UPLOAD_BYTES + 1)
         flag = form.get("remove_white_background")
+    finally:
+        await form.close()
     if len(raw) > MAX_UPLOAD_BYTES:
         raise IconTooLargeError()
     remove_white_background = isinstance(flag, str) and flag.strip().lower() in _TRUE_VALUES

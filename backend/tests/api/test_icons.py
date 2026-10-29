@@ -1,6 +1,7 @@
 """自訂圖示 API（→ ADR-0006）：打真實 PostgreSQL / Redis（測試實例），不 mock。"""
 
 import uuid
+from collections.abc import AsyncIterator
 from io import BytesIO
 
 import pytest
@@ -213,3 +214,38 @@ async def test_upload_rate_limit(client: AsyncClient, monkeypatch: pytest.Monkey
     await _upload(client)
     res = await _send(client, "/api/v1/icons", _png((5, 5, 5)))
     assert res.status_code == 429
+
+
+async def test_chunked_upload_without_content_length_is_capped(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """沒有 Content-Length 的串流上傳也要在讀取途中被擋下（不能先整包寫進暫存檔）。"""
+    monkeypatch.setattr(icons_api, "MAX_UPLOAD_BYTES", 1024)
+    await _login(client)
+    boundary = "testboundary"
+    head = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\n'
+        "Content-Type: image/png\r\n\r\n"
+    ).encode()
+    sent = 0
+
+    async def body() -> AsyncIterator[bytes]:
+        nonlocal sent
+        yield head
+        for _ in range(200):  # 200 × 64 KB ≈ 12.5 MB，遠超過上限
+            sent += 1
+            yield b"\0" * 65536
+
+    res = await client.post(
+        "/api/v1/icons",
+        content=body(),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    assert res.status_code == 413
+    assert sent < 200  # 讀到上限就中止，沒有把整個 body 讀完
+
+
+async def test_non_multipart_body_rejected(client: AsyncClient) -> None:
+    await _login(client)
+    res = await client.post("/api/v1/icons", content=b"x", headers={"Content-Type": "image/png"})
+    assert res.status_code == 422
