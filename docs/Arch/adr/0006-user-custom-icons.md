@@ -1,6 +1,6 @@
 # ADR-0006: 使用者自訂圖示（上傳圖片）
 
-- **狀態**：Proposed
+- **狀態**：Accepted（後端與網頁已實作，iOS 待做）
 - **日期**：2026-10-29
 - **決策者**：本次 session（Claude Code）依使用者需求整理，待人類複核
 
@@ -248,6 +248,20 @@
    `IconUploadFlow` 與預覽對話框、`IconPicker` 選用區、RTK Query、vitest + msw 測試。
 3. **iOS**（約 1~1.5 天，`ios-app` 合併後）：自訂載入器與快取、「更多 → 我的圖示」、挑選器選用與上傳、
    預覽 sheet；含一輪 Actions 編譯與實機驗證。
+
+## 實作紀錄（2026-10-29）
+
+- 後端 `2b6f9a3`、`76a7f09`；網頁 `72213e4`（分支 `feat-custom-icons`）。
+- 與上文的差異：
+  - `pillow==13.0.0` 只加在專案 `pyproject.toml`；harness 版本表是中央模板，不在本 repo，未登錄。
+  - 上傳大小改在**讀取串流時計數**（`MultiPartParser` + 計數 generator），chunked、沒有
+    `Content-Length` 的請求也會在讀到上限時 413，不會先整包寫進暫存檔（背景安全審查指出）。
+  - 「使用這張」與預覽送同一份縮圖後的檔案；網頁端未另外比對雜湊（後端確定性輸出已有測試保證）。
+- 驗證：後端 282 測試、網頁 394 測試、`next build` 全過；另以 Playwright 在隔離環境（測試資料庫）
+  走完上傳 → 去白底預覽 → 確認 → 套用到帳戶 → 刪除後帳戶改回 `other` → 手機「更多」入口；
+  4000×3000 照片經瀏覽器縮圖後上傳量由 1.18 MB 降為約 0.54 MB。
+- 已知測試注意事項：`test_auth_rate_limit.py` 的註冊限流用 Redis 1 小時視窗，一小時內重跑整套會
+  因上一輪殘留的計數失敗（與本功能無關）；清掉測試 Redis 的 `ratelimit:register:*` key 即可。
 
 ## 參照
 
