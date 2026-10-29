@@ -87,6 +87,11 @@
   輸出 PNG 上傳；iOS 以 `UIImage` 縮到 1024 後輸出 PNG。瀏覽器 / iOS 自己會解 HEIC，所以 iPhone
   照片在這一步就轉成 PNG，後端不必支援 HEIC。縮完通常 < 1 MB。
 - **後端上限只是防守**：用戶端縮圖失敗（舊瀏覽器、直接打 API）時才會碰到 10 MB / 5,000 萬像素上限。
+- **為什麼是 10 MB**：網頁與 iOS 的請求都經 Next.js rewrites（`/api/v1/*` → backend）轉發，Next 16
+  的 `experimental.proxyClientMaxBodySize` 預設 10 MB（10485760），超過時只轉前 10 MB 並在 log 警告，
+  後端會收到被截斷的檔案、解碼失敗，使用者看到的是難懂的格式錯誤。後端上限對齊這個值，讓超過的
+  請求得到明確的 413。要放寬必須兩邊一起改（`next.config.ts` 設 `proxyClientMaxBodySize` + 後端
+  上限），但用戶端縮圖後實際上傳 < 1 MB，沒有放寬的需要。
 - **錯誤訊息要可行動**：413 回「圖片超過 10 MB，請先縮小」；像素超限回「圖片超過 5,000 萬像素」；
   格式不支援回「只接受 PNG、JPEG、WebP、GIF」。前端顯示訊息原文。
 
