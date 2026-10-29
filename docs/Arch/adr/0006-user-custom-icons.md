@@ -64,15 +64,31 @@
 
 ### 4. 上傳處理管線（後端，Pillow）
 
-1. 原始大小上限 5 MB（先看 `Content-Length`，讀取時再以累計位元組數截斷）。
+1. 原始大小上限 10 MB（先看 `Content-Length`，讀取時再以累計位元組數截斷），超過回 **413**。
 2. 只以 Pillow 實際解碼判斷格式，接受 PNG / JPEG / WebP / GIF（取第一幀）；**不信任副檔名與
-   `Content-Type`，不收 SVG**。
-3. 防解壓縮炸彈：設 `Image.MAX_IMAGE_PIXELS`（約 16M 像素），超過回 422。
+   `Content-Type`，不收 SVG**。HEIC 不在後端解（不加 `pillow-heif`），由用戶端縮圖時轉掉（見下方
+   「尺寸過大」）。
+3. 防解壓縮炸彈：設 `Image.MAX_IMAGE_PIXELS = 50_000_000`（涵蓋 48MP 手機原圖），超過回 422。
+   JPEG 先 `Image.draft("RGB", (1024, 1024))` 讓解碼器直接以 1/2~1/8 比例解碼，24MP 照片解碼記憶體
+   從約 100 MB 降到數 MB；其他格式解碼後立刻 `thumbnail((1024, 1024))` 再往下處理。
 4. `ImageOps.exif_transpose` 轉正後丟棄全部 metadata（含 EXIF GPS）。
 5. 轉 RGBA；`remove_white_background=true` 時從四角做容差 flood fill，把相連的近白色改透明
    （只動與邊緣相連的白色，圖中間的白色保留）。
 6. 裁掉透明邊，等比縮放後置中貼到 256×256 透明畫布（細長圖如湯匙不會被拉伸）。
-7. 重新編碼 PNG（`optimize=True`），超過 64 KB 則降為 192 / 128 邊長再試，仍超過回 422。
+7. 重新編碼 PNG（`optimize=True`）；超過 64 KB（照片類 256×256 RGBA 常見 100 KB 以上）先
+   `quantize(256)` 轉調色盤 PNG（保留透明，約小 3 倍），仍超過再降為 192 / 128 邊長；128 邊長調色盤
+   PNG 理論上限約 17 KB，所以實務上不會因「處理後太大」而失敗。
+8. 影像處理是 CPU 工作：以 `run_in_threadpool` 執行避免卡住事件迴圈，並以全域
+   `asyncio.Semaphore(1)` 限制同時只處理一張（Pi 記憶體有限）。
+
+#### 尺寸過大
+
+- **用戶端先縮圖再上傳（主要防線）**：網頁以 `createImageBitmap` + `<canvas>` 把長邊縮到 1024 後
+  輸出 PNG 上傳；iOS 以 `UIImage` 縮到 1024 後輸出 PNG。瀏覽器 / iOS 自己會解 HEIC，所以 iPhone
+  照片在這一步就轉成 PNG，後端不必支援 HEIC。縮完通常 < 1 MB。
+- **後端上限只是防守**：用戶端縮圖失敗（舊瀏覽器、直接打 API）時才會碰到 10 MB / 5,000 萬像素上限。
+- **錯誤訊息要可行動**：413 回「圖片超過 10 MB，請先縮小」；像素超限回「圖片超過 5,000 萬像素」；
+  格式不支援回「只接受 PNG、JPEG、WebP、GIF」。前端顯示訊息原文。
 
 **對外永遠只提供重新編碼後的 PNG**，原檔不落地、不寫 log。
 
@@ -104,7 +120,7 @@
 | 威脅 | 對策 |
 | --- | --- |
 | 上傳偽裝成圖片的 HTML / 腳本（polyglot、XSS） | 只回重新編碼的 PNG、`nosniff`、`default-src 'none'`、不收 SVG |
-| 解壓縮炸彈、超大檔 | 原始 5 MB 上限 + 像素上限 + 處理後 64 KB 上限 |
+| 解壓縮炸彈、超大檔 | 用戶端先縮圖；後端 10 MB / 5,000 萬像素上限、JPEG draft 解碼、單張序列處理 |
 | 讀取他人圖示（IDOR） | 擁有者檢查，非本人一律 404 |
 | 灌爆儲存空間 | 每人 50 張 + 每小時 20 次上傳 |
 | 照片 EXIF 洩漏位置 | 重新編碼時丟棄全部 metadata |
