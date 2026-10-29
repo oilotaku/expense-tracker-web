@@ -143,7 +143,7 @@ struct Transaction: Codable, Hashable, Identifiable {
     var id: UUID { transaction_uid }
 }
 
-struct TransactionWrite: Encodable {
+struct TransactionWrite: Codable, Hashable {
     let account_uid: UUID
     let category_uid: UUID
     let transaction_date: Date
@@ -154,7 +154,7 @@ struct TransactionWrite: Encodable {
     var tags: [String]? = nil
 }
 
-struct TransferWrite: Encodable {
+struct TransferWrite: Codable, Hashable {
     let from_account_uid: UUID
     let to_account_uid: UUID
     let transaction_date: Date
@@ -346,3 +346,38 @@ struct TrendPoint: Codable, Hashable {
 }
 
 struct ItemsResponse<T: Decodable>: Decodable { let items: [T] }
+
+// MARK: - Custom icons (ADR-0006)
+
+struct UserIcon: Codable, Hashable, Identifiable {
+    let user_icon_uid: UUID
+    /// Value written into an account / category `icon` field: `custom:<uid>`.
+    let icon_key: String
+    let content_sha256: String
+    let byte_size: Int
+    let usage_count: Int
+    let created_at: Date
+    var id: UUID { user_icon_uid }
+}
+
+struct IconQuota: Codable, Hashable {
+    let used: Int
+    let limit: Int
+}
+
+struct IconListResponse: Codable {
+    let items: [UserIcon]
+    let quota: IconQuota
+}
+
+struct IconUsages: Codable {
+    struct AccountRef: Codable, Hashable { let account_uid: UUID; let name: String }
+    struct CategoryRef: Codable, Hashable { let category_uid: UUID; let name: String }
+    let accounts: [AccountRef]
+    let categories: [CategoryRef]
+}
+
+struct IconDeleteResult: Codable {
+    let reset_accounts: Int
+    let reset_categories: Int
+}

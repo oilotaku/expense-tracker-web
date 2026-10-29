@@ -8,6 +8,7 @@ struct MoreView: View {
             Section {
                 NavigationLink { AccountsView() } label: { Label("帳戶管理", systemImage: "building.columns") }
                 NavigationLink { CategoriesView() } label: { Label("分類管理", systemImage: "square.grid.2x2") }
+                NavigationLink { IconsView() } label: { Label("我的圖示", systemImage: "photo.on.rectangle") }
                 NavigationLink { RecurringView() } label: { Label("固定收支", systemImage: "arrow.triangle.2.circlepath") }
                 NavigationLink { AssetsView() } label: { Label("資產 / 負債", systemImage: "chart.line.uptrend.xyaxis") }
             }

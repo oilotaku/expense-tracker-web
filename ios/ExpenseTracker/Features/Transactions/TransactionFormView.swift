@@ -218,6 +218,21 @@ struct TransactionFormView: View {
         recentCategoryRaw = list.prefix(8).joined(separator: ",")
     }
 
+    /// New plain transactions and transfers: if the request never left the phone, keep it in the
+    /// offline queue instead of failing. Edits and recurring rules always need the server.
+    private func postOrQueue(_ payload: PendingWrite.Payload) async throws -> Bool {
+        do {
+            switch payload {
+            case let .transaction(b): try await APIClient.shared.postVoid("/transactions", b)
+            case let .transfer(b): try await APIClient.shared.postVoid("/transactions/transfer", b)
+            }
+            return false
+        } catch let e as APIError where e.notSent {
+            state.enqueue(payload)
+            return true
+        }
+    }
+
     private func save(again: Bool) async {
         toast = nil
         guard let amount else { error = expression.isEmpty ? "請輸入金額" : "金額需大於 0"; return }
@@ -226,6 +241,7 @@ struct TransactionFormView: View {
         let api = APIClient.shared
         busy = true
         defer { busy = false }
+        var queued = false
         do {
             if type == .transfer {
                 guard let toAccountUID else { error = "請選擇轉入帳戶"; return }
@@ -235,7 +251,7 @@ struct TransactionFormView: View {
                 if let group = editing?.transfer_group_uid {
                     let _: TransferResponse = try await api.patch("/transactions/transfer/\(group.uuidString)", body)
                 } else {
-                    let _: TransferResponse = try await api.post("/transactions/transfer", body)
+                    queued = try await postOrQueue(.transfer(body))
                 }
             } else {
                 guard let category = categoryUID.flatMap({ state.category($0) }) ?? state.categories.first(where: { $0.name == "其他" }) else {
@@ -253,8 +269,10 @@ struct TransactionFormView: View {
                                             payment_method: paymentMethod)
                 if let t = editing {
                     let _: Transaction = try await api.patch("/transactions/\(t.transaction_uid.uuidString)", body)
-                } else if writeNow {
-                    let _: Transaction = try await api.post("/transactions", body)
+                } else if makeRule {
+                    if writeNow { let _: Transaction = try await api.post("/transactions", body) }
+                } else {
+                    queued = try await postOrQueue(.transaction(body))
                 }
                 if makeRule {
                     let rule = RecurringRuleWrite(account_uid: accountUID, category_uid: category.category_uid,
@@ -267,10 +285,11 @@ struct TransactionFormView: View {
                 rememberCategory(category.category_uid)
                 if !isEdit { lastAccountUID = accountUID.uuidString }
             }
-            state.didChange()
+            if !queued { state.didChange() }
             error = nil
             if again {
-                toast = "已儲存 \(type.label) \(MoneyFormat.number(amount))"
+                toast = queued ? "已離線暫存 \(type.label) \(MoneyFormat.number(amount))，連線後自動上傳"
+                               : "已儲存 \(type.label) \(MoneyFormat.number(amount))"
                 expression = ""
                 categoryUID = nil
                 description = ""
@@ -278,6 +297,8 @@ struct TransactionFormView: View {
             } else {
                 dismiss()
             }
+        } catch let e as APIError where e.notSent {
+            self.error = isEdit || recurring ? "目前離線：編輯與固定收支需要連線，請稍後再試" : e.message
         } catch {
             self.error = error.localizedDescription
         }

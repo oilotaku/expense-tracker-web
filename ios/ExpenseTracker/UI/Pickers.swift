@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct IconItem {
     let key: String
@@ -28,13 +29,29 @@ enum IconCatalog {
     }
 }
 
+/// Built-in key → SF Symbol on a coloured circle; `custom:<uid>` → the uploaded image with no circle
+/// (colourful artwork on a coloured disc looks muddy, ADR-0006 §7).
 struct IconBadge: View {
     let icon: String
     let color: String
     var size: CGFloat = 36
 
     var body: some View {
-        Image(systemName: IconCatalog.symbol(icon))
+        if let uid = CustomIcon.uid(icon) {
+            CustomIconImage(uid: uid, fallbackColor: color, size: size)
+        } else {
+            BuiltinIconBadge(symbol: IconCatalog.symbol(icon), color: color, size: size)
+        }
+    }
+}
+
+struct BuiltinIconBadge: View {
+    let symbol: String
+    let color: String
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: symbol)
             .font(.system(size: size * 0.45, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
@@ -42,25 +59,81 @@ struct IconBadge: View {
     }
 }
 
-struct IconPicker: View {
-    @Binding var selection: String
-    var color: String
+struct CustomIconImage: View {
+    let uid: UUID
+    var fallbackColor: String = Theme.chartOther
+    let size: CGFloat
+    @State private var image: UIImage?
+    @State private var failed = false
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
-            ForEach(IconCatalog.all, id: \.key) { item in
-                Button {
-                    selection = item.key
-                } label: {
-                    VStack(spacing: 4) {
-                        IconBadge(icon: item.key, color: selection == item.key ? color : Theme.chartOther, size: 40)
-                        Text(item.label).font(.caption2).foregroundStyle(Theme.textSecondary)
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
+                    .frame(width: size, height: size)
+            } else if failed {
+                // Deleted icon or offline without a cached copy.
+                BuiltinIconBadge(symbol: "circle.fill", color: fallbackColor, size: size)
+            } else {
+                Color.clear.frame(width: size, height: size)
+            }
+        }
+        .task(id: uid) {
+            let loaded = await IconImageCache.shared.image(for: uid)
+            image = loaded
+            failed = loaded == nil
+        }
+        .accessibilityLabel("自訂圖示")
+    }
+}
+
+struct IconPicker: View {
+    @Environment(AppState.self) private var state
+    @Binding var selection: String
+    var color: String
+    @State private var uploadData: IdentifiableData?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                ForEach(IconCatalog.all, id: \.key) { item in
+                    Button {
+                        selection = item.key
+                    } label: {
+                        VStack(spacing: 4) {
+                            IconBadge(icon: item.key, color: selection == item.key ? color : Theme.chartOther, size: 40)
+                            Text(item.label).font(.caption2).foregroundStyle(Theme.textSecondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+            }
+
+            // Pick only; deleting lives on the 我的圖示 screen so it can't happen by accident here.
+            FieldLabel(text: "我的圖示")
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                ForEach(state.icons) { icon in
+                    Button {
+                        selection = icon.icon_key
+                    } label: {
+                        CustomIconImage(uid: icon.user_icon_uid, size: 40)
+                            .padding(3)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(selection == icon.icon_key ? Theme.primary : .clear, lineWidth: 2)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+                IconPhotoPickerButton(compact: true, disabled: state.iconQuota.used >= state.iconQuota.limit) {
+                    uploadData = IdentifiableData(data: $0)
+                }
             }
         }
         .padding(.vertical, 4)
+        .sheet(item: $uploadData) { item in
+            IconUploadSheet(sourceData: item.data) { icon in selection = icon.icon_key }
+        }
     }
 }
 
