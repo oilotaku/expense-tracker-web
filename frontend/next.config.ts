@@ -14,6 +14,12 @@ const apiProxyTarget = process.env.API_PROXY_TARGET ?? 'http://backend:8000/api/
 const nextConfig: NextConfig = {
   // docker/frontend/Dockerfile 用 standalone 輸出
   output: 'standalone',
+  experimental: {
+    // rewrites 轉發的請求 body 預設只留前 10 MB，超過會「截斷後照轉」，後端收到殘缺的 multipart 只能回
+    // 難懂的格式錯誤。調到比後端圖示上傳上限（10 MB + 64 KB multipart 額外位元組）略高，讓超過的請求
+    // 一律由後端邊讀邊計數擋下並回 413（→ ADR-0006 §4，實測紀錄見該 ADR）。
+    proxyClientMaxBodySize: 11 * 1024 * 1024,
+  },
   poweredByHeader: false,
   async rewrites() {
     return [{ source: '/api/v1/:path*', destination: `${apiProxyTarget}/:path*` }]
