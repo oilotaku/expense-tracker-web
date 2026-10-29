@@ -47,8 +47,9 @@
 | --- | --- | --- |
 | `POST` | `/api/v1/icons/preview` | 同上傳的 multipart 欄位；跑完整處理管線但**不存檔**，直接回處理後的 `image/png`（`Cache-Control: no-store`） |
 | `POST` | `/api/v1/icons` | multipart 欄位 `file`，選填 `remove_white_background: bool`；回 `{user_icon_uid, icon_key, url}`，201 |
-| `GET` | `/api/v1/icons` | 列出本人有效圖示（不含圖片內容），每張附 `usage_count` |
+| `GET` | `/api/v1/icons` | 列出本人有效圖示（不含圖片內容），每張附 `usage_count`、`created_at`；另回 `quota: {used, limit}` |
 | `GET` | `/api/v1/icons/{user_icon_uid}` | 回 `image/png` |
+| `GET` | `/api/v1/icons/{user_icon_uid}/usages` | 列出使用這張圖示的帳戶 / 分類（`{accounts:[{account_uid,name}], categories:[...]}`），給「我的圖示」詳細畫面 |
 | `DELETE` | `/api/v1/icons/{user_icon_uid}` | 軟刪除；仍在使用它的帳戶 / 分類改回預設圖示 `other`，回 `{reset_accounts, reset_categories}` |
 
 - 全部要登入（既有 JWT cookie，`get_current_user`）。非本人的圖示一律回 **404**（不回 403，避免
@@ -118,26 +119,53 @@ Pillow 完全一致，前端模擬會出現「預覽跟實際不一樣」。代�
 
 **對外永遠只提供重新編碼後的 PNG**，原檔不落地、不寫 log。
 
-### 5. 網頁端
+### 5. 「我的圖示」頁（上傳與管理的主要入口）
+
+入口放在「更多」，點進去上方是上傳區、下方是已上傳圖示：
+
+| 平台 | 入口 | 位置 |
+| --- | --- | --- |
+| 網頁手機寬度 | 底部導覽「更多」選單（`BOTTOM_NAV_MORE_ITEMS`），插在「帳戶」與「設定」之間 | 路由 `/icons` |
+| 網頁桌機 | 桌機沒有「更多」，加進側邊欄二級導覽（`SECONDARY_ITEMS`，分類 / 帳戶之後），否則桌機進不去 | 同上 |
+| iOS | 「更多」分頁第一個 Section，「分類管理」之後，`Label("我的圖示", systemImage: "photo.on.rectangle")` | `IconsView` |
+
+頁面版面（由上而下）：
+
+1. **上傳區**：桌機為可拖放的虛線框（拖檔或點擊選檔），手機為「選擇圖片」按鈕（開相簿 / 檔案）；
+   下方小字「支援 PNG、JPEG、WebP、GIF，會自動縮成 256×256」與配額「已使用 12 / 50」。
+   選檔後進「確認前預覽」對話框，確認後新圖示出現在下方清單最前面。配額用完時上傳區停用並說明。
+2. **已上傳圖示**：格狀排列，每格顯示圖示、使用次數（「3 個使用中」/「未使用」），新的在前。
+   空狀態顯示「還沒有上傳圖示」。
+3. **點任一圖示 → 詳細**：大圖（淺 / 深色底）、上傳日期、使用中的帳戶 / 分類名稱清單
+   （`/usages`）、「刪除」按鈕；刪除確認文字依使用情況：「有 2 個帳戶、1 個分類會改回預設圖示，
+   確定刪除？」或「確定刪除？」。
+
+各帳戶 / 分類的 `IconPicker`「我的圖示」區負責**選用**，並保留一顆「上傳新圖示」（共用同一個
+上傳 + 預覽元件，不離開目前表單，避免填到一半的資料遺失）；**刪除只在「我的圖示」頁**做，
+挑選器裡不放刪除，避免選圖時誤刪。
+
+### 6. 網頁端元件
 
 - 合併三份重複的圖示對照表為單一元件 `EntityIcon({icon, color, size})`：內建 key 照舊畫
   SVG + 彩色底；`custom:` 畫 `<img src="/api/v1/icons/<uid>" loading="lazy" alt="">`，
   **不加彩色底**（彩色插圖疊彩色圓底會很雜），載入失敗退回預設圖示。
-- `IconPicker` 新增「我的圖示」區：上傳按鈕 → 預覽對話框（見「確認前預覽」）、已上傳清單、刪除。
+- 新頁面 `/icons`（見 §5）；上傳 + 預覽抽成共用元件 `IconUploadFlow`，`/icons` 與 `IconPicker` 共用。
+- `IconPicker` 新增「我的圖示」區：已上傳圖示可選用 +「上傳新圖示」（見 §5），不含刪除。
 - RTK Query：`icons` tag，上傳 / 刪除後 invalidate；刪除另外 invalidate `accounts`、`categories`（圖示可能被改回預設）。
 - 圖片走同源 `/api/v1`（Next rewrites 轉後端），cookie 自然帶上，不需 CORS。
 - Service Worker 維持「`/api/` 不攔截不快取」；離線時靠瀏覽器 HTTP 快取（immutable 長快取），
   沒快取到的顯示預設圖示。
 
-### 6. iOS App（第二階段）
+### 7. iOS App（第二階段）
 
 - `IconBadge` 遇到 `custom:` 改用自訂載入器：沿用 `APIClient` 的 `URLSession`（共用
   `HTTPCookieStorage.shared` 的登入 cookie），結果存 `Caches/` 以 uid 為檔名，因內容不可變永不
   重新驗證；失敗退回 `circle.fill`。
+- 「更多」加「我的圖示」`IconsView`（版面同 §5：上方 `PhotosPicker` 上傳、下方 `LazyVGrid` 已上傳圖示、點進詳細可刪除）。
 - 挑選器加 `PhotosPicker` → 預覽 sheet（同一支 preview API、同樣的淺 / 深色實際尺寸呈現）→ 確認後上傳。
 - 依現有流程：push `ios-app` → GitHub Actions 編譯 → `ios-sideload sign` → 裝進 LiveContainer。
 
-### 7. 新增相依
+### 8. 新增相依
 
 - 後端加 `Pillow`（arm64 / x86_64 皆有 wheel），版本鎖到 patch 並登錄版本表（→ CORE-022）。
 
@@ -180,8 +208,8 @@ Pillow 完全一致，前端模擬會出現「預覽跟實際不一樣」。代�
 
 1. **後端**：model + migration、Pillow 管線（預覽與上傳共用同一函式，加「同輸入兩次輸出位元組相同」測試）（含單元測試：各格式、EXIF、炸彈、透明化、比例）、
    四支 endpoint、`custom:` 引用驗證、限流、OpenAPI。
-2. **網頁**：`EntityIcon` 合併、`IconPicker` 上傳區與預覽對話框、RTK Query、vitest + msw 測試。
-3. **iOS**：自訂載入器與快取、`PhotosPicker` 預覽與上傳。
+2. **網頁**：`EntityIcon` 合併、「我的圖示」頁 `/icons` 與導覽入口、`IconUploadFlow` 預覽對話框、`IconPicker` 選用區、RTK Query、vitest + msw 測試。
+3. **iOS**：自訂載入器與快取、「更多 → 我的圖示」、`PhotosPicker` 預覽與上傳。
 
 前兩期合計估 2~3 天，第三期約 1 天（含一輪 Actions 編譯與實機驗證）。
 
