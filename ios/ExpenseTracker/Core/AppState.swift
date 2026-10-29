@@ -12,6 +12,9 @@ final class AppState {
     var user: User?
     var accounts: [Account] = [] { didSet { accountIndex = Dictionary(uniqueKeysWithValues: accounts.map { ($0.account_uid, $0) }) } }
     var categories: [Category] = [] { didSet { categoryIndex = Dictionary(uniqueKeysWithValues: categories.map { ($0.category_uid, $0) }) } }
+    /// Custom icons (ADR-0006); used by the icon picker and the 我的圖示 screen.
+    var icons: [UserIcon] = []
+    var iconQuota = IconQuota(used: 0, limit: 50)
     private var accountIndex: [UUID: Account] = [:]
     private var categoryIndex: [UUID: Category] = [:]
     /// Bumped after any write so list screens know to reload.
@@ -88,6 +91,8 @@ final class AppState {
         user = nil
         accounts = []
         categories = []
+        icons = []
+        await IconImageCache.shared.clear()
         phase = .loggedOut
     }
 
@@ -98,8 +103,14 @@ final class AppState {
     func reloadReferenceData() async {
         async let a: ListResponse<Account> = api.get("/accounts")
         async let c = fetchAll(Category.self, "/categories")
+        async let i: IconListResponse = api.get("/icons")
         if let a = try? await a { accounts = a.items }
         if let c = try? await c { categories = c }
+        if let i = try? await i { icons = i.items; iconQuota = i.quota }
+    }
+
+    func reloadIcons() async {
+        if let i: IconListResponse = try? await api.get("/icons") { icons = i.items; iconQuota = i.quota }
     }
 
     /// The API caps `limit` at 100; keep paging until `total` is reached.

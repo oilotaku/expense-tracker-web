@@ -93,6 +93,39 @@ final class APIClient {
         _ = try await perform("DELETE", path, body: try encoder.encode(body))
     }
 
+    /// Raw bytes (e.g. an icon PNG). Not cached here; callers keep their own cache.
+    func getData(_ path: String) async throws -> Data {
+        try await perform("GET", path, body: nil, accept: "image/png")
+    }
+
+    /// multipart/form-data upload; returns the raw response body.
+    func postMultipartData(_ path: String, fileData: Data, fileName: String, mimeType: String,
+                           fields: [String: String]) async throws -> Data {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        func line(_ s: String) { body.append(Data((s + "\r\n").utf8)) }
+        for (name, value) in fields.sorted(by: { $0.key < $1.key }) {
+            line("--\(boundary)")
+            line("Content-Disposition: form-data; name=\"\(name)\"")
+            line("")
+            line(value)
+        }
+        line("--\(boundary)")
+        line("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"")
+        line("Content-Type: \(mimeType)")
+        line("")
+        body.append(fileData)
+        line("")
+        line("--\(boundary)--")
+        return try await perform("POST", path, body: body, contentType: "multipart/form-data; boundary=\(boundary)",
+                                 accept: "image/png, application/json")
+    }
+
+    func postMultipart<T: Decodable>(_ path: String, fileData: Data, fileName: String, mimeType: String,
+                                     fields: [String: String]) async throws -> T {
+        try decode(await postMultipartData(path, fileData: fileData, fileName: fileName, mimeType: mimeType, fields: fields))
+    }
+
     func clearCookies() {
         HTTPCookieStorage.shared.cookies?.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
     }
@@ -113,7 +146,8 @@ final class APIClient {
         }
     }
 
-    private func perform(_ method: String, _ path: String, query: [String: String?] = [:], body: Data?) async throws -> Data {
+    private func perform(_ method: String, _ path: String, query: [String: String?] = [:], body: Data?,
+                         contentType: String = "application/json", accept: String = "application/json") async throws -> Data {
         guard let base = baseURL else { throw APIError(status: 0, message: "尚未設定伺服器位址") }
         var comps = URLComponents(url: base.appendingPathComponent("api/v1" + path), resolvingAgainstBaseURL: false)!
         let items = query.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }
@@ -124,10 +158,10 @@ final class APIClient {
         }
         var req = URLRequest(url: comps.url!)
         req.httpMethod = method
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(accept, forHTTPHeaderField: "Accept")
         if let body {
             req.httpBody = body
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
 
         let data: Data
@@ -143,7 +177,9 @@ final class APIClient {
         }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         await report(online: !(502...504).contains(status))
-        let head = try? decoder.decode(EnvelopeHead.self, from: data)
+        // Binary bodies (icon PNGs) aren't JSON envelopes; only sniff JSON for success/detail.
+        let isJSON = ((resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json")
+        let head = isJSON ? try? decoder.decode(EnvelopeHead.self, from: data) : nil
         if !(200..<300).contains(status) || head?.success == false {
             if status == 401, !path.hasPrefix("/auth/") {
                 let handler = onUnauthorized
