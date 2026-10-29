@@ -10,7 +10,7 @@ import type { NavItem } from './Sidebar'
 export interface BottomNavProps {
   /** 5 格中扣除中央 FAB 與「更多」後的 3 個路由項（首頁/交易/預算），依序渲染在 FAB 左 2 右 1。 */
   items: NavItem[]
-  /** 「更多」`<Dialog>` 內列出的路由項（週期性/資產/分類/帳戶/設定）。 */
+  /** 「更多」`<Dialog>` 內列出的路由項（週期性/資產/分類/帳戶/我的圖示/設定）。 */
   moreItems: NavItem[]
   onAddClick: () => void
   onLogout: () => void

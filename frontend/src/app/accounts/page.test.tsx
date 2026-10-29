@@ -2,6 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountsPage from './page'
 
+// IconPicker 內含「我的圖示」區（ADR-0006），本檔不測自訂圖示，mock 掉其 API hook
+vi.mock('@/lib/api/iconsApi', () => import('@/test/iconsApiMock'))
+
 // 同 categories/page.test.tsx / budgets/page.test.tsx：page 層測試直接 mock RTK Query hook 的
 // 回傳值來驗證表單 / 清單邏輯（真實 HTTP mock 走 lib/api/accountsApi.test.ts，→ FE-012）。
 vi.mock('next/navigation', () => ({

@@ -100,6 +100,16 @@ function AccountsIcon(): ReactNode {
   )
 }
 
+function IconsIcon(): ReactNode {
+  return (
+    <GlyphIcon>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="1.8" />
+      <path d="M21 16l-5-5-8 9" />
+    </GlyphIcon>
+  )
+}
+
 function SettingsIcon(): ReactNode {
   return (
     <GlyphIcon>
@@ -118,10 +128,13 @@ const PRIMARY_ITEMS: NavItem[] = [
   { key: 'assets', label: '資產', href: '/assets', icon: <AssetsIcon /> },
 ]
 
-// 二級導覽（分類/帳戶）— 桌機 Sidebar 用。
+const ICONS_ITEM: NavItem = { key: 'icons', label: '我的圖示', href: '/icons', icon: <IconsIcon /> }
+
+// 二級導覽（分類/帳戶/我的圖示）— 桌機 Sidebar 用；桌機沒有「更多」，我的圖示放這裡（ADR-0006 §6）。
 const SECONDARY_ITEMS: NavItem[] = [
   { key: 'categories', label: '分類', href: '/categories', icon: <CategoriesIcon /> },
   { key: 'accounts', label: '帳戶', href: '/accounts', icon: <AccountsIcon /> },
+  ICONS_ITEM,
 ]
 
 const SETTINGS_ITEM: NavItem = { key: 'settings', label: '設定', href: '/settings', icon: <SettingsIcon /> }
@@ -133,12 +146,13 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
   { key: 'budgets', label: '預算', href: '/budgets', icon: <BudgetsIcon /> },
 ]
 
-// 行動端「更多」選單內容（週期性/資產/分類/帳戶/設定，外觀切換與登出由 BottomNav 另外附加）。
+// 行動端「更多」選單內容（週期性/資產/分類/帳戶/我的圖示/設定，外觀切換與登出由 BottomNav 另外附加）。
 const BOTTOM_NAV_MORE_ITEMS: NavItem[] = [
   { key: 'recurring', label: '週期性', href: '/recurring', icon: <RecurringIcon /> },
   { key: 'assets', label: '資產', href: '/assets', icon: <AssetsIcon /> },
   { key: 'categories', label: '分類', href: '/categories', icon: <CategoriesIcon /> },
   { key: 'accounts', label: '帳戶', href: '/accounts', icon: <AccountsIcon /> },
+  ICONS_ITEM,
   SETTINGS_ITEM,
 ]
 

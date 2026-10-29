@@ -2,6 +2,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CategoryChip } from './CategoryChip'
 
+// IconPicker 內含「我的圖示」區（ADR-0006），本檔不測自訂圖示，mock 掉其 API hook
+vi.mock('@/lib/api/iconsApi', () => import('@/test/iconsApiMock'))
+
 const SUBSCRIPTION_CATEGORY = {
   category_uid: 'c-subscription',
   name: '訂閱',

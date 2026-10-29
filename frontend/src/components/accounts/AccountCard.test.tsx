@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AccountResponse } from '@/lib/api/accountsApi'
 import { AccountCard } from './AccountCard'
 
+// IconPicker 內含「我的圖示」區（ADR-0006），本檔不測自訂圖示，mock 掉其 API hook
+vi.mock('@/lib/api/iconsApi', () => import('@/test/iconsApiMock'))
+
 const CASH_ACCOUNT: AccountResponse = {
   account_uid: 'a-cash',
   name: '現金',
