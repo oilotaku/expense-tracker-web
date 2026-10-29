@@ -13,7 +13,7 @@ dependencies = [
     "httpx==0.28.1",
     "passlib[bcrypt]==1.7.4",
     "bcrypt==4.0.1",
-    "pyjwt[crypto]==2.13.0",
+    "pyjwt[crypto]==2.15.1",
     "python-multipart==0.0.32",
     "redis[hiredis]==8.1.0",
     "pillow==13.0.0",
