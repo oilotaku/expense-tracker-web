@@ -164,6 +164,300 @@
 }
 
 /*
+ * 主題色（→ §2.7.1）：<html data-accent> 覆寫中性色與品牌主色，語意色（收入/支出/警示）與圖表色不動；
+ * 無 data-accent 即預設薰衣草紫。色值由薰衣草 token 在 OKLCH 旋轉色相產生，對比不低於預設主題。
+ * 同樣三層寫法：Light → OS dark（未手動選 light）→ 手動 dark。
+ */
+
+:root[data-accent='ocean'] {
+  --color-bg: #f6f9fd;
+  --color-surface-sunken: #e9f2fb;
+  --color-border: #d9e7f4;
+  --color-text-primary: #162d40;
+  --color-text-secondary: #546c81;
+  --color-text-muted: #889db0;
+  --color-primary-100: #dbedfd;
+  --color-primary-300: #7ec0f7;
+  --color-primary-500: #0194e9;
+  --color-primary-600: #0975b7;
+  --color-primary-700: #025d94;
+  --shadow-card: 0 4px 16px rgba(0, 132, 208, 0.12);
+  --shadow-float: 0 8px 28px rgba(0, 132, 208, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent='ocean']:not([data-theme='light']) {
+    --color-bg: #0f1c27;
+    --color-surface: #152431;
+    --color-surface-sunken: #1b2b39;
+    --color-border: #283a49;
+    --color-text-primary: #e8f0f8;
+    --color-text-secondary: #9cb5cb;
+    --color-text-muted: #748ca1;
+    --color-primary-100: #0b3451;
+    --color-primary-300: #46a0e6;
+    --color-primary-500: #44a8f4;
+    --color-primary-600: #0084d0;
+    --color-primary-700: #89c5f8;
+  }
+}
+
+:root[data-accent='ocean'][data-theme='dark'] {
+  --color-bg: #0f1c27;
+  --color-surface: #152431;
+  --color-surface-sunken: #1b2b39;
+  --color-border: #283a49;
+  --color-text-primary: #e8f0f8;
+  --color-text-secondary: #9cb5cb;
+  --color-text-muted: #748ca1;
+  --color-primary-100: #0b3451;
+  --color-primary-300: #46a0e6;
+  --color-primary-500: #44a8f4;
+  --color-primary-600: #0084d0;
+  --color-primary-700: #89c5f8;
+}
+
+:root[data-accent='teal'] {
+  --color-bg: #f5fafa;
+  --color-surface-sunken: #e6f4f4;
+  --color-border: #d4eaea;
+  --color-text-primary: #063232;
+  --color-text-secondary: #4a7171;
+  --color-text-muted: #80a2a1;
+  --color-primary-100: #d5f1f0;
+  --color-primary-300: #5bcecd;
+  --color-primary-500: #07a2a2;
+  --color-primary-600: #047c7c;
+  --color-primary-700: #016464;
+  --shadow-card: 0 4px 16px rgba(17, 142, 143, 0.12);
+  --shadow-float: 0 8px 28px rgba(17, 142, 143, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent='teal']:not([data-theme='light']) {
+    --color-bg: #091f1f;
+    --color-surface: #0d2727;
+    --color-surface-sunken: #132f2f;
+    --color-border: #203e3d;
+    --color-text-primary: #e5f2f2;
+    --color-text-secondary: #93bab9;
+    --color-text-muted: #6b9191;
+    --color-primary-100: #023939;
+    --color-primary-300: #0bafaf;
+    --color-primary-500: #01b7b8;
+    --color-primary-600: #118e8f;
+    --color-primary-700: #6cd2d1;
+  }
+}
+
+:root[data-accent='teal'][data-theme='dark'] {
+  --color-bg: #091f1f;
+  --color-surface: #0d2727;
+  --color-surface-sunken: #132f2f;
+  --color-border: #203e3d;
+  --color-text-primary: #e5f2f2;
+  --color-text-secondary: #93bab9;
+  --color-text-muted: #6b9191;
+  --color-primary-100: #023939;
+  --color-primary-300: #0bafaf;
+  --color-primary-500: #01b7b8;
+  --color-primary-600: #118e8f;
+  --color-primary-700: #6cd2d1;
+}
+
+:root[data-accent='forest'] {
+  --color-bg: #f6faf7;
+  --color-surface-sunken: #eaf4ec;
+  --color-border: #dbeadd;
+  --color-text-primary: #1a311f;
+  --color-text-secondary: #57705c;
+  --color-text-muted: #8ba18e;
+  --color-primary-100: #ddf0e0;
+  --color-primary-300: #88cc96;
+  --color-primary-500: #15a950;
+  --color-primary-600: #0a803b;
+  --color-primary-700: #04672d;
+  --shadow-card: 0 4px 16px rgba(22, 147, 70, 0.12);
+  --shadow-float: 0 8px 28px rgba(22, 147, 70, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent='forest']:not([data-theme='light']) {
+    --color-bg: #111e14;
+    --color-surface: #17271a;
+    --color-surface-sunken: #1e2e21;
+    --color-border: #2b3d2e;
+    --color-text-primary: #e9f2ea;
+    --color-text-secondary: #9fb9a3;
+    --color-text-muted: #77907c;
+    --color-primary-100: #113a1d;
+    --color-primary-300: #53b06b;
+    --color-primary-500: #53b96f;
+    --color-primary-600: #169346;
+    --color-primary-700: #91d09e;
+  }
+}
+
+:root[data-accent='forest'][data-theme='dark'] {
+  --color-bg: #111e14;
+  --color-surface: #17271a;
+  --color-surface-sunken: #1e2e21;
+  --color-border: #2b3d2e;
+  --color-text-primary: #e9f2ea;
+  --color-text-secondary: #9fb9a3;
+  --color-text-muted: #77907c;
+  --color-primary-100: #113a1d;
+  --color-primary-300: #53b06b;
+  --color-primary-500: #53b96f;
+  --color-primary-600: #169346;
+  --color-primary-700: #91d09e;
+}
+
+:root[data-accent='amber'] {
+  --color-bg: #fcf8f5;
+  --color-surface-sunken: #f9efe7;
+  --color-border: #f1e2d6;
+  --color-text-primary: #3c2513;
+  --color-text-secondary: #7c634f;
+  --color-text-muted: #ac9584;
+  --color-primary-100: #f9e6d7;
+  --color-primary-300: #eaa973;
+  --color-primary-500: #cd740d;
+  --color-primary-600: #a65d0b;
+  --color-primary-700: #864a04;
+  --shadow-card: 0 4px 16px rgba(190, 107, 8, 0.12);
+  --shadow-float: 0 8px 28px rgba(190, 107, 8, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent='amber']:not([data-theme='light']) {
+    --color-bg: #24180d;
+    --color-surface: #2e1f12;
+    --color-surface-sunken: #362619;
+    --color-border: #463425;
+    --color-text-primary: #f6ede6;
+    --color-text-secondary: #c6ac97;
+    --color-text-muted: #9d8370;
+    --color-primary-100: #4a2704;
+    --color-primary-300: #d48337;
+    --color-primary-500: #e18833;
+    --color-primary-600: #be6b08;
+    --color-primary-700: #ecb07f;
+  }
+}
+
+:root[data-accent='amber'][data-theme='dark'] {
+  --color-bg: #24180d;
+  --color-surface: #2e1f12;
+  --color-surface-sunken: #362619;
+  --color-border: #463425;
+  --color-text-primary: #f6ede6;
+  --color-text-secondary: #c6ac97;
+  --color-text-muted: #9d8370;
+  --color-primary-100: #4a2704;
+  --color-primary-300: #d48337;
+  --color-primary-500: #e18833;
+  --color-primary-600: #be6b08;
+  --color-primary-700: #ecb07f;
+}
+
+:root[data-accent='rose'] {
+  --color-bg: #fdf7f8;
+  --color-surface-sunken: #fbedef;
+  --color-border: #f4dfe1;
+  --color-text-primary: #3e2126;
+  --color-text-secondary: #805f63;
+  --color-text-muted: #b09195;
+  --color-primary-100: #fde3e5;
+  --color-primary-300: #f39daa;
+  --color-primary-500: #e15776;
+  --color-primary-600: #cb355d;
+  --color-primary-700: #a92149;
+  --shadow-card: 0 4px 16px rgba(206, 86, 111, 0.12);
+  --shadow-float: 0 8px 28px rgba(206, 86, 111, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent='rose']:not([data-theme='light']) {
+    --color-bg: #261518;
+    --color-surface: #301c1f;
+    --color-surface-sunken: #382326;
+    --color-border: #483034;
+    --color-text-primary: #f8ebed;
+    --color-text-secondary: #caa7ab;
+    --color-text-muted: #a17f83;
+    --color-primary-100: #4d2029;
+    --color-primary-300: #de7386;
+    --color-primary-500: #eb778c;
+    --color-primary-600: #ce566f;
+    --color-primary-700: #f6a6b2;
+  }
+}
+
+:root[data-accent='rose'][data-theme='dark'] {
+  --color-bg: #261518;
+  --color-surface: #301c1f;
+  --color-surface-sunken: #382326;
+  --color-border: #483034;
+  --color-text-primary: #f8ebed;
+  --color-text-secondary: #caa7ab;
+  --color-text-muted: #a17f83;
+  --color-primary-100: #4d2029;
+  --color-primary-300: #de7386;
+  --color-primary-500: #eb778c;
+  --color-primary-600: #ce566f;
+  --color-primary-700: #f6a6b2;
+}
+
+:root[data-accent='graphite'] {
+  --color-bg: #f8f9fa;
+  --color-surface-sunken: #f0f1f3;
+  --color-border: #e3e5e9;
+  --color-text-primary: #292b30;
+  --color-text-secondary: #66696f;
+  --color-text-muted: #989a9f;
+  --color-primary-100: #e8eaee;
+  --color-primary-300: #b2b9c8;
+  --color-primary-500: #838ea6;
+  --color-primary-600: #657189;
+  --color-primary-700: #4f5a6f;
+  --shadow-card: 0 4px 16px rgba(118, 128, 149, 0.12);
+  --shadow-float: 0 8px 28px rgba(118, 128, 149, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent='graphite']:not([data-theme='light']) {
+    --color-bg: #191b1e;
+    --color-surface: #212226;
+    --color-surface-sunken: #282a2d;
+    --color-border: #36383c;
+    --color-text-primary: #eeeff1;
+    --color-text-secondary: #aeb1b7;
+    --color-text-muted: #86898f;
+    --color-primary-100: #2d3139;
+    --color-primary-300: #9099ac;
+    --color-primary-500: #97a1b5;
+    --color-primary-600: #768095;
+    --color-primary-700: #b8becc;
+  }
+}
+
+:root[data-accent='graphite'][data-theme='dark'] {
+  --color-bg: #191b1e;
+  --color-surface: #212226;
+  --color-surface-sunken: #282a2d;
+  --color-border: #36383c;
+  --color-text-primary: #eeeff1;
+  --color-text-secondary: #aeb1b7;
+  --color-text-muted: #86898f;
+  --color-primary-100: #2d3139;
+  --color-primary-300: #9099ac;
+  --color-primary-500: #97a1b5;
+  --color-primary-600: #768095;
+  --color-primary-700: #b8becc;
+}
+
+/*
  * Tailwind v4 @theme 對映（→ §2.2）：用 `inline` + 同名 var() 參照上方 :root 的真實 CSS 變數，
  * 讓 utility class（如 bg-bg / text-income-700 / rounded-lg / shadow-card）在 runtime 讀取
  * 當前主題值，而不是把 Light 的值烤進 class 本身。

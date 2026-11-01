@@ -6,6 +6,7 @@ import type { SerializedError } from '@reduxjs/toolkit'
 import { useRouter } from 'next/navigation'
 import { useDispatch } from 'react-redux'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AccentThemePicker } from '@/components/common/AccentThemePicker'
 import { AppShell } from '@/components/common/AppShell'
 import { Dialog } from '@/components/common/Dialog'
 import { NumericKeypad } from '@/components/common/NumericKeypad'
@@ -486,9 +487,13 @@ function SettingsPageContent(): ReactNode {
           )}
         </section>
 
-        <section className={`${SECTION_CLASS} flex-row items-center justify-between`}>
-          <h2 className="text-lg font-semibold text-text-primary">外觀</h2>
-          <ThemeToggle />
+        <section className={SECTION_CLASS}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-text-primary">外觀</h2>
+            <ThemeToggle />
+          </div>
+          <h3 className="text-sm font-medium text-text-secondary">主題色</h3>
+          <AccentThemePicker />
         </section>
 
         <section className={SECTION_CLASS}>

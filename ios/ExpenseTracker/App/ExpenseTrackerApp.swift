@@ -17,6 +17,7 @@ struct RootView: View {
     @Environment(AppState.self) private var state
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance = "system"
+    @AppStorage(Theme.accentKey) private var accent = "lavender"
 
     private var scheme: ColorScheme? {
         switch appearance {
@@ -39,7 +40,8 @@ struct RootView: View {
                 if state.user?.must_change_password == true {
                     NavigationStack { ChangePasswordView(forced: true) }
                 } else {
-                    MainTabView()
+                    // dynamic colors only re-resolve on a rebuild, so switching themes returns to the first tab
+                    MainTabView().tint(Theme.primary).id(accent)
                 }
             }
         }

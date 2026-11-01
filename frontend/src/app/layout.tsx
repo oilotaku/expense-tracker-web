@@ -36,7 +36,8 @@ interface RootLayoutProps {
 // 三態主題偏好（light/dark/system）解析必須在 React hydrate 前同步跑完並寫入
 // <html data-theme>，否則會先閃一次錯誤主題（FOUC）。system 時不寫入 data-theme，
 // 交給 globals.css 的 @media (prefers-color-scheme: dark) 接管（→ design-spec.md §2.7）。
-const THEME_INIT_SCRIPT = `(function(){try{var v=window.localStorage.getItem('theme-preference');if(v==='light'||v==='dark'){document.documentElement.setAttribute('data-theme',v)}}catch(e){}})();`
+// 主題色 data-accent 同理；白名單要與 useAccentPreference 的 ACCENT_THEMES 一致（→ §2.7.1）。
+const THEME_INIT_SCRIPT = `(function(){try{var r=document.documentElement,s=window.localStorage,v=s.getItem('theme-preference');if(v==='light'||v==='dark'){r.setAttribute('data-theme',v)}var a=s.getItem('accent-theme-preference');if(a&&' ocean teal forest amber rose graphite '.indexOf(' '+a+' ')>=0&&a.indexOf(' ')<0){r.setAttribute('data-accent',a)}}catch(e){}})();`
 
 export default function RootLayout({ children }: RootLayoutProps): ReactNode {
   return (
