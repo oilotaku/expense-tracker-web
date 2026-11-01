@@ -166,17 +166,17 @@ struct DashboardView: View {
     @State private var pieSelection: Double?
     @State private var trendSelection: Date?
 
-    /// Top 6 by amount, the rest folded into 「其他」; colors follow rank, not the category color.
+    /// Top 8 by amount, the rest folded into 「其他」; colors follow rank, not the category color.
     private var slices: [Slice] {
         let sorted = breakdown.sorted { $0.amount > $1.amount }.filter { $0.amount.value > 0 }
-        var result = sorted.prefix(6).enumerated().map { i, item in
+        var result = sorted.prefix(8).enumerated().map { i, item in
             Slice(id: item.category_uid.uuidString,
                   name: state.category(item.category_uid)?.name ?? "未分類",
                   amount: item.amount.double,
                   color: Theme.chartColor(i))
         }
-        if sorted.count > 6 {
-            let rest = sorted.dropFirst(6).reduce(0.0) { $0 + $1.amount.double }
+        if sorted.count > 8 {
+            let rest = sorted.dropFirst(8).reduce(0.0) { $0 + $1.amount.double }
             result.append(Slice(id: "other", name: "其他", amount: rest, color: Theme.chartOtherColor))
         }
         return result

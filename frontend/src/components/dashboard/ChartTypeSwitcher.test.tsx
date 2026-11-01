@@ -98,14 +98,14 @@ describe('ChartTypeSwitcher', () => {
     expect(screen.getByTestId('chart-bar')).toBeInTheDocument()
   })
 
-  it('超過 6 類分類自動併為「其他」（透過 renderChart 整合 CategoryPieChart，→ §2.3 折疊規則）', () => {
-    const manyCategories: CategorySlice[] = Array.from({ length: 8 }, (_, index) => ({
+  it('超過 8 類分類自動併為「其他」（透過 renderChart 整合 CategoryPieChart，→ §2.3 折疊規則）', () => {
+    const manyCategories: CategorySlice[] = Array.from({ length: 10 }, (_, index) => ({
       id: `cat-${index}`,
       label: `分類${index}`,
-      amount: (8 - index) * 100,
+      amount: (10 - index) * 100,
     }))
     render(<ChartTypeSwitcher renderChart={() => <CategoryPieChart data={manyCategories} />} />)
-    expect(screen.getAllByRole('listitem')).toHaveLength(7)
+    expect(screen.getAllByRole('listitem')).toHaveLength(9)
     expect(screen.getByText('其他')).toBeInTheDocument()
   })
 

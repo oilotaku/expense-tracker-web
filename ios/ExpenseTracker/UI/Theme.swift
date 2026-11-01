@@ -29,9 +29,11 @@ enum Theme {
     static let warning = Color.adaptive(light: "#c97a1e", dark: "#eac066")
     static let danger = Color.adaptive(light: "#b23636", dark: "#f0958f")
 
-    static let palette = ["#8B6ED6", "#E8834B", "#2FA98A", "#D9A428", "#3E8FD0", "#D65FA0", "#8AAE3C", "#5A4FA0"]
+    static let palette = ["#8B6ED6", "#E8834B", "#2FA98A", "#D9A428", "#3E8FD0", "#D65FA0", "#8AAE3C", "#5A4FA0",
+                               "#A20A01", "#D34635", "#9B6E19", "#3B6209", "#0E9021", "#2BC0E9", "#BF9CE5", "#9F257C"]
     static let chartOther = "#9C96AF"
     private static let paletteDark = ["#a78bea", "#f0985f", "#45c6a5", "#e8bb4a", "#5ca8e8", "#e687ba", "#a3c65c", "#7a6fc0"]
+    // zip stops at paletteDark's 8: the extended swatches are picker-only, never chart series.
     private static let chartColors: [Color] = zip(palette, paletteDark).map { Color.adaptive(light: $0, dark: $1) }
     static let chartOtherColor = Color.adaptive(light: chartOther, dark: "#6e667f")
 
