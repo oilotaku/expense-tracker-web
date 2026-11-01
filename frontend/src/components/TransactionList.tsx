@@ -299,7 +299,10 @@ interface TransactionRowProps {
   onDelete: (transaction: TransactionResponse) => void
 }
 
-/** 桌機表格列（design-spec §9.3）：hover（或鍵盤 focus）才顯示編輯/刪除 icon 按鈕。 */
+/**
+ * 桌機表格列（design-spec §9.3）：有 hover 的裝置 hover（或鍵盤 focus）才顯示編輯/刪除 icon 按鈕；
+ * 觸控裝置沒有 hover（iPad 橫向會走到這個表格），按鈕恆常顯示且維持 44px 觸控尺寸。
+ */
 function TransactionTableRow({
   transaction,
   categoryName,
@@ -332,12 +335,12 @@ function TransactionTableRow({
       <td className="p-2 text-text-primary">{TRANSACTION_TYPE_LABEL[transaction.transaction_type]}</td>
       <td className="p-2 text-text-primary">{accountName}</td>
       <td className="p-2">
-        <div className="flex gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+        <div className="flex gap-2 opacity-100 transition-opacity can-hover:opacity-0 can-hover:group-hover:opacity-100 can-hover:group-focus-within:opacity-100">
           <button
             type="button"
             aria-label="編輯"
             onClick={() => onEdit(transaction)}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:text-text-primary md:h-8 md:w-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:text-text-primary can-hover:h-8 can-hover:w-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
           >
             ✎
           </button>
@@ -345,7 +348,7 @@ function TransactionTableRow({
             type="button"
             aria-label="刪除"
             onClick={() => onDelete(transaction)}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-danger-500 hover:text-danger-700 md:h-8 md:w-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-danger-500 hover:text-danger-700 can-hover:h-8 can-hover:w-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
           >
             🗑
           </button>

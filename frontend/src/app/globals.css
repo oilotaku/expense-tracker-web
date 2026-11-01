@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+/* can-hover：桌面寬度且真的有 hover 的裝置（觸控平板橫向寬度夠但沒有 hover）；short：手機橫向等矮視窗 */
+@custom-variant can-hover (@media (min-width: 48rem) and (hover: hover));
+@custom-variant short (@media (max-height: 500px));
+
 /*
  * 設計系統 tokens（design-spec.md §2）。
  * 命名策略：token 名稱在 Light / Dark 間不變，元件一律讀 var(--color-*)，
