@@ -105,6 +105,8 @@ export interface AccountOption {
 export interface CategoryOption {
   category_uid: string
   name: string
+  color: string
+  icon: string
 }
 
 interface ListResponse<T> {

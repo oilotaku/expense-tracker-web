@@ -9,21 +9,29 @@ export interface EntityIconProps {
   icon: string
   /** 內建圖示的圓底色；自訂圖示不套底色（彩色插圖疊彩色底會很雜，→ ADR-0006 §7） */
   color: string
-  /** 外框尺寸，預設 `md`（44px，帳戶卡片 / 分類標籤用） */
-  size?: 'md' | 'lg'
+  /** 外框尺寸，預設 `md`（44px，帳戶卡片 / 分類標籤用）；`sm`（32px）給交易清單列用 */
+  size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
 const BOX: Record<NonNullable<EntityIconProps['size']>, string> = {
+  sm: 'h-8 w-8',
   md: 'h-11 w-11',
   lg: 'h-24 w-24',
 }
 const GLYPH: Record<NonNullable<EntityIconProps['size']>, string> = {
+  sm: 'h-4 w-4',
   md: 'h-5 w-5',
   lg: 'h-10 w-10',
 }
 
-function Glyph({ glyph, size }: { glyph: ReactNode; size: 'md' | 'lg' }): ReactNode {
+function Glyph({
+  glyph,
+  size,
+}: {
+  glyph: ReactNode
+  size: NonNullable<EntityIconProps['size']>
+}): ReactNode {
   return (
     <svg
       viewBox="0 0 24 24"

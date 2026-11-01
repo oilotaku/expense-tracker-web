@@ -29,6 +29,7 @@ const useUpdateTransactionMutation = vi.fn()
 const useDeleteTransactionMutation = vi.fn()
 
 vi.mock('@/lib/api/baseApi', () => ({
+  resolveApiBaseUrl: () => '/api/v1',
   baseApi: {
     enhanceEndpoints: () => ({
       injectEndpoints: () => ({
@@ -94,7 +95,9 @@ describe('TransactionList', () => {
       isLoading: false,
       error: undefined,
     })
-    useListCategoryOptionsQuery.mockReturnValue({ data: [{ category_uid: 'c1', name: '餐飲' }] })
+    useListCategoryOptionsQuery.mockReturnValue({
+      data: [{ category_uid: 'c1', name: '餐飲', color: '#8B6ED6', icon: 'food' }],
+    })
     useListAccountOptionsQuery.mockReturnValue({
       data: [
         { account_uid: 'a1', name: '現金', balance: '100.00', currency: 'TWD' },
@@ -122,6 +125,51 @@ describe('TransactionList', () => {
     expect(table.getByText('午餐')).toBeInTheDocument()
     expect(table.getByText('餐飲')).toBeInTheDocument()
     expect(table.getByText('支出')).toBeInTheDocument()
+  })
+
+  it('交易列（桌機表格與行動卡片）顯示分類圖示與分類色', () => {
+    useListTransactionsQuery.mockReturnValue({
+      data: { items: [SAMPLE_TRANSACTION], total: 1 },
+      isLoading: false,
+      error: undefined,
+    })
+    const { container } = render(<TransactionList />)
+
+    const icons = container.querySelectorAll<HTMLElement>('span.h-8.w-8')
+    expect(icons).toHaveLength(2)
+    icons.forEach((icon) => expect(icon.style.backgroundColor).toBe('rgb(139, 110, 214)'))
+  })
+
+  it('自訂分類圖示以圖片顯示', () => {
+    useListCategoryOptionsQuery.mockReturnValue({
+      data: [{ category_uid: 'c1', name: '餐飲', color: '#8B6ED6', icon: 'custom:abc' }],
+    })
+    useListTransactionsQuery.mockReturnValue({
+      data: { items: [SAMPLE_TRANSACTION], total: 1 },
+      isLoading: false,
+      error: undefined,
+    })
+    const { container } = render(<TransactionList />)
+
+    expect(container.querySelectorAll('span.h-8.w-8 img')).toHaveLength(2)
+  })
+
+  it('找不到分類或轉帳列仍顯示中性色圖示', () => {
+    useListTransactionsQuery.mockReturnValue({
+      data: {
+        items: [{ ...SAMPLE_TRANSACTION, category_uid: 'gone' }, SAMPLE_TRANSFER_OUTBOUND],
+        total: 2,
+      },
+      isLoading: false,
+      error: undefined,
+    })
+    const { container } = render(<TransactionList />)
+
+    const icons = container.querySelectorAll<HTMLElement>('span.h-8.w-8')
+    expect(icons).toHaveLength(4)
+    icons.forEach((icon) =>
+      expect(icon.style.backgroundColor).toBe('var(--color-chart-other)'),
+    )
   })
 
   it('載入中顯示載入文字，不顯示清單', () => {

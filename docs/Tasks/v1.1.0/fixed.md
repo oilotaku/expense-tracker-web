@@ -197,3 +197,14 @@
 - **修正**: `hero` variant 的 `lg:` 字級從 `text-4xl` 改回 `text-3xl`（跟其他三張卡的 `lg:text-3xl` 一致），只保留 mobile 的放大（`text-3xl` vs 其他卡的 `text-2xl`，此時仍有 `col-span-2` 雙倍寬撐得住）。更新 `StatTile.test.tsx` 既有的字級斷言（`lg:text-4xl` → `lg:text-3xl`）。
 - **rule**: NONE
 - **後續**: 已解除。reflect 候選：`hero`/`col-span` 這類「字級與版面寬度綁定假設」的 variant，應該在拆分行動端/桌機兩種寬度時同步檢查兩邊是否都成立，而不是預設兩個尺寸各自獨立設定；design-spec §2.5 若要保留 desktop `text-4xl` 的原始設計意圖，需要先確認 4 欄等寬版面能不能撐住最長可能字串（含負值/大數字），否則設計稿與可用寬度會持續衝突。
+
+## §19 — 交易清單沒有顯示分類圖示（使用者回報）
+
+- **time**: 2026-11-01T23:59:00+08:00
+- **commit**: pending
+- **files**: `frontend/src/components/TransactionList.tsx`、`frontend/src/components/common/EntityIcon.tsx`、`frontend/src/lib/api/transactionsApi.ts`
+- **問題**: 網頁交易頁面的桌機表格與行動卡片只有分類文字，看不到分類圖示；iOS App 同一清單有圖示。
+- **根因**: `TransactionList` 從未使用 `EntityIcon`，`CategoryOption` 型別也沒收後端已回傳的 `icon`/`color`，屬功能缺漏而非資料問題。
+- **修正**: `CategoryOption` 補 `color`/`icon`；`EntityIcon` 新增 `sm`（32px）；表格分類欄與行動卡片左側顯示圖示，規則同 iOS：分類圖示、轉帳固定 `bank`、找不到分類退回 `other`（後兩者用 `--color-chart-other`）。自訂圖示沿用 `EntityIcon` 處理。
+- **rule**: NONE
+- **後續**: 已解除。

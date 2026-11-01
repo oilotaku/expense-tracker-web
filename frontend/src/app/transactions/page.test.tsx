@@ -86,8 +86,8 @@ describe('TransactionsPage', () => {
     })
     useListCategoryOptionsQuery.mockReturnValue({
       data: [
-        { category_uid: 'c1', name: '餐飲' },
-        { category_uid: 'c-other', name: '其他' },
+        { category_uid: 'c1', name: '餐飲', color: '#8B6ED6', icon: 'food' },
+        { category_uid: 'c-other', name: '其他', color: '#8B6ED6', icon: 'other' },
       ],
     })
     useListTransactionsQuery.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false, error: undefined })

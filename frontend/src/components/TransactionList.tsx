@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateBlocks'
 import { CurvedCard } from '@/components/common/CurvedCard'
 import { Dialog } from '@/components/common/Dialog'
+import { EntityIcon } from '@/components/common/EntityIcon'
 import {
   TransactionFormDialog,
   type TransactionFormInitialValues,
@@ -143,6 +144,24 @@ function categoryDisplayName(
   return categoryNameByUid.get(transaction.category_uid) ?? ''
 }
 
+interface TransactionIcon {
+  icon: string
+  color: string
+}
+
+const TRANSFER_ICON: TransactionIcon = { icon: 'bank', color: 'var(--color-chart-other)' }
+const UNKNOWN_CATEGORY_ICON: TransactionIcon = { icon: 'other', color: 'var(--color-chart-other)' }
+
+// 轉帳沒有分類、固定用銀行圖示；分類已刪或尚未載入時退回「其他」（同 iOS TransactionListView）。
+function transactionIcon(
+  transaction: TransactionResponse,
+  categoryByUid: ReadonlyMap<string, CategoryOption>,
+): TransactionIcon {
+  if (transaction.transaction_type === 'transfer') return TRANSFER_ICON
+  const category = categoryByUid.get(transaction.category_uid ?? '')
+  return category ? { icon: category.icon, color: category.color } : UNKNOWN_CATEGORY_ICON
+}
+
 // 一般收支交易顯示自己的帳戶名稱；轉帳顯示「來源 → 目標」（→ transferAccountsLabel）。
 function accountDisplayName(
   transaction: TransactionResponse,
@@ -273,6 +292,7 @@ function FilterFields({ value, categories, accounts, onChange }: FilterFieldsPro
 interface TransactionRowProps {
   transaction: TransactionResponse
   categoryName: string
+  categoryIcon: TransactionIcon
   accountName: string
   currency: string
   onEdit: (transaction: TransactionResponse) => void
@@ -283,6 +303,7 @@ interface TransactionRowProps {
 function TransactionTableRow({
   transaction,
   categoryName,
+  categoryIcon,
   accountName,
   currency,
   onEdit,
@@ -298,7 +319,12 @@ function TransactionTableRow({
   return (
     <tr className="group border-b border-border last:border-0">
       <td className="p-2 text-text-primary">{formatDate(transaction.transaction_date)}</td>
-      <td className="p-2 text-text-primary">{categoryName}</td>
+      <td className="p-2 text-text-primary">
+        <div className="flex items-center gap-2">
+          <EntityIcon icon={categoryIcon.icon} color={categoryIcon.color} size="sm" />
+          <span>{categoryName}</span>
+        </div>
+      </td>
       <td className="p-2 text-text-primary">{transaction.description}</td>
       <td className={`p-2 font-semibold ${amountColor}`}>
         {transaction.amount} {currency}
@@ -333,6 +359,7 @@ function TransactionTableRow({
 function TransactionCard({
   transaction,
   categoryName,
+  categoryIcon,
   accountName,
   currency,
   onEdit,
@@ -353,13 +380,16 @@ function TransactionCard({
   return (
     <CurvedCard padding="sm" interactive onClick={() => onEdit(transaction)}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm text-text-secondary">
-            {formatDate(transaction.transaction_date)}・{categoryName}
-          </span>
-          <span className="text-sm text-text-secondary">
-            {transaction.description || '（無明細）'}・{accountName}
-          </span>
+        <div className="flex min-w-0 items-center gap-3">
+          <EntityIcon icon={categoryIcon.icon} color={categoryIcon.color} size="sm" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-sm text-text-secondary">
+              {formatDate(transaction.transaction_date)}・{categoryName}
+            </span>
+            <span className="text-sm text-text-secondary">
+              {transaction.description || '（無明細）'}・{accountName}
+            </span>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className={`text-lg font-semibold ${amountColor}`}>
@@ -408,6 +438,10 @@ export function TransactionList(): ReactNode {
 
   const categoryNameByUid = useMemo(
     () => new Map((categories ?? []).map((category) => [category.category_uid, category.name])),
+    [categories],
+  )
+  const categoryByUid = useMemo(
+    () => new Map((categories ?? []).map((category) => [category.category_uid, category])),
     [categories],
   )
   const accountNameByUid = useMemo(
@@ -576,6 +610,7 @@ export function TransactionList(): ReactNode {
                     key={transaction.transaction_uid}
                     transaction={transaction}
                     categoryName={categoryDisplayName(transaction, categoryNameByUid)}
+                    categoryIcon={transactionIcon(transaction, categoryByUid)}
                     accountName={accountDisplayName(transaction, accountNameByUid)}
                     currency={amountCurrency(transaction, accountCurrencyByUid)}
                     onEdit={setEditingTransaction}
@@ -592,6 +627,7 @@ export function TransactionList(): ReactNode {
                 key={transaction.transaction_uid}
                 transaction={transaction}
                 categoryName={categoryDisplayName(transaction, categoryNameByUid)}
+                categoryIcon={transactionIcon(transaction, categoryByUid)}
                 accountName={accountDisplayName(transaction, accountNameByUid)}
                 currency={amountCurrency(transaction, accountCurrencyByUid)}
                 onEdit={setEditingTransaction}
