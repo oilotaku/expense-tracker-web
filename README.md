@@ -167,7 +167,7 @@ systemctl enable --now expense-tracker-recurring.timer
 
 ### 更新既有部署
 
-映像由 GitHub Actions 建好推到 GHCR（`.github/workflows/docker-publish.yml`：main 的 ci 全綠後
+映像由 GitHub Actions 建好推到 GHCR（`.github/workflows/ci.yml` 的 `publish-images` job：main push 的所有檢查通過後
 在 arm64 runner 建 backend / frontend，標 `latest` 與 `sha-<7 碼>`），部署主機只拉映像不 build：
 
 ```bash

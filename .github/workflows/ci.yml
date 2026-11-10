@@ -1,6 +1,7 @@
 name: ci
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
   push:
@@ -176,3 +177,48 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+
+  # main 的 push 全部檢查通過後，在 arm64 runner 建映像推 GHCR；部署主機只拉映像（scripts/deploy-pull.sh）。
+  # 放在 ci 內用 needs 串接、不用 workflow_run：PR 永遠進不來，也不會 checkout 外部提交。
+  # NEXT_PUBLIC_API_URL 是同源相對路徑，公開映像不含主機資訊；APP_ENV 沿用線上值（改 production 見 ops backlog）。
+  publish-images:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [frontend-test, backend-test, dependency-audit, secret-scan, sast, container-scan]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            dockerfile: docker/backend/Dockerfile
+          - name: frontend
+            dockerfile: docker/frontend/Dockerfile
+    env:
+      NODE_VERSION: "24.21.0"
+      PYTHON_VERSION: "3.14"
+      NEXT_PUBLIC_API_URL: /api/v1
+      APP_ENV: development
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: login ghcr
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: build and push
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          IMAGE_NAME: ${{ matrix.name }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-${IMAGE_NAME}"
+          docker build -f "$DOCKERFILE" \
+            --build-arg NODE_VERSION="$NODE_VERSION" \
+            --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
+            --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
+            --build-arg APP_ENV="$APP_ENV" \
+            --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -t "$image:latest" -t "$image:sha-${GITHUB_SHA::7}" .
+          docker push "$image:latest"
+          docker push "$image:sha-${GITHUB_SHA::7}"

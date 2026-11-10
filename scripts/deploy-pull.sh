@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 正式部署：拉 GitHub Actions 建好的映像（docker-publish.yml），不在本機 build。
+# 正式部署：拉 GitHub Actions 建好的映像（ci.yml publish-images），不在本機 build。
 # 用法：scripts/deploy-pull.sh [tag]   tag 預設 latest，可指定 sha-xxxxxxx 回滾
 set -euo pipefail
 cd "$(dirname "$0")/.."

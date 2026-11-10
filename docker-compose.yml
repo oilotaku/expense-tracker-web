@@ -2,7 +2,7 @@
 # 開發時程式碼熱更新走 `docker compose watch`（develop.watch），不用 override 檔、不 bind mount。
 services:
   frontend:
-    # 正式環境拉 GitHub Actions 建好的映像（docker-publish.yml）；`--build` 仍可本機建
+    # 正式環境拉 GitHub Actions 建好的映像（ci.yml publish-images）；`--build` 仍可本機建
     image: ghcr.io/oilotaku/expense-tracker-web-frontend:latest
     build:
       context: .
@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
 
   backend:
-    # 正式環境拉 GitHub Actions 建好的映像（docker-publish.yml）；`--build` 仍可本機建
+    # 正式環境拉 GitHub Actions 建好的映像（ci.yml publish-images）；`--build` 仍可本機建
     image: ghcr.io/oilotaku/expense-tracker-web-backend:latest
     build:
       context: .
