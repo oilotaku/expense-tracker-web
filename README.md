@@ -161,13 +161,22 @@ systemctl enable --now expense-tracker-recurring.timer
 `.env.*.example` 的佔位字串，非 development 環境沿用預設值會啟動失敗）。也可以改用傳統 cron
 達到同樣效果（`0 1 * * * curl ...`），效果等價，本 repo 沒有強制指定工具。
 
+台股收盤價快照（→ ADR-0007）同樣靠 host 端 timer：`expense-tracker-stock-close.service`
+內容同上，路徑改 `/internal/stock-close/run`；`.timer` 用 `OnCalendar=Mon..Fri *-*-* 14:40:00`
+與 `Persistent=true`（13:30 收盤後）。
+
 ### 更新既有部署
 
+映像由 GitHub Actions 建好推到 GHCR（`.github/workflows/docker-publish.yml`：main 的 ci 全綠後
+在 arm64 runner 建 backend / frontend，標 `latest` 與 `sha-<7 碼>`），部署主機只拉映像不 build：
+
 ```bash
-git pull
-docker compose up -d --build
-docker compose exec backend alembic upgrade head
+git pull                          # 取 compose / 腳本變更
+scripts/deploy-pull.sh            # pull → up -d → alembic upgrade head
+scripts/deploy-pull.sh sha-abc1234   # 回滾到指定版本
 ```
+
+要在本機 build（開發、或 GitHub 暫時不可用）：`docker compose up -d --build`，產生的映像同名，會蓋掉拉下來的 `latest`。
 
 ## 專案結構
 
