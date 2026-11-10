@@ -31,6 +31,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Sequence
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from time import monotonic
 from typing import Final, Literal
@@ -94,6 +95,9 @@ class StockQuote(BaseModel):
     market: Market
     name: str
     price: Decimal
+    # MIS `d`（YYYYMMDD）：這筆報價所屬交易日；收盤後 / 休市日仍回最近一個交易日，
+    # 收盤價快照以它當 `trade_date`（→ ADR-0007）。缺欄位或格式異常時為 None。
+    trade_date: date | None = None
 
 
 class _RateGate:
@@ -112,6 +116,15 @@ class _RateGate:
                 if elapsed < self._min_interval:
                     await asyncio.sleep(self._min_interval - elapsed)
             self._last_call = monotonic()
+
+
+def _parse_trade_date(raw: object) -> date | None:
+    if not isinstance(raw, str):
+        return None
+    try:
+        return datetime.strptime(raw, "%Y%m%d").date()  # noqa: DTZ007 — 純日期，不涉時區
+    except ValueError:
+        return None
 
 
 def _first_quote_price(field: object) -> str | None:
@@ -233,5 +246,6 @@ class TwseMisClient:
                 market=market,
                 name=name if isinstance(name, str) else ticker,
                 price=price,
+                trade_date=_parse_trade_date(row.get("d")),
             )
         return result

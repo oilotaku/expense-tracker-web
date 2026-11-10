@@ -9,11 +9,13 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.clients.stock_price_client import TwseMisClient
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.response import success
 from app.schemas.response import ApiResponse
 from app.services.recurring_service import RecurringService
+from app.services.stock_close_service import StockCloseService
 
 router = APIRouter(prefix="/internal")
 
@@ -40,3 +42,18 @@ async def run_recurring(db: DbSession) -> ApiResponse[dict[str, int]]:
     # get_db() 在 endpoint 正常回傳後自動 commit（見 app/api/deps.py），這裡不重複 commit
     generated = await RecurringService(db).generate_due_transactions()
     return success(data={"generated": len(generated)})
+
+
+@router.post(
+    "/stock-close/run",
+    response_model=ApiResponse[dict[str, int]],
+    summary="抓所有持有台股的收盤價存成快照（每個交易日收盤後觸發，→ ADR-0007）",
+    dependencies=[Depends(verify_internal_secret)],
+)
+async def run_stock_close(db: DbSession) -> ApiResponse[dict[str, int]]:
+    client = TwseMisClient()
+    try:
+        saved = await StockCloseService(db).snapshot(client)
+    finally:
+        await client.aclose()
+    return success(data={"saved": saved})

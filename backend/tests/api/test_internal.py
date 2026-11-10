@@ -25,3 +25,8 @@ async def test_run_recurring_with_correct_secret_returns_200(client: AsyncClient
     )
     assert res.status_code == 200
     assert "generated" in res.json()["data"]
+
+
+async def test_run_stock_close_without_secret_returns_401(client: AsyncClient) -> None:
+    res = await client.post("/api/v1/internal/stock-close/run")
+    assert res.status_code == 401

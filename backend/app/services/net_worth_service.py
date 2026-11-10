@@ -57,6 +57,7 @@ from app.repositories.financial_asset_repository import FinancialAssetRepository
 from app.repositories.liability_repository import LiabilityRepository
 from app.schemas.net_worth import NetWorthAccountItem, NetWorthAssetItem, NetWorthResponse
 from app.services.pricing_service import PricingService
+from app.services.stock_close_service import StockCloseService
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +103,15 @@ class UnsupportedMetalAssetError(AppError):
 
 
 class NetWorthService:
-    def __init__(self, db: AsyncSession, pricing_service: PricingService) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        pricing_service: PricingService,
+        stock_close_service: StockCloseService | None = None,
+    ) -> None:
         self._db = db
         self._pricing_service = pricing_service
+        self._stock_close = stock_close_service or StockCloseService(db)
 
     async def compute(self, user_uid: UUID) -> NetWorthResponse:
         accounts = await AccountRepository(self._db).list_by_user_uid(user_uid)
@@ -211,8 +218,24 @@ class NetWorthService:
         """
         if not names:
             return {}
-        prices = await self._call_pricing(self._pricing_service.get_stock_prices(names))
+        # 非盤中先用收盤價快照（→ ADR-0007），只有快照沒有或過期的才打即時報價
+        prices = await self._stock_close.fresh_close_prices(names)
+        misses = [name for name in names if name not in prices]
+        if misses:
+            prices.update(await self._fetch_live_stock_prices(misses))
         return {("stock", name): price for name, price in prices.items()}
+
+    async def _fetch_live_stock_prices(self, names: Sequence[str]) -> dict[str, Decimal]:
+        """即時報價失敗時退回最近一筆收盤價快照；快照也湊不齊才 424（→ ADR-0007）。"""
+        try:
+            return await self._pricing_service.get_stock_prices(names)
+        except AppError as e:
+            fallback = await self._stock_close.latest_close_prices(names)
+            if len(fallback) < len(names):
+                logger.exception("net_worth_pricing_failed")
+                raise NetWorthPricingUnavailableError() from e
+            logger.warning("net_worth_stock_price_fallback_to_close", exc_info=True)
+            return fallback
 
     async def _fetch_other_price_map(
         self, keys: Sequence[tuple[str, str]]
