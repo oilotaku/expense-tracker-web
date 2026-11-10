@@ -10,7 +10,10 @@ export interface ColorSwatchPickerProps {
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/
 
-/** design-spec §2.3 圖表 categorical 固定順序 8 色（不含「其他」灰，該色為系統保留，不開放使用者選用）。 */
+/**
+ * 前 8 色為 design-spec §2.3 圖表 categorical 固定順序（不含「其他」灰，該色為系統保留，不開放使用者選用）；
+ * 後 8 色為 §2.3.2 擴充色票，只供分類/帳戶選用，不進圖表系列。
+ */
 export const CHART_SWATCH_COLORS: readonly string[] = [
   '#8B6ED6',
   '#E8834B',
@@ -20,6 +23,14 @@ export const CHART_SWATCH_COLORS: readonly string[] = [
   '#D65FA0',
   '#8AAE3C',
   '#5A4FA0',
+  '#A20A01',
+  '#D34635',
+  '#9B6E19',
+  '#3B6209',
+  '#0E9021',
+  '#2BC0E9',
+  '#BF9CE5',
+  '#9F257C',
 ]
 
 function isSameColor(a: string, b: string): boolean {
@@ -27,7 +38,7 @@ function isSameColor(a: string, b: string): boolean {
 }
 
 /**
- * 色票選擇器（`→ FE-048` 共用元件）：design-spec §2.3 圖表 8 色固定色票 + 自訂 hex 輸入，
+ * 色票選擇器（`→ FE-048` 共用元件）：design-spec §2.3 圖表 8 色 + §2.3.2 擴充 8 色固定色票 + 自訂 hex 輸入，
  * 供分類（§8）/ 帳戶（§9.6）表單共用。受控元件（`value`/`onChange`），不自行呼叫 API；
  * 自訂 hex 格式錯誤（非 `^#[0-9A-Fa-f]{6}$`）時送出按鈕 disabled，**禁**觸發 onChange。
  */

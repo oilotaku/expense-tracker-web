@@ -72,7 +72,7 @@ export function CategoryChip({
         type="button"
         onClick={() => onRequestDelete(category)}
         aria-label={`刪除 ${category.name}`}
-        className={`absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-danger-500 text-text-inverse transition-opacity md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100 ${
+        className={`absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-danger-500 text-text-inverse transition-opacity can-hover:h-6 can-hover:w-6 can-hover:opacity-0 can-hover:group-hover:opacity-100 ${
           showDeleteOnTouch ? 'opacity-100' : 'opacity-0'
         }`}
       >

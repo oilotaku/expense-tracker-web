@@ -178,7 +178,7 @@ v1.1.0 = 補視覺設計系統（含 Light + Dark 兩套色彩 tokens，v1.0.0 �
 
 驗證結果（`node scripts/validate_palette.js`，light 模式、surface `#FFFFFF`）：Lightness band / Chroma floor / CVD separation（worst adjacent ΔE 8.1）/ Normal-vision floor（ΔE 20.2）**全數 PASS**；Contrast vs surface 為 **WARN**（4 個色階 < 3:1）→ 依規則**必須**搭配 relief channel：圖例（legend）恆常顯示 + 直接數值標籤，**文字一律走 `--color-text-*` token，禁止用圖表色當文字色**。
 
-**Pie/Bar 折疊規則**：超過 6 類時，取金額前 6 大分類 + 其餘全部併為「其他」（灰），最多 7 段，符合 series-count ladder 的 5–6 軟上限。
+**Pie/Bar 折疊規則**：超過 8 類時，取金額前 8 大分類 + 其餘全部併為「其他」（灰），最多 9 段（2026-11-01 依使用者需求由 6 類放寬，用滿已驗證的 8 色；第 9 類以上仍不生新色）。
 
 **折線圖（收入/支出趨勢）**：最多 2 series（收入=`--color-income-700` 線 / 支出=`--color-expense-700` 線），落在「1–3 色安全」區間，面積填色用系列色 **10% 透明度**（wash，不可實色）。
 
@@ -197,6 +197,12 @@ Dark 底色下整體調亮/略提升飽和度以維持在深色卡片背景（`-
 | 7 | 橄欖綠 | `#8AAE3C` | `#A3C65C` |
 | 8 | 靛紫 | `#5A4FA0` | `#7A6FC0` |
 | 其他 | 中性灰（固定） | `#9C96AF` | `#6E667F` |
+
+### 2.3.2 擴充色票（僅分類/帳戶選用，2026-11-01）
+
+`<ColorSwatchPicker>` 在 §2.3 的 8 色後再加 8 色，共 16 色：`#A20A01`、`#D34635`、`#9B6E19`、`#3B6209`、`#0E9021`、`#2BC0E9`、`#BF9CE5`、`#9F257C`。這 8 色**不進圖表系列**，只用於帶圖示與名稱的分類/帳戶識別，Light/Dark 同值。
+
+驗證結果（`validate_palette.js --pairs all`，light）：Lightness band / Chroma floor PASS；新色與其他 15 色的 ΔE 皆 ≥ 13.2，略低於 15 的全配對門檻，且未要求全配對 CVD 分離，由圖示與名稱補足；Dark 底（`#241F30`）上 `#A20A01`、`#3B6209`、`#9F257C` 對比 < 3:1。
 
 折疊規則（超過 6 類併入「其他」）、Pie/Bar 折疊上限、折線圖 series 上限與面積 wash 透明度規則皆與 Light 模式相同，不因主題重新定義。同上，實作階段需重跑 `dataviz` skill 驗證器對 Dark 色票做 Lightness band / Chroma floor / CVD separation 複驗。
 
@@ -250,6 +256,11 @@ Dark 底色下整體調亮/略提升飽和度以維持在深色卡片背景（`-
 - **mockup 對照**：本版 Artifact mockup 的 Dashboard 桌機版與行動版兩個 artboard 各自加了 `dark`（boolean）tweak，勾選即可即時對照 Light/Dark 兩版視覺，供使用者在决議設計方向時直接比對（不等同最終 Next.js 實作，僅供色彩與版面驗證）。
 
 ---
+
+
+### 2.7.1 主題色（2026-11-01）
+
+與明暗模式互相獨立的第二個偏好（設定頁「主題色」，localStorage `accent-theme-preference`，iOS `accentTheme`，不跨裝置）：薰衣草紫（預設）、海洋藍、青碧、森林綠、琥珀橘、玫瑰紅、石墨灰。`<html data-accent>` 覆寫中性色（背景/邊框/文字）、`--color-primary-*` 與 Light 陰影；**語意色（收入/支出/警示）與圖表色不變**。色值由薰衣草 token 在 OKLCH 旋轉色相產生，並校正亮度使白字按鈕與主色文字對比不低於預設主題（容許 1% 內差異）。網頁與 iOS 用同一份色值。
 
 ## 3. 資訊架構（IA / Sitemap）
 
@@ -316,7 +327,7 @@ Dark 底色下整體調亮/略提升飽和度以維持在深色卡片背景（`-
 | `<NetWorthCard>` | `components/dashboard/NetWorthCard.tsx`（沿用既有邏輯改視覺） | 帳戶資產總覽 |
 | `<AccountCard>` | `components/accounts/AccountCard.tsx` | 帳戶卡（名稱、餘額、使用者自訂 `color`/`icon`，`→ A8`）；`onRename`, `onDelete`, `onColorIconChange` |
 | `<CategoryChip>` | `components/categories/CategoryChip.tsx` | 分類 chip（使用者自訂 `color`/`icon`，`→ A8`）；`name`, `color`, `icon`, `onDelete?` |
-| `<ColorSwatchPicker>` | `components/common/ColorSwatchPicker.tsx` | 色票選擇器（§2.3 圖表 8 色 + 自訂 hex 輸入），供分類/帳戶表單共用；`value`, `onChange` |
+| `<ColorSwatchPicker>` | `components/common/ColorSwatchPicker.tsx` | 色票選擇器（§2.3 圖表 8 色 + §2.3.2 擴充 8 色 + 自訂 hex 輸入），供分類/帳戶表單共用；`value`, `onChange` |
 | `<IconPicker>` | `components/common/IconPicker.tsx` | 固定圖示集選擇器，供分類/帳戶表單共用；`value`, `onChange` |
 | `<TransactionFormDialog>` | `components/transactions/TransactionFormDialog.tsx` | 新增/編輯交易主表單，`mode: 'create'\|'edit'`, react-hook-form + zod |
 | `<RecurringFieldset>` | `components/transactions/RecurringFieldset.tsx` | 表單內「固定收支」勾選 + 週期設定（週/年停用態，`→ A6`） |

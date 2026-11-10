@@ -141,7 +141,7 @@ struct SwatchPicker: View {
     @Binding var selection: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(28), spacing: 10), count: 8), alignment: .leading, spacing: 10) {
             ForEach(Theme.palette, id: \.self) { hex in
                 Button {
                     selection = hex

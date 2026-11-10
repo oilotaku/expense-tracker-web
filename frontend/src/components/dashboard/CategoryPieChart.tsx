@@ -13,7 +13,7 @@ export interface FoldedCategorySlice extends CategorySlice {
   color: string
 }
 
-const MAX_VISIBLE_CATEGORIES = 6
+const MAX_VISIBLE_CATEGORIES = 8
 const OTHER_SLICE_ID = '__other__'
 const OTHER_LABEL = '其他'
 
@@ -28,13 +28,15 @@ export const CATEGORY_CHART_COLOR_VARS: readonly string[] = [
   'var(--color-chart-4)',
   'var(--color-chart-5)',
   'var(--color-chart-6)',
+  'var(--color-chart-7)',
+  'var(--color-chart-8)',
 ]
 
 export const CATEGORY_CHART_OTHER_COLOR = 'var(--color-chart-other)'
 
 /**
- * design-spec §2.3 Pie/Bar 折疊規則：超過 6 類時取金額前 6 大分類 + 其餘全部併為「其他」（固定
- * 中性灰，非生成色），最多 7 段。≤6 類則全部個別上色，不折疊。`CategoryBarChart` 共用本函式，
+ * design-spec §2.3 Pie/Bar 折疊規則：超過 8 類時取金額前 8 大分類 + 其餘全部併為「其他」（固定
+ * 中性灰，非生成色），最多 9 段。≤8 類則全部個別上色，不折疊。`CategoryBarChart` 共用本函式，
  * 確保兩種圖表類型的折疊結果與配色順序一致。
  */
 export function foldCategorySlices(data: readonly CategorySlice[]): FoldedCategorySlice[] {
@@ -136,7 +138,7 @@ export function renderPercentLabel(props: PieLabelRenderProps): ReactNode {
 }
 
 /**
- * 分類圓餅圖（design-spec §2.3/§4）：超過 6 類自動折疊為「其他」（`foldCategorySlices`），
+ * 分類圓餅圖（design-spec §2.3/§4）：超過 8 類自動折疊為「其他」（`foldCategorySlices`），
  * 色票走 CSS variable，切片內文字（百分比標籤）與下方圖例一律用 `--color-text-*` token。
  */
 export function CategoryPieChart({ data, formatValue = defaultFormatValue }: CategoryPieChartProps): ReactNode {

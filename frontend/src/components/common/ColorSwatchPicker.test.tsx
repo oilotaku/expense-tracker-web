@@ -5,6 +5,12 @@ import { CHART_SWATCH_COLORS, ColorSwatchPicker } from './ColorSwatchPicker'
 const [firstSwatch, secondSwatch, thirdSwatch] = CHART_SWATCH_COLORS as readonly [string, string, string, ...string[]]
 
 describe('ColorSwatchPicker', () => {
+  it('固定色票共 16 色且不重複，每色都有可點按鈕', () => {
+    render(<ColorSwatchPicker value={firstSwatch} onChange={vi.fn()} />)
+    expect(new Set(CHART_SWATCH_COLORS.map((hex) => hex.toLowerCase())).size).toBe(16)
+    expect(screen.getAllByRole('button', { name: /^選擇顏色 / })).toHaveLength(16)
+  })
+
   it('點擊色票觸發 onChange', () => {
     const onChange = vi.fn()
     render(<ColorSwatchPicker value={firstSwatch} onChange={onChange} />)

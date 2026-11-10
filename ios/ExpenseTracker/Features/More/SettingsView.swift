@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppState.self) private var state
     @AppStorage("defaultAccountUID") private var defaultAccountUID = ""
     @AppStorage("appearance") private var appearance = "system"
+    @AppStorage(Theme.accentKey) private var accent = "lavender"
     @AppStorage("quoteSource") private var quoteSource = "device"
 
     @State private var pinSheet: PinSheet.Mode?
@@ -56,6 +57,17 @@ struct SettingsView: View {
                     Text("深色").tag("dark")
                 }
                 .pickerStyle(.segmented)
+                Picker("主題色", selection: $accent) {
+                    ForEach(Theme.accents) { theme in
+                        Label {
+                            Text(theme.name)
+                        } icon: {
+                            Image(systemName: "circle.fill").foregroundStyle(Color(hex: theme.swatch))
+                        }
+                        .tag(theme.id)
+                    }
+                }
+                .pickerStyle(.navigationLink)
             }
 
             Section("伺服器") {
