@@ -29,6 +29,7 @@ struct DashboardView: View {
     @State private var netWorth: NetWorth?
     @State private var netWorthError: String?
     @State private var netWorthNote: String?
+    @State private var showAllAccounts = false
     @State private var recent: [Transaction] = []
     @State private var error: String?
 
@@ -399,7 +400,7 @@ struct DashboardView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 Text("帳戶總覽").font(.headline)
-                ForEach(state.accounts.prefix(4)) { a in
+                ForEach(showAllAccounts ? Array(state.accounts) : Array(state.accounts.prefix(4))) { a in
                     HStack {
                         ColorDot(hex: a.color)
                         Text(a.name).lineLimit(1)
@@ -416,7 +417,19 @@ struct DashboardView: View {
                     }
                 }
                 if state.accounts.count > 4 {
-                    Text("另有 \(state.accounts.count - 4) 個帳戶未顯示").font(.caption).foregroundStyle(Theme.textMuted)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { showAllAccounts.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(showAllAccounts ? "收合" : "顯示全部 \(state.accounts.count) 個帳戶")
+                            Image(systemName: showAllAccounts ? "chevron.up" : "chevron.down")
+                        }
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.primary)
                 }
 
                 if let netWorthError {
