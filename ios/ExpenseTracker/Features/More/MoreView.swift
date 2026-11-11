@@ -53,9 +53,21 @@ struct AccountsView: View {
                 .swipeActions {
                     Button(role: .destructive) { deleting = a } label: { Label("刪除", systemImage: "trash") }
                 }
+                .contextMenu {
+                    Button { editing = a } label: { Label("編輯", systemImage: "pencil") }
+                    Button(role: .destructive) { deleting = a } label: { Label("刪除", systemImage: "trash") }
+                }
             }
         }
         .navigationTitle("帳戶管理")
+        .safeAreaInset(edge: .bottom) {
+            if !state.accounts.isEmpty {
+                Text("點帳戶可編輯或刪除，也可向左滑或長按刪除")
+                    .font(.caption).foregroundStyle(Theme.textMuted)
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    .background(.bar)
+            }
+        }
         .toolbar { Button { showCreate = true } label: { Image(systemName: "plus") } }
         .refreshable { await state.reloadReferenceData() }
         .sheet(isPresented: $showCreate) { AccountFormView(account: nil) }
@@ -91,6 +103,7 @@ private struct AccountFormView: View {
     @State private var icon = "other"
     @State private var error: String?
     @State private var busy = false
+    @State private var confirmDelete = false
 
     var body: some View {
         NavigationStack {
@@ -111,6 +124,19 @@ private struct AccountFormView: View {
                 Section("顏色") { SwatchPicker(selection: $color) }
                 Section("圖示") { IconPicker(selection: $icon, color: color) }
                 if let error { Text(error).foregroundStyle(Theme.danger) }
+                if account != nil {
+                    Section {
+                        Button(role: .destructive) { confirmDelete = true } label: {
+                            Label("刪除帳戶", systemImage: "trash").frame(maxWidth: .infinity)
+                        }
+                        .disabled(busy)
+                    }
+                }
+            }
+            .confirmationDialog("刪除帳戶「\(account?.name ?? "")」？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("刪除", role: .destructive) { Task { await deleteAccount() } }
+            } message: {
+                Text("綁定這個帳戶的固定收支會一起暫停。")
             }
             .navigationTitle(account == nil ? "新增帳戶" : "編輯帳戶")
             .navigationBarTitleDisplayMode(.inline)
@@ -150,6 +176,20 @@ private struct AccountFormView: View {
                 let body = AccountCreateRequest(name: trimmed, balance: Money(b), currency: currency, color: color, icon: icon)
                 let _: Account = try await APIClient.shared.post("/accounts", body)
             }
+            state.didChange()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func deleteAccount() async {
+        guard let a = account, !busy else { return }
+        guard state.accounts.count > 1 else { error = "至少需保留一個帳戶"; return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await APIClient.shared.delete("/accounts/\(a.account_uid.uuidString)")
             state.didChange()
             dismiss()
         } catch {
