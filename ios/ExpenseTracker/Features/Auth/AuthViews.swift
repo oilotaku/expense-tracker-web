@@ -18,7 +18,7 @@ struct ServerSetupView: View {
                 } header: {
                     Text("伺服器位址")
                 } footer: {
-                    Text("輸入記帳網站的網址（和瀏覽器開的一樣），需能連到 Tailscale。")
+                    Text("輸入記帳網站的網址（和瀏覽器開的一樣）。可用 https 或 http；http 為明文傳輸，帳密與資料可能被同網路的人看到。未寫開頭時預設 https。")
                 }
                 if let error { Section { Text(error).foregroundStyle(Theme.danger) } }
                 Section {
@@ -35,8 +35,9 @@ struct ServerSetupView: View {
         checking = true
         defer { checking = false }
         var u = url.trimmingCharacters(in: .whitespaces)
-        if u.lowercased().hasPrefix("http://") { error = "只支援 https（登入 cookie 為 Secure，http 無法登入）"; return }
-        if !u.lowercased().hasPrefix("https://") { u = "https://" + u }
+        // http is allowed (e.g. DDNS:3000 from outside); the server must not set Secure cookies then
+        let lower = u.lowercased()
+        if !lower.hasPrefix("https://") && !lower.hasPrefix("http://") { u = "https://" + u }
         while u.hasSuffix("/") { u.removeLast() }
         let previous = state.serverURL
         state.serverURL = u
