@@ -174,7 +174,7 @@ export function NetWorthCard({ accounts, netWorth, isLoading, error, onRetry }: 
 
       <Link
         href="/accounts"
-        className="self-start text-sm font-medium text-primary-600 hover:text-primary-700 md:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+        className="inline-flex min-h-11 items-center self-start text-sm font-medium text-primary-600 hover:text-primary-700 can-hover:min-h-0 md:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
       >
         查看全部 / 管理帳戶 →
       </Link>

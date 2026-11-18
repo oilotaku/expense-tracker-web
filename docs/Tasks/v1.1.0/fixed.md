@@ -208,3 +208,27 @@
 - **修正**: `CategoryOption` 補 `color`/`icon`；`EntityIcon` 新增 `sm`（32px）；表格分類欄與行動卡片左側顯示圖示，規則同 iOS：分類圖示、轉帳固定 `bank`、找不到分類退回 `other`（後兩者用 `--color-chart-other`）。自訂圖示沿用 `EntityIcon` 處理。
 - **rule**: NONE
 - **後續**: 已解除。
+
+## §21 — RWD 稽核：平板/橫向手機總覽整頁水平溢出、長金額被裁、帳戶卡按鈕出界、交易卡長備註撐高、iOS 輸入框放大、連結點擊高度不足（使用者請求「記帳網站 RWD」，Playwright 多寬度稽核發現）
+
+（§20 已由未合併的 `fix/react-doctor` 分支使用，本條跳號避免合併撞號。）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: pending（分支 `fix/rwd`）
+- **files**: `frontend/src/components/common/AppShell.tsx`、`frontend/src/components/dashboard/{StatTile,PeriodSelector,NetWorthCard}.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/accounts/AccountCard.tsx`、`frontend/src/components/TransactionList.tsx`、`frontend/src/app/{assets,login,register}/page.tsx`、`frontend/src/components/transactions/TransactionFormDialog.tsx`、`frontend/e2e/rwd-layout.spec.ts`（新增）
+- **問題**: 以大金額/長名稱/長備註資料在 320~1920 共 9 種寬度掃全部頁面：(1) 總覽在 768 平板直向、844x390 橫向手機、1024 平板橫向、1280 桌機分別多出 230~531px 水平捲動；(2) 320/390 手機與 768 平板的收入/支出卡 `NT$12,345,679` 這類八位數金額被裁掉；(3) 1024 帳戶頁長數字餘額把編輯/刪除鈕擠出卡片；(4) 手機交易卡長備註不截斷，一筆可拉到整個螢幕高，大金額與幣別被擠到斷字；(5) 總覽期間選擇器 14px，iPhone 點下去會自動放大；(6)「查看全部」「設定定期還款」「註冊/登入」「更多欄位」連結只有 20px 高。
+- **根因**: (1) `AppShell` 的 `<main>` 是 `flex-1` 卻沒 `min-w-0`，flex 子項最小寬度預設為內容寬，recharts / 不斷行金額把它撐開；(2) `StatTile` 固定 `text-2xl`/`text-3xl` + `whitespace-nowrap`（§17/§18），半寬卡片放不下八位數；(3) `AccountCard` 文字欄沒 `min-w-0 flex-1`、按鈕欄沒 `shrink-0`；(4) `TransactionCard` 文字欄沒限行數，金額欄 `{amount} {currency}` 同一行；(5) `PeriodSelector` 的 `CONTROL_CLASS` 行動端 `text-sm`；(6) 純文字連結沒有撐高。
+- **修正**: (1) `main` 加 `min-w-0`；(2) `StatTile` 卡片設 `@container`，數值帶 `--chars`（字數），字級 `clamp(0.875rem, 100cqi/(字數×0.62), 原上限)`（下限 14px 依 FE-059），保留 nowrap；窄於 360px 收支卡改單欄（`grid-cols-1 min-[360px]:grid-cols-2`，跨欄改 `min-[360px]:col-span-2`）；(3) 文字欄 `min-w-0 flex-1`、名稱 `break-words`、餘額 `break-all`、按鈕欄 `shrink-0`；(4) 第一行 `truncate`、備註 `line-clamp-2`、帳戶名另起一行（不被備註省略號吃掉），金額數字 `whitespace-nowrap`（手機 `text-base`、`sm:text-lg`）、幣別另起一行 `text-sm`；(5) 一律 `text-base`；(6) `inline-flex min-h-11 items-center`，有滑鼠時（`can-hover:`）才縮回。新增 e2e `rwd-layout.spec.ts`（S-RWD-01~06，23 個 case），改前對線上跑 15 紅、改後對預覽映像 23 綠；獨立審查後補強：未登入被導回 /login 即失敗、找不到目標元素即失敗（避免假綠）、點擊高度門檻 44px（FE-058）、金額字級 ≥14px。`StatTile.test.tsx`、`dashboard/page.test.tsx` 的 class 斷言改成新寫法下的同一需求。
+- **rule**: FE-058（連結點擊高度）、FE-059（金額字級下限）、FE-064（金額卡改 container query）；其餘 NONE
+- **後續**: 已解除。未處理：極端長度金額（十位數以上）在窄卡片碰到 14px 下限時仍會超出；交易卡/帳戶卡/總覽帳戶列的金額仍是後端原字串（`50000.00`、無千分位），與總覽金額卡的 `NT$50,000` 格式不一致，屬顯示格式議題另議。e2e 會在正式 DB 建 `e2e-rwd-*@example.com` 帳號（註冊限流每 IP 每小時 5 次，spec 已把登入狀態快取到 `E2E_STATE_DIR` 或 tmp 30 分鐘）。
+
+## §22 — 行動交易卡：收支類型只靠顏色區分、卡片按鈕內又包刪除按鈕（§21 審查時發現，使用者要求一併修）
+
+- **time**: 2026-11-18T12:20:00+08:00
+- **commit**: pending（分支 `fix/rwd`）
+- **files**: `frontend/src/components/TransactionList.tsx`（`TransactionCard`）、`frontend/src/components/TransactionList.test.tsx`
+- **問題**: (1) 行動卡片金額只有顏色區分收入 / 支出 / 轉帳，沒有正負號或文字，讀屏與色覺障礙者分不出（WCAG 1.4.1）；(2) 整張卡片是 `role="button"`，裡面又包「刪除」按鈕，button 的子元素會被當純內容，部分讀屏把「刪除」併進卡片名稱、無法單獨操作；刪除鈕名稱只有「刪除」，多筆時聽不出是哪一筆。
+- **根因**: 既存自卡片版面初版（`CurvedCard interactive onClick`），桌機表格有「收支類型」欄所以沒被注意。
+- **修正**: 卡片不再是 role=button，改成並列兩顆獨立按鈕：編輯按鈕包圖示與文字、用 `::after` 撐滿整張卡片（點卡片任何地方仍是編輯），名稱含 sr-only「收支類型 帶號金額 幣別」；畫面上的金額加正負號（收入 `+`、支出 `-`、轉帳不加，同 Dashboard 最近交易）並 `aria-hidden` 避免重讀；刪除鈕 `relative z-10` 疊在上層，名稱改「刪除 日期 明細」。新增單元測試 S-A11Y-01（名稱讀得出「支出」與金額、畫面有負號）、S-A11Y-02（無巢狀互動元件、刪除鈕名稱指出哪一筆、點編輯開表單），先紅後綠。
+- **rule**: NONE（WCAG 1.4.1 / ARIA button 子元素為 presentational）
+- **後續**: 已解除。iOS VoiceOver 實機未驗。另：全套 vitest 在 Pi 高負載（load ~10）時 `settings/page.test.tsx` PIN 兩案、`accounts/page.test.tsx` 新增帳戶偶發逾時，main 上同樣會發生（連跑 3 次失敗 1 次），單獨跑皆過，非本次引入。

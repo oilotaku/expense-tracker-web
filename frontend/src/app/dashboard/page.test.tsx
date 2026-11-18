@@ -209,16 +209,19 @@ describe('DashboardPage', () => {
     expect(screen.getByText('NT$3,200')).toBeInTheDocument()
   })
 
-  it('卡片區桌機 grid-cols-4、平板/行動端結餘跨欄置頂成 Hero（→ §9.2 RWD 對應）', () => {
+  it('卡片區桌機 grid-cols-4、平板/行動端結餘跨欄置頂成 Hero；窄於 360px 單欄（→ §9.2 RWD 對應、fixed.md §21）', () => {
     render(<DashboardPage />)
 
     const section = screen.getByLabelText('期間彙總')
-    expect(section).toHaveClass('grid-cols-2')
+    expect(section).toHaveClass('grid-cols-1')
+    expect(section).toHaveClass('min-[360px]:grid-cols-2')
     expect(section).toHaveClass('lg:grid-cols-4')
 
     const heroTile = screen.getByText('+NT$17,000').closest('div')
     expect(heroTile).toHaveClass('order-first')
-    expect(heroTile).toHaveClass('col-span-2')
+    // 單欄時不能有 col-span-2（會長出隱含的第二欄），兩欄起才跨欄
+    expect(heroTile).not.toHaveClass('col-span-2')
+    expect(heroTile).toHaveClass('min-[360px]:col-span-2')
     expect(heroTile).toHaveClass('lg:col-span-1')
   })
 

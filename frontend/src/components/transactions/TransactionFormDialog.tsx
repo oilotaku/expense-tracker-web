@@ -591,7 +591,7 @@ export function TransactionFormDialog({
           type="button"
           aria-expanded={showMoreFields}
           onClick={() => setMobileMoreOpen((v) => !v)}
-          className="self-start text-sm font-medium text-primary-600 md:hidden"
+          className="inline-flex min-h-11 items-center self-start text-sm font-medium text-primary-600 md:hidden"
         >
           {showMoreFields ? '收合欄位 ▴' : '更多欄位（明細/帳戶/支付方式） ▾'}
         </button>

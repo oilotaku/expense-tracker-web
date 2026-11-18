@@ -120,6 +120,13 @@ const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = {
   transfer: '轉帳',
 }
 
+// 行動卡片金額的正負號（同 Dashboard 最近交易的 +/- 寫法）；轉帳不分方向不加號
+const AMOUNT_SIGN: Record<TransactionType, string> = {
+  expense: '-',
+  income: '+',
+  transfer: '',
+}
+
 // 轉帳兩列（→ transfer_group_uid）各自只知道「自己的帳戶」+「對方的帳戶」，統一算成
 // 「來源 → 目標」方向的顯示字串，不管當前這一列是 OUT 還是 IN（→ TransactionResponse
 // transfer_direction/transfer_counterpart_account_uid）。
@@ -375,37 +382,47 @@ function TransactionCard({
         ? 'text-expense-700'
         : 'text-text-primary'
 
-  function handleDeleteClick(event: { stopPropagation: () => void }): void {
-    event.stopPropagation()
-    onDelete(transaction)
-  }
+  const typeLabel = TRANSACTION_TYPE_LABEL[transaction.transaction_type]
+  const signedAmount = `${AMOUNT_SIGN[transaction.transaction_type]}${transaction.amount}`
+  const description = transaction.description || '（無明細）'
 
+  // 編輯與刪除是兩顆並列的獨立按鈕（卡片本身不再是 role=button，避免按鈕裡包按鈕讓讀屏無法單獨操作刪除）。
+  // 編輯按鈕用 ::after 撐滿整張卡片，點卡片任何地方都會編輯；刪除鈕 relative z-10 疊在上面。
+  // 讀屏從編輯按鈕的名稱聽到「日期・分類、明細、帳戶、收支類型 金額 幣別」；畫面上的金額另外 aria-hidden 避免重讀。
   return (
-    <CurvedCard padding="sm" interactive onClick={() => onEdit(transaction)}>
+    <CurvedCard padding="sm" interactive className="relative">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onEdit(transaction)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-primary-600"
+        >
           <EntityIcon icon={categoryIcon.icon} color={categoryIcon.color} size="sm" />
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-sm text-text-secondary">
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm text-text-secondary">
               {formatDate(transaction.transaction_date)}・{categoryName}
             </span>
-            <span className="text-sm text-text-secondary">
-              {transaction.description || '（無明細）'}・{accountName}
+            {/* 長備註最多兩行（完整內容點卡片進編輯看）；帳戶名另起一行，不會被備註的省略號吃掉 */}
+            <span className="line-clamp-2 break-words text-sm text-text-secondary">{description}</span>
+            <span className="truncate text-sm text-text-secondary">{accountName}</span>
+            <span className="sr-only">
+              {typeLabel} {signedAmount} {currency}
             </span>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className={`text-lg font-semibold ${amountColor}`}>
-            {transaction.amount} {currency}
+          </span>
+        </button>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {/* 數字不斷行、幣別另起一行：窄螢幕把空間留給左欄。正負號讓收支不只靠顏色區分（WCAG 1.4.1） */}
+          <span aria-hidden="true" className={`flex flex-col items-end font-semibold ${amountColor}`}>
+            <span className="whitespace-nowrap text-base tabular-nums sm:text-lg">{signedAmount}</span>
+            <span className="text-sm font-medium">{currency}</span>
           </span>
           <button
             type="button"
-            aria-label="刪除"
-            onClick={handleDeleteClick}
-            onKeyDown={(event) => event.stopPropagation()}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-danger-500 hover:text-danger-700"
+            aria-label={`刪除 ${formatDate(transaction.transaction_date)} ${description}`}
+            onClick={() => onDelete(transaction)}
+            className="relative z-10 flex h-11 w-11 items-center justify-center rounded-md text-danger-500 hover:text-danger-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
           >
-            🗑
+            <span aria-hidden="true">🗑</span>
           </button>
         </div>
       </div>

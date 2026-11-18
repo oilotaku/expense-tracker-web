@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { cva } from 'class-variance-authority'
 import { CurvedCard } from '@/components/common/CurvedCard'
 
@@ -29,7 +29,7 @@ export function formatAmount(value: string, signed = false): string {
 // 灰階狀態），不對外開放為 `StatTileTone`，避免呼叫端拿它當一般語意色用。
 // whitespace-nowrap：瀏覽器預設會把 ASCII 連字號（負號）視為可斷行點，窄卡片下「-NT$48,213」
 // 可能斷成「-」單獨一行、「NT$48,213」另一行（結餘卡負值 + hero 大字級最容易踩到）。
-const statValueClassName = cva('font-semibold tabular-nums whitespace-nowrap', {
+const statValueClassName = cva('font-semibold leading-tight tabular-nums whitespace-nowrap', {
   variants: {
     tone: {
       income: 'text-income-700',
@@ -40,24 +40,30 @@ const statValueClassName = cva('font-semibold tabular-nums whitespace-nowrap', {
     },
     hero: {
       // design-spec §2.5 原訂 Hero 數字 desktop `text-4xl`，但 `lg:` 起結餘卡從 mobile 的
-      // `col-span-2`（雙倍寬，撐得住大字級）變回跟其他三張卡等寬的 `col-span-1`
-      // （→ dashboard/page.tsx `<StatTile label="結餘" ... />` 的 className），字級卻仍比
-      // 其他卡大一級，金額位數多或結餘為負（`-NT$48,213` 這類字串）在等寬欄位裡會超出卡片
-      // 邊界（使用者截圖回報）。desktop 改成跟其他卡同尺寸，只保留 mobile 的放大（此時仍有
-      // 雙倍寬可以撐）。
-      true: 'text-3xl lg:text-3xl',
-      false: 'text-2xl lg:text-3xl',
+      // `col-span-2`（雙倍寬）變回跟其他三張卡等寬的 `col-span-1`，desktop 改成跟其他卡同上限，
+      // 只保留 mobile 的放大。
+      // 字級依「卡片寬度 ÷ 字數」自動縮小（卡片是 container，`--chars` 由元件帶入字數；0.62 ≈
+      // 本字型數字 / NT$ 的平均字寬 em），上限仍是原本的 text-2xl / text-3xl，下限 14px（FE-059 行動端字級下限）。
+      // 窄於 360px 的螢幕收支卡改單欄（→ dashboard/page.tsx），半寬卡片在下限字級也放不下八位數。320px 手機半寬卡片
+      // 放 `NT$12,345,679` 這類八位數金額時原本會被裁掉（RWD 稽核 2026-11-18）。
+      true: 'text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]',
+      false:
+        'text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.5rem)] lg:text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]',
     },
   },
   defaultVariants: { tone: 'neutral', hero: false },
 })
 
-const statCardClassName = cva('flex flex-col justify-center gap-1', {
+const statCardClassName = cva('@container flex min-w-0 flex-col justify-center gap-1', {
   variants: {
     unavailable: { true: 'bg-surface-sunken', false: '' },
   },
   defaultVariants: { unavailable: false },
 })
+
+function charsStyle(text: string): CSSProperties {
+  return { '--chars': text.length } as CSSProperties
+}
 
 export interface StatTileProps {
   label: string
@@ -92,13 +98,18 @@ export function StatTile({
   hint,
   className,
 }: StatTileProps): ReactNode {
+  const text = formatAmount(value ?? '0', signed)
   return (
     <CurvedCard padding="sm" className={`${statCardClassName({ unavailable })} ${className ?? ''}`}>
       <p className="text-sm text-text-secondary md:text-base">{label}</p>
       {unavailable ? (
-        <p className={statValueClassName({ tone: 'muted', hero: false })}>—</p>
+        <p className={statValueClassName({ tone: 'muted', hero: false })} style={charsStyle('—')}>
+          —
+        </p>
       ) : (
-        <p className={statValueClassName({ tone, hero })}>{formatAmount(value ?? '0', signed)}</p>
+        <p className={statValueClassName({ tone, hero })} style={charsStyle(text)}>
+          {text}
+        </p>
       )}
       {hint !== undefined && hint.length > 0 && <p className="text-xs text-text-muted">{hint}</p>}
     </CurvedCard>

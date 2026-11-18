@@ -86,7 +86,7 @@ export default function RegisterPage(): ReactNode {
             {isLoading ? '註冊中…' : '註冊'}
           </button>
         </form>
-        <Link href="/login" className="text-center text-sm text-primary-600 underline">
+        <Link href="/login" className="inline-flex min-h-11 items-center justify-center text-center text-sm text-primary-600 underline">
           已經有帳號？登入
         </Link>
       </CurvedCard>

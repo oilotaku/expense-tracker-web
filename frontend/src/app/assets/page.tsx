@@ -913,7 +913,7 @@ function LiabilityRecurringSection({ liability }: { liability: LiabilityResponse
         type="button"
         onClick={() => setIsSettingUp((current) => !current)}
         aria-expanded={isSettingUp}
-        className="self-start text-sm text-primary-600 hover:text-primary-700"
+        className="inline-flex min-h-11 items-center self-start text-sm text-primary-600 hover:text-primary-700 can-hover:min-h-0"
       >
         設定定期還款
       </button>
