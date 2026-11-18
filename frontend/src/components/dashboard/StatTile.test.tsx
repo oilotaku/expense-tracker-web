@@ -37,7 +37,7 @@ describe('StatTile', () => {
 
     const value = screen.getByText('+NT$17,000')
     // 字級改為依卡片寬度自動縮放（clamp），上限即原本的 text-3xl（1.875rem），且沒有 desktop 放大
-    expect(value).toHaveClass('text-[length:clamp(0.75rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]')
+    expect(value).toHaveClass('text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]')
     expect(value.className).not.toMatch(/lg:text-\[length:[^\]]*2\.25rem\)\]|lg:text-4xl/)
   })
 

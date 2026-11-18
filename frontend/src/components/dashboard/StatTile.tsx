@@ -43,11 +43,12 @@ const statValueClassName = cva('font-semibold leading-tight tabular-nums whitesp
       // `col-span-2`（雙倍寬）變回跟其他三張卡等寬的 `col-span-1`，desktop 改成跟其他卡同上限，
       // 只保留 mobile 的放大。
       // 字級依「卡片寬度 ÷ 字數」自動縮小（卡片是 container，`--chars` 由元件帶入字數；0.62 ≈
-      // 本字型數字 / NT$ 的平均字寬 em），上限仍是原本的 text-2xl / text-3xl。320px 手機半寬卡片
+      // 本字型數字 / NT$ 的平均字寬 em），上限仍是原本的 text-2xl / text-3xl，下限 14px（FE-059 行動端字級下限）。
+      // 窄於 360px 的螢幕收支卡改單欄（→ dashboard/page.tsx），半寬卡片在下限字級也放不下八位數。320px 手機半寬卡片
       // 放 `NT$12,345,679` 這類八位數金額時原本會被裁掉（RWD 稽核 2026-11-18）。
-      true: 'text-[length:clamp(0.75rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]',
+      true: 'text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]',
       false:
-        'text-[length:clamp(0.75rem,calc(100cqi/(var(--chars)*0.62)),1.5rem)] lg:text-[length:clamp(0.75rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]',
+        'text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.5rem)] lg:text-[length:clamp(0.875rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]',
     },
   },
   defaultVariants: { tone: 'neutral', hero: false },

@@ -296,6 +296,40 @@ describe('TransactionList', () => {
     expect(deleteTransaction).not.toHaveBeenCalled()
   })
 
+  describe('行動卡片的螢幕閱讀器語意', () => {
+    function mobileList(container: HTMLElement): HTMLElement {
+      const list = container.querySelector<HTMLElement>('div.lg\\:hidden')
+      if (!list) throw new Error('找不到行動卡片清單')
+      return list
+    }
+
+    it('S-A11Y-01 收支類型不只靠顏色：編輯按鈕的名稱讀得出「支出」與金額，畫面上金額帶負號', () => {
+      const { container } = render(<TransactionList />)
+      const list = within(mobileList(container))
+
+      const editButton = list.getByRole('button', { name: /^(?!刪除).*午餐/ })
+      expect(editButton).toHaveAccessibleName(expect.stringContaining('支出'))
+      expect(editButton).toHaveAccessibleName(expect.stringContaining('120.50'))
+      expect(list.getByText('-120.50')).toBeInTheDocument()
+    })
+
+    it('S-A11Y-02 卡片內沒有巢狀互動元件：編輯與刪除是兩顆獨立按鈕，刪除鈕名稱指出是哪一筆', () => {
+      const { container } = render(<TransactionList />)
+      const list = mobileList(container)
+
+      expect(list.querySelectorAll('[role="button"] button, button button, [role="button"] [role="button"]')).toHaveLength(0)
+      const deleteButton = within(list).getByRole('button', { name: /^刪除.*午餐/ })
+      fireEvent.click(deleteButton)
+      expect(screen.getByText('刪除「午餐」？')).toBeInTheDocument()
+    })
+
+    it('S-A11Y-02 點卡片的編輯按鈕開啟編輯表單', () => {
+      const { container } = render(<TransactionList />)
+      fireEvent.click(within(mobileList(container)).getByRole('button', { name: /^(?!刪除).*午餐/ }))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+  })
+
   describe('轉帳列', () => {
     beforeEach(() => {
       useListTransactionsQuery.mockReturnValue({

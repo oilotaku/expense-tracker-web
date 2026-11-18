@@ -118,6 +118,8 @@ async function openPage(browser: Browser, state: StorageState, viewport: Viewpor
   const page = await context.newPage()
   await page.goto(path)
   await page.waitForLoadState('networkidle')
+  // 登入狀態失效會被導回 /login，login 頁本身版面正常，不擋就會讓多數情境假綠
+  await expect(page).not.toHaveURL(/\/login/)
   // 圖表（recharts ResponsiveContainer）量完尺寸後才會撐出最終寬度
   await page.waitForTimeout(1500)
   return { page, close: () => context.close() }
@@ -141,7 +143,8 @@ test.describe('RWD 版面', () => {
       return
     }
     storageState = await seedStressData(browser)
-    fs.writeFileSync(cachePath, JSON.stringify(storageState))
+    // 內含測試帳號的 session cookie，只給自己讀
+    fs.writeFileSync(cachePath, JSON.stringify(storageState), { mode: 0o600 })
   })
 
   for (const viewport of ALL_VIEWPORTS) {
@@ -158,7 +161,7 @@ test.describe('RWD 版面', () => {
   }
 
   for (const viewport of [PHONE_320, PHONE_390, TABLET_768, DESKTOP_1280]) {
-    test(`S-RWD-02 ${viewport.name}：總覽金額卡的數字完整顯示、不被裁切`, async ({ browser }) => {
+    test(`S-RWD-02 ${viewport.name}：總覽金額卡的數字完整顯示、不被裁切，字級不低於 14px（FE-059）`, async ({ browser }) => {
       const { page, close } = await openPage(browser, storageState, viewport, '/dashboard')
       const values = page.locator('section[aria-label="期間彙總"] p.tabular-nums')
       await expect(values.first()).toBeVisible()
@@ -171,20 +174,29 @@ test.describe('RWD 版面', () => {
           })
           .map((element) => element.textContent ?? ''),
       )
+      const tooSmall = await values.evaluateAll((elements) =>
+        elements
+          .filter((element) => parseFloat(getComputedStyle(element).fontSize) < 14)
+          .map((element) => `${element.textContent ?? ''} ${getComputedStyle(element).fontSize}`),
+      )
       await close()
       expect(clipped).toEqual([])
+      expect(tooSmall).toEqual([])
     })
   }
 
   for (const viewport of ALL_VIEWPORTS) {
     test(`S-RWD-03 ${viewport.name}：帳戶卡片的編輯 / 刪除鈕都在卡片內`, async ({ browser }) => {
       const { page, close } = await openPage(browser, storageState, viewport, '/accounts')
-      const outside = await page.locator('button[aria-label^="刪除"], button[aria-label^="編輯"]').evaluateAll((buttons) =>
+      const buttons = page.locator('button[aria-label^="刪除"], button[aria-label^="編輯"]')
+      // 種了 3 個帳戶 + 註冊預設帳戶，每個都有編輯、刪除兩顆；找不到就是頁面沒正常顯示
+      expect(await buttons.count()).toBeGreaterThanOrEqual(6)
+      const outside = await buttons.evaluateAll((buttons) =>
         buttons
           .filter((button) => {
             let card: HTMLElement | null = button.parentElement
             while (card && !card.classList.contains('shadow-card')) card = card.parentElement
-            if (!card) return false
+            if (!card) return true
             const box = button.getBoundingClientRect()
             const cardBox = card.getBoundingClientRect()
             return box.right > cardBox.right + 1 || box.left < cardBox.left - 1
@@ -206,7 +218,7 @@ test.describe('RWD 版面', () => {
         return Math.round(element.getBoundingClientRect().height / lineHeight)
       })
       // 卡片第一層 flex 的兩欄：左＝圖示 + 文字，右＝金額 + 刪除鈕；任何一個文字節點越過右欄左緣即算重疊
-      const overlaps = await page.locator('.lg\\:hidden .shadow-card[role="button"]').evaluateAll((cards) =>
+      const overlaps = await page.locator('.lg\\:hidden .shadow-card').evaluateAll((cards) =>
         cards.filter((card) => {
           const row = card.firstElementChild
           const left = row?.children[0]
@@ -217,12 +229,15 @@ test.describe('RWD 版面', () => {
         }).length,
       )
       // 左欄第一行「日期・分類」：一般手機寬度（≥375）要完整顯示，不能被省略號吃掉分類
-      const truncatedHeads = await page.locator('.lg\\:hidden .shadow-card[role="button"]').evaluateAll((cards) =>
+      const truncatedHeads = await page.locator('.lg\\:hidden .shadow-card').evaluateAll((cards) =>
         cards
           .map((card) => card.firstElementChild?.children[0]?.lastElementChild?.firstElementChild)
           .filter((span): span is Element => !!span && span.scrollWidth > span.clientWidth + 1)
           .map((span) => span.textContent ?? ''),
       )
+      // 帳戶名稱要獨立顯示，不能跟長備註一起被兩行限制的省略號吃掉
+      const noteCard = page.locator('.lg\\:hidden .shadow-card').filter({ hasText: LONG_NOTE }).filter({ hasText: '台新 Richart' })
+      await expect(noteCard.getByText('台新 Richart', { exact: true })).toBeVisible()
       await close()
       expect(lineCount).toBeLessThanOrEqual(2)
       expect(overlaps).toBe(0)
@@ -250,7 +265,7 @@ test.describe('RWD 版面', () => {
   }
 
   for (const viewport of [PHONE_320, PHONE_390, TABLET_768]) {
-    test(`S-RWD-06 ${viewport.name}：獨立的文字連結 / 按鈕點擊高度至少 24px`, async ({ browser }) => {
+    test(`S-RWD-06 ${viewport.name}：獨立的文字連結 / 按鈕點擊高度至少 44px（FE-058）`, async ({ browser }) => {
       const tooSmall: string[] = []
       const targets: [string, RegExp][] = [
         ['/dashboard', /查看全部/],
@@ -258,12 +273,15 @@ test.describe('RWD 版面', () => {
       ]
       for (const [path, name] of targets) {
         const { page, close } = await openPage(browser, storageState, viewport, path)
+        let found = 0
         for (const box of await page.getByRole('link', { name }).or(page.getByRole('button', { name })).all()) {
           if (!(await box.isVisible())) continue
+          found += 1
           const rect = await box.boundingBox()
-          if (rect && rect.height < 24) tooSmall.push(`${path} ${await box.textContent()} ${Math.round(rect.height)}px`)
+          if (!rect || rect.height < 44) tooSmall.push(`${path} ${await box.textContent()} ${Math.round(rect?.height ?? 0)}px`)
         }
         await close()
+        if (found === 0) tooSmall.push(`${path} 找不到「${name.source}」`)
       }
       expect(tooSmall).toEqual([])
     })
