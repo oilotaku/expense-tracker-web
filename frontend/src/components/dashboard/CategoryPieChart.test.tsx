@@ -6,6 +6,7 @@ import {
   CategoryLegend,
   CategoryPieChart,
   foldCategorySlices,
+  rankCategorySlices,
   renderPercentLabel,
   type CategorySlice,
 } from './CategoryPieChart'
@@ -89,5 +90,30 @@ describe('圖形本身對讀屏隱藏，由圖例提供資料', () => {
     expect(chartBox).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('[role="application"]')).toBeNull()
     expect(screen.getByRole('list', { name: '支出分類明細' })).toBeInTheDocument()
+  })
+})
+
+describe('寬版面圖例列出全部分類（使用者 2026-11-18：空間夠不用顯示「其餘」）', () => {
+  it('S-CHART-06 rankCategorySlices 依金額排序，前 8 類用圖表色、第 9 類以上一律中性灰', () => {
+    const ranked = rankCategorySlices(TEN_CATEGORIES)
+    expect(ranked.map((slice) => slice.label)).toEqual(['媽', '保險', '柔', '其他', '餐飲', '電信', '社交', '交通', '娛樂', '購物'])
+    expect(ranked[7]?.color).toBe('var(--color-chart-8)')
+    expect(ranked[8]?.color).toBe('var(--color-chart-other)')
+    expect(ranked[9]?.color).toBe('var(--color-chart-other)')
+  })
+
+  it('S-CHART-06 side 圖例同時帶「其餘 N 類」（窄版用）與被併入的各分類（寬版用），占比以全部金額計', () => {
+    render(
+      <CategoryLegend
+        slices={foldCategorySlices(TEN_CATEGORIES)}
+        tail={rankCategorySlices(TEN_CATEGORIES).slice(8)}
+        formatValue={(n) => `NT$${n}`}
+        layout="side"
+      />,
+    )
+    const list = within(screen.getByRole('list', { name: '支出分類明細' }))
+    expect(list.getByText('其餘 2 類')).toBeInTheDocument()
+    expect(list.getByText('娛樂').closest('li')).toHaveTextContent('娛樂NT$2001%')
+    expect(list.getByText('購物').closest('li')).toHaveTextContent('購物NT$50<1%')
   })
 })

@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 // e2e：總覽「支出分類」圓餅圖的版面（fixed.md §33）。所有 /api/v1 請求在瀏覽器端以假資料回應，
 // 不登入、不寫入任何資料，可對任何環境執行。版面靠 container query，jsdom 量不到，所以放在 e2e。
-// 情境：S-CHART-04（寬卡片圖例在圓餅右側、卡片底部不留大片空白）、S-CHART-05（窄卡片維持上下排）。
+// 情境：S-CHART-04（寬卡片圖例在圓餅右側、卡片底部不留大片空白）、S-CHART-05（窄卡片維持上下排）、
+// S-CHART-06（寬卡片圖例列出全部分類、不顯示「其餘 N 類」；窄卡片仍折疊）。
 
 const ok = (data: unknown): string => JSON.stringify({ success: true, data, detail: null, response_code: 200 })
 
@@ -99,4 +100,23 @@ test('S-CHART-05 390 手機：窄卡片維持圓餅在上、圖例在下', async
   await openDashboard(page)
   const boxes = await measure(page)
   expect(boxes.legend.top).toBeGreaterThanOrEqual(boxes.pie.bottom)
+})
+
+test('S-CHART-06 1280 桌機：圖例空間夠，列出第 9、10 類，不顯示「其餘 2 類」', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await openDashboard(page)
+  const legend = page.getByRole('list', { name: '支出分類明細' })
+  await expect(legend.getByText('娛樂', { exact: true })).toBeVisible()
+  await expect(legend.getByText('購物', { exact: true })).toBeVisible()
+  await expect(legend.getByText('其餘 2 類')).toBeHidden()
+  await expect(legend.getByRole('listitem')).toHaveCount(10)
+})
+
+test('S-CHART-06 390 手機：圖例橫向換行空間有限，仍折疊成「其餘 2 類」', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openDashboard(page)
+  const legend = page.getByRole('list', { name: '支出分類明細' })
+  await expect(legend.getByText('其餘 2 類')).toBeVisible()
+  await expect(legend.getByText('娛樂', { exact: true })).toBeHidden()
+  await expect(legend.getByRole('listitem')).toHaveCount(9)
 })

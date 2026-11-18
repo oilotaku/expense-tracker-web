@@ -34,26 +34,33 @@ export const CATEGORY_CHART_COLOR_VARS: readonly string[] = [
 export const CATEGORY_CHART_OTHER_COLOR = 'var(--color-chart-other)'
 
 /**
+ * 依金額由大到小排序並配色：前 8 類用固定順序的圖表色，第 9 類以上一律中性灰（不生新色，
+ * design-spec §2.3）。寬版圖例列出全部分類時用這份（`CategoryLegend` 的 `tail`）。
+ */
+export function rankCategorySlices(data: readonly CategorySlice[]): FoldedCategorySlice[] {
+  return [...data]
+    .sort((a, b) => b.amount - a.amount)
+    .map((slice, index) => ({ ...slice, color: CATEGORY_CHART_COLOR_VARS[index] ?? CATEGORY_CHART_OTHER_COLOR }))
+}
+
+/**
  * design-spec §2.3 Pie/Bar 折疊規則：超過 8 類時取金額前 8 大分類 + 其餘全部併為「其餘 N 類」（固定
  * 中性灰，非生成色），最多 9 段。≤8 類則全部個別上色，不折疊。`CategoryBarChart` 共用本函式，
  * 確保兩種圖表類型的折疊結果與配色順序一致。
  */
 export function foldCategorySlices(data: readonly CategorySlice[]): FoldedCategorySlice[] {
-  const sorted = [...data].sort((a, b) => b.amount - a.amount)
+  const ranked = rankCategorySlices(data)
 
-  if (sorted.length <= MAX_VISIBLE_CATEGORIES) {
-    return sorted.map((slice, index) => ({
-      ...slice,
-      color: CATEGORY_CHART_COLOR_VARS[index] ?? CATEGORY_CHART_OTHER_COLOR,
-    }))
+  if (ranked.length <= MAX_VISIBLE_CATEGORIES) {
+    return ranked
   }
 
-  const visible = sorted.slice(0, MAX_VISIBLE_CATEGORIES)
-  const rest = sorted.slice(MAX_VISIBLE_CATEGORIES)
+  const visible = ranked.slice(0, MAX_VISIBLE_CATEGORIES)
+  const rest = ranked.slice(MAX_VISIBLE_CATEGORIES)
   const otherAmount = rest.reduce((sum, slice) => sum + slice.amount, 0)
 
   return [
-    ...visible.map((slice, index) => ({ ...slice, color: CATEGORY_CHART_COLOR_VARS[index] as string })),
+    ...visible,
     // 不叫「其他」：系統預設分類就有「其他」（design-spec A17），同名會出現兩個「其他」
     { id: OTHER_SLICE_ID, label: `其餘 ${rest.length} 類`, amount: otherAmount, color: CATEGORY_CHART_OTHER_COLOR },
   ]
@@ -69,6 +76,12 @@ export interface CategoryLegendProps {
    * 一行一類、金額與占比靠右，窄容器時同 inline（圓餅圖）。
    */
   layout?: CategoryLegendLayout
+  /**
+   * 被併入「其餘 N 類」的各分類（`rankCategorySlices(data).slice(8)`）。只在 `side` 版面使用：
+   * 寬容器（直式清單、空間夠）改列出這些分類並隱藏「其餘 N 類」，窄容器維持折疊
+   * （使用者 2026-11-18：空間夠不用顯示其餘）。以 container query 切換，讀屏只讀得到顯示中的那一版。
+   */
+  tail?: readonly FoldedCategorySlice[]
 }
 
 const LEGEND_LIST_CLASS: Record<CategoryLegendLayout, string> = {
@@ -96,13 +109,25 @@ function formatShare(amount: number, total: number): string {
   return percent > 0 && percent < 0.5 ? '<1%' : `${Math.round(percent)}%`
 }
 
-export function CategoryLegend({ slices, formatValue, layout = 'inline' }: CategoryLegendProps): ReactNode {
+const LEGEND_ITEM_CLASS = 'flex items-center gap-1.5'
+// 寬容器才展開：「其餘 N 類」只在窄容器顯示，被併入的各分類只在寬容器顯示
+const FOLDED_BUCKET_ITEM_CLASS = `${LEGEND_ITEM_CLASS} @md:hidden`
+const EXPANDED_TAIL_ITEM_CLASS = 'hidden items-center gap-1.5 @md:flex'
+
+export function CategoryLegend({ slices, formatValue, layout = 'inline', tail = [] }: CategoryLegendProps): ReactNode {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
+  const expandTail = layout === 'side' && tail.length > 0
+  const items = expandTail
+    ? [
+        ...slices.map((slice) => ({ slice, className: slice.id === OTHER_SLICE_ID ? FOLDED_BUCKET_ITEM_CLASS : LEGEND_ITEM_CLASS })),
+        ...tail.map((slice) => ({ slice, className: EXPANDED_TAIL_ITEM_CLASS })),
+      ]
+    : slices.map((slice) => ({ slice, className: LEGEND_ITEM_CLASS }))
   // 圖形本身對讀屏隱藏（見 ChartFrame），這份清單是讀屏唯一的資料來源，所以百分比也放進來
   return (
     <ul className={LEGEND_LIST_CLASS[layout]} role="list" aria-label="支出分類明細">
-      {slices.map((slice) => (
-        <li key={slice.id} className="flex items-center gap-1.5">
+      {items.map(({ slice, className }) => (
+        <li key={slice.id} className={className}>
           <span
             aria-hidden
             className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -182,6 +207,7 @@ export function renderPercentLabel(props: PieLabelRenderProps): ReactNode {
  */
 export function CategoryPieChart({ data, formatValue = defaultFormatValue }: CategoryPieChartProps): ReactNode {
   const slices = foldCategorySlices(data)
+  const tail = rankCategorySlices(data).slice(MAX_VISIBLE_CATEGORIES)
 
   if (slices.length === 0) {
     return <p className="py-8 text-center text-sm text-text-muted">尚無分類資料</p>
@@ -214,7 +240,7 @@ export function CategoryPieChart({ data, formatValue = defaultFormatValue }: Cat
             </ResponsiveContainer>
           </ChartFrame>
         </div>
-        <CategoryLegend slices={slices} formatValue={formatValue} layout="side" />
+        <CategoryLegend slices={slices} tail={tail} formatValue={formatValue} layout="side" />
       </div>
     </div>
   )

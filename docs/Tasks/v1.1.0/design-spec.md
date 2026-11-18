@@ -178,7 +178,7 @@ v1.1.0 = 補視覺設計系統（含 Light + Dark 兩套色彩 tokens，v1.0.0 �
 
 驗證結果（`node scripts/validate_palette.js`，light 模式、surface `#FFFFFF`）：Lightness band / Chroma floor / CVD separation（worst adjacent ΔE 8.1）/ Normal-vision floor（ΔE 20.2）**全數 PASS**；Contrast vs surface 為 **WARN**（4 個色階 < 3:1）→ 依規則**必須**搭配 relief channel：圖例（legend）恆常顯示 + 直接數值標籤，**文字一律走 `--color-text-*` token，禁止用圖表色當文字色**。
 
-**Pie/Bar 折疊規則**：超過 8 類時，取金額前 8 大分類 + 其餘全部併為「其餘 N 類」（灰，N = 被併入的分類數），最多 9 段（2026-11-01 依使用者需求由 6 類放寬，用滿已驗證的 8 色；第 9 類以上仍不生新色）。折疊桶不叫「其他」：系統預設分類就有「其他」（A17），同名會讓圖例出現兩個「其他」（2026-11-18 改，→ fixed.md §32）。
+**Pie/Bar 折疊規則**：超過 8 類時，取金額前 8 大分類 + 其餘全部併為「其餘 N 類」（灰，N = 被併入的分類數），最多 9 段（2026-11-01 依使用者需求由 6 類放寬，用滿已驗證的 8 色；第 9 類以上仍不生新色）。折疊桶不叫「其他」：系統預設分類就有「其他」（A17），同名會讓圖例出現兩個「其他」（2026-11-18 改，→ fixed.md §32）。圓餅圖的直式圖例（卡片內寬 ≥ 448px）空間夠，改列出全部分類（第 9 類以上中性灰圓點），不顯示「其餘 N 類」；圓餅本身與窄版圖例、長條圖仍折疊（使用者 2026-11-18 要求「空間夠不用顯示其餘」）。
 
 **讀屏**：圖形本身 `aria-hidden` 並關閉 recharts `accessibilityLayer`（否則 svg 是沒有名稱、可 Tab 進入的 `role="application"`）；圖例清單（`aria-label="支出分類明細"`）是讀屏唯一資料來源，每項為「分類名、金額、占比」，占比 <0.5% 顯示 `<1%`（2026-11-18，→ fixed.md §32）。
 
