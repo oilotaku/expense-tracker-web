@@ -105,8 +105,11 @@ describe('ChartTypeSwitcher', () => {
       amount: (10 - index) * 100,
     }))
     render(<ChartTypeSwitcher renderChart={() => <CategoryPieChart data={manyCategories} />} />)
-    expect(screen.getAllByRole('listitem')).toHaveLength(9)
+    // DOM 內同時有窄版的「其餘 2 類」與寬版展開的 2 類（共 8 + 1 + 2），顯示哪一組由 container query
+    // 決定（jsdom 不套 CSS），實際顯示另由 e2e S-CHART-06 驗證
+    expect(screen.getAllByRole('listitem')).toHaveLength(11)
     expect(screen.getByText('其餘 2 類')).toBeInTheDocument()
+    expect(screen.getByText('分類9')).toBeInTheDocument()
   })
 
   it('prefers-reduced-motion 開啟時，圖表切換容器跳過動畫（initial=skip, duration=0）', () => {
