@@ -6,6 +6,10 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 // e2e：RWD 版面守門。以「大金額 + 長名稱 + 長備註」的壓力資料，在手機 / 橫向手機 / 平板 / 桌機
 // 各寬度檢查版面不被撐破。jsdom 量不到實際排版，所以放在 e2e，對真實 backend / DB 跑。
 // 情境：S-RWD-01..06（見各 test 名稱）。
+//
+// **禁止對正式站執行**：會註冊 `e2e-rwd-*@example.com` 帳號並寫入壓力資料，且沒有清理（→ fixed.md §28）。
+// 預設略過，只有明確設 `E2E_ALLOW_SEED=1` 才跑；CI 的 e2e workflow 是全新 compose stack，已設此變數。
+// 本機要跑請先起一份獨立的測試 stack，不要指向部署中的服務。
 
 function resolveApiBaseUrl(): string {
   const explicit = process.env.E2E_API_BASE_URL
@@ -133,6 +137,7 @@ let storageState: StorageState
 
 test.describe('RWD 版面', () => {
   test.describe.configure({ timeout: 240_000 })
+  test.skip(process.env.E2E_ALLOW_SEED !== '1', '會寫入測試帳號與資料：只在一次性的測試 stack 設 E2E_ALLOW_SEED=1 後執行')
 
   // 失敗時 Playwright 會換新 worker 重跑 beforeAll；註冊有限流，所以種過的登入狀態存檔給後續 worker 重用
   test.beforeAll(async ({ browser }) => {

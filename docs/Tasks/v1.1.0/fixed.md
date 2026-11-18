@@ -287,3 +287,36 @@
 - **修正**: 卡片不再是 role=button，改成並列兩顆獨立按鈕：編輯按鈕包圖示與文字、用 `::after` 撐滿整張卡片（點卡片任何地方仍是編輯），名稱含 sr-only「收支類型 帶號金額 幣別」；畫面金額加正負號（收入 `+`、支出 `-`、轉帳不加，同 Dashboard 最近交易）並 `aria-hidden` 避免重讀；刪除鈕 `relative z-10` 疊在上層，名稱改「刪除 日期 明細」。單元測試 S-A11Y-01、S-A11Y-02 先紅後綠。正負號規則抽共用（→ §28 同批 chore）。
 - **rule**: NONE（WCAG 1.4.1 / ARIA button 子元素為 presentational）
 - **後續**: 已解除。iOS VoiceOver 實機未驗。另：全套 vitest 在 Pi 高負載（load ~10）時 `settings/page.test.tsx` PIN 兩案、`accounts/page.test.tsx` 新增帳戶偶發 5 秒逾時，main 上同樣會發生（連跑 3 次失敗 1 次），單獨跑皆過，非本次引入。
+
+## §28 — §21~§27 修正改了版面與互動，design-spec 沒有同步（manager-project 思路審查發現）
+
+- **time**: 2026-11-18T15:10:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `docs/Tasks/v1.1.0/design-spec.md`（§2.5、§9.2、§9.3）
+- **問題**: 程式已改成金額字級自動縮放、窄於 360px 單欄、交易卡加正負號與兩顆按鈕，design-spec 仍寫 Hero `text-4xl`、「行動端垂直堆疊」、「金額依收支類型上色、明細/帳戶小字在下」，規格與程式兩個真相。§2.5 的 `text-4xl` 其實從 §18 起就已不符。
+- **根因**: 修 bug 的路徑只要求寫 `fixed.md`，沒有「修正改到規格描述的行為時要同步 design-spec」這一步；§18 已發生過同類偏差而未回寫。
+- **修正**: design-spec §2.5 字級表改成自動縮放規則並補輸入框 16px 一列；§9.2 RWD 對應補兩欄 / 單欄規則；§9.3 行動卡片改寫成現況並標「【預設，可改】」與來源日期。
+- **rule**: CORE-071（既有規格實作偏差）
+- **後續**: reflect 候選：fixed 條目新增必填欄「規格是否已同步：是 / 不涉及」，修正碰到 design-spec 有描述的行為時必須同 commit 更新。
+
+## §29 — 金額正負號規則在三處各自定義（manager-project 思路審查發現）
+
+- **time**: 2026-11-18T15:10:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `frontend/src/utils/format.ts`（新增）、`frontend/src/utils/format.test.ts`（新增）、`frontend/src/components/dashboard/StatTile.tsx`、`frontend/src/components/dashboard/StatTile.test.tsx`、`frontend/src/components/dashboard/NetWorthCard.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/TransactionList.tsx`、`frontend/src/components/TransactionList.test.tsx`
+- **問題**: `formatAmount` 放在 `StatTile.tsx` 被兩個外部檔引用；交易正負號在 `dashboard/page.tsx`（`signedTransactionAmount`）與 `TransactionList.tsx`（§27 新增的 `AMOUNT_SIGN`）各寫一份。
+- **根因**: task-016 時 `utils/` 不在 affected_files 內，`formatAmount` 暫置 StatTile 並註明「落地後應整批搬過去」，之後一直沒搬；§27 新增正負號時沿用「就地寫」而非抽共用。
+- **修正**: 新增 `utils/format.ts`（`formatAmount`、`transactionAmountSign`），三處改引用；`formatAmount` 的單元測試搬到 `utils/format.test.ts` 並補正負號三案；`TransactionList.test.tsx` 補「收入顯示 + 號、轉帳不加號、讀屏名稱帶類型」一案。畫面輸出不變。
+- **rule**: FE-044
+- **後續**: 已解除。
+
+## §30 — RWD e2e 對正式站執行，正式 DB 留下 6 個測試帳號（manager-project 思路審查發現）
+
+- **time**: 2026-11-18T15:20:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `frontend/e2e/rwd-layout.spec.ts`、`.github/workflows/e2e.yml`
+- **問題**: `rwd-layout.spec.ts` 沒設 `E2E_BASE_URL` 時預設打 `localhost:3000`，在這台部署主機上就是正式站；§21~§27 驗證期間在正式 DB 建了 6 個 `e2e-rwd-*@example.com` 帳號與其壓力資料，沒有清理。
+- **根因**: e2e 的預設目標沿用「本機 = 開發 stack」的假設，但這台主機的 3000 是正式服務；同類問題見本檔 §13（e2e 殘留污染共用 DB），當時只清資料、沒有在 spec 加防護。
+- **修正**: 1. spec 開頭註明禁止對正式站執行，`test.skip` 除非設 `E2E_ALLOW_SEED=1`（無網路實測 23 個全部略過、不會註冊）；2. CI e2e workflow（全新 compose stack）設 `E2E_ALLOW_SEED: '1'`；3. 使用者同意後清除 6 個測試帳號：先備份 `_db-backups/expense-tracker-web-db-1/pre-e2e-rwd-cleanup-20261118.dump`，同一交易依外鍵順序實體刪除（交易 57、分類 35、標籤 60 等），真實帳號未動。
+- **rule**: DB-012（實體刪除，依使用者要求，同 10-29 清測試帳號先例）
+- **後續**: 其他 e2e spec 仍會對預設目標註冊帳號，未加同樣防護；本機要跑 e2e 應另起獨立測試 stack。

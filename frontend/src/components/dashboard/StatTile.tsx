@@ -3,27 +3,9 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { cva } from 'class-variance-authority'
 import { CurvedCard } from '@/components/common/CurvedCard'
+import { formatAmount } from '@/utils/format'
 
 export type StatTileTone = 'income' | 'expense' | 'neutral' | 'warning'
-
-/**
- * 金額顯示格式化（design-spec §9.2 wireframe 的 `NT$45,000` / `+NT$17,000` 寫法）。
- *
- * 後端 Decimal 一律以字串傳遞（DB-038），這裡的 `Number()` **只**用於顯示層的千分位與正負號，
- * 不回寫任何請求；無法解析時原樣輸出，避免出現 `NaN`。
- *
- * FE-044（≥2 處使用即抽共用檔）在此已成立（`StatTile` / `NetWorthCard` / `dashboard/page.tsx`
- * 三處共用），但 `utils/` 不在 task-016 的 affected_files 內、不可新增檔案，故暫置於本檔並具名
- * export（同 TransactionFormDialog.tsx 就地實作 datetime 轉換的既有慣例）；`utils/format.ts`
- * 落地後應整批搬過去。
- */
-export function formatAmount(value: string, signed = false): string {
-  const amount = Number(value)
-  if (!Number.isFinite(amount)) return value
-  const absolute = Math.abs(amount).toLocaleString('zh-Hant-TW', { maximumFractionDigits: 0 })
-  const sign = amount < 0 ? '-' : signed && amount > 0 ? '+' : ''
-  return `${sign}NT$${absolute}`
-}
 
 // FE-052：條件樣式禁 inline 三元串接。tone 的 `muted` 是 `unavailable` 專用的內部值（→ A7 的
 // 灰階狀態），不對外開放為 `StatTileTone`，避免呼叫端拿它當一般語意色用。
