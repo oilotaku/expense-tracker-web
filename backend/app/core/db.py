@@ -26,6 +26,9 @@ def _build_engine() -> AsyncEngine:
         max_overflow=20,
         pool_recycle=300,
         pool_pre_ping=True,
+        # DB 錯誤訊息不帶 SQL 參數：500 handler 的 logger.exception
+        # 才不會把 email / password_hash 印進 log
+        hide_parameters=True,
         # 儲存層一律 UTC（harness rules/00-core/03-timezone.md）
         connect_args={"server_settings": {"timezone": "UTC"}},
     )

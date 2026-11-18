@@ -209,26 +209,125 @@
 - **rule**: NONE
 - **後續**: 已解除。
 
-## §21 — RWD 稽核：平板/橫向手機總覽整頁水平溢出、長金額被裁、帳戶卡按鈕出界、交易卡長備註撐高、iOS 輸入框放大、連結點擊高度不足（使用者請求「記帳網站 RWD」，Playwright 多寬度稽核發現）
+## §21 — 總覽在平板直向 / 橫向手機 / 平板橫向 / 桌機出現 230~531px 水平捲動（使用者請求「記帳網站 RWD」，Playwright 多寬度稽核發現）
 
-（§20 已由未合併的 `fix/react-doctor` 分支使用，本條跳號避免合併撞號。）
+（§20 已由未合併的 `fix/react-doctor` 分支使用，本條跳號避免合併撞號。§21~§26 同一次稽核發現，各一個根因。）
 
 - **time**: 2026-11-18T11:30:00+08:00
-- **commit**: pending（分支 `fix/rwd`）
-- **files**: `frontend/src/components/common/AppShell.tsx`、`frontend/src/components/dashboard/{StatTile,PeriodSelector,NetWorthCard}.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/accounts/AccountCard.tsx`、`frontend/src/components/TransactionList.tsx`、`frontend/src/app/{assets,login,register}/page.tsx`、`frontend/src/components/transactions/TransactionFormDialog.tsx`、`frontend/e2e/rwd-layout.spec.ts`（新增）
-- **問題**: 以大金額/長名稱/長備註資料在 320~1920 共 9 種寬度掃全部頁面：(1) 總覽在 768 平板直向、844x390 橫向手機、1024 平板橫向、1280 桌機分別多出 230~531px 水平捲動；(2) 320/390 手機與 768 平板的收入/支出卡 `NT$12,345,679` 這類八位數金額被裁掉；(3) 1024 帳戶頁長數字餘額把編輯/刪除鈕擠出卡片；(4) 手機交易卡長備註不截斷，一筆可拉到整個螢幕高，大金額與幣別被擠到斷字；(5) 總覽期間選擇器 14px，iPhone 點下去會自動放大；(6)「查看全部」「設定定期還款」「註冊/登入」「更多欄位」連結只有 20px 高。
-- **根因**: (1) `AppShell` 的 `<main>` 是 `flex-1` 卻沒 `min-w-0`，flex 子項最小寬度預設為內容寬，recharts / 不斷行金額把它撐開；(2) `StatTile` 固定 `text-2xl`/`text-3xl` + `whitespace-nowrap`（§17/§18），半寬卡片放不下八位數；(3) `AccountCard` 文字欄沒 `min-w-0 flex-1`、按鈕欄沒 `shrink-0`；(4) `TransactionCard` 文字欄沒限行數，金額欄 `{amount} {currency}` 同一行；(5) `PeriodSelector` 的 `CONTROL_CLASS` 行動端 `text-sm`；(6) 純文字連結沒有撐高。
-- **修正**: (1) `main` 加 `min-w-0`；(2) `StatTile` 卡片設 `@container`，數值帶 `--chars`（字數），字級 `clamp(0.875rem, 100cqi/(字數×0.62), 原上限)`（下限 14px 依 FE-059），保留 nowrap；窄於 360px 收支卡改單欄（`grid-cols-1 min-[360px]:grid-cols-2`，跨欄改 `min-[360px]:col-span-2`）；(3) 文字欄 `min-w-0 flex-1`、名稱 `break-words`、餘額 `break-all`、按鈕欄 `shrink-0`；(4) 第一行 `truncate`、備註 `line-clamp-2`、帳戶名另起一行（不被備註省略號吃掉），金額數字 `whitespace-nowrap`（手機 `text-base`、`sm:text-lg`）、幣別另起一行 `text-sm`；(5) 一律 `text-base`；(6) `inline-flex min-h-11 items-center`，有滑鼠時（`can-hover:`）才縮回。新增 e2e `rwd-layout.spec.ts`（S-RWD-01~06，23 個 case），改前對線上跑 15 紅、改後對預覽映像 23 綠；獨立審查後補強：未登入被導回 /login 即失敗、找不到目標元素即失敗（避免假綠）、點擊高度門檻 44px（FE-058）、金額字級 ≥14px。`StatTile.test.tsx`、`dashboard/page.test.tsx` 的 class 斷言改成新寫法下的同一需求。
-- **rule**: FE-058（連結點擊高度）、FE-059（金額字級下限）、FE-064（金額卡改 container query）；其餘 NONE
-- **後續**: 已解除。未處理：極端長度金額（十位數以上）在窄卡片碰到 14px 下限時仍會超出；交易卡/帳戶卡/總覽帳戶列的金額仍是後端原字串（`50000.00`、無千分位），與總覽金額卡的 `NT$50,000` 格式不一致，屬顯示格式議題另議。e2e 會在正式 DB 建 `e2e-rwd-*@example.com` 帳號（註冊限流每 IP 每小時 5 次，spec 已把登入狀態快取到 `E2E_STATE_DIR` 或 tmp 30 分鐘）。
+- **commit**: `ecdd1dc`，併入 main `84bd8a9`
+- **files**: `frontend/src/components/common/AppShell.tsx`、`frontend/e2e/rwd-layout.spec.ts`（新增）
+- **問題**: 以大金額 / 長名稱 / 長備註資料在 320~1920 共 9 種寬度掃全部頁面：總覽在 768、844x390、1024、1280 分別多出 530、470、230、35px 左右的水平捲動，其他頁面正常。
+- **根因**: task-009 建立的 `AppShell` 在 `md:` 起是 `flex` 橫排（Sidebar + `<main className="flex-1">`），`<main>` 沒有 `min-w-0`；flex 子項的最小寬度預設等於內容寬，recharts 量到的寬度與 `whitespace-nowrap` 的金額會把 `<main>` 撐超過剩餘空間。手機版不是 flex 橫排所以沒事，元件測試在 jsdom 量不到版面所以沒抓到。
+- **修正**: `<main>` 加 `min-w-0`。新增 e2e `rwd-layout.spec.ts` S-RWD-01（6 種寬度 × 10 頁不得有水平捲動），改前對線上 3 紅、改後全綠。
+- **rule**: NONE
+- **後續**: 已解除。reflect 候選：版面類修正一律附多寬度 e2e，jsdom 單元測試不算驗收；`flex-1` 主內容區預設加 `min-w-0`。
 
-## §22 — 行動交易卡：收支類型只靠顏色區分、卡片按鈕內又包刪除按鈕（§21 審查時發現，使用者要求一併修）
+## §22 — 收支卡八位數金額被裁（使用者請求「記帳網站 RWD」，同 §21 稽核）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: `ecdd1dc`（初修）、`ffd3d90`（審查後補強），併入 main `84bd8a9`
+- **files**: `frontend/src/components/dashboard/StatTile.tsx`、`frontend/src/components/dashboard/StatTile.test.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/app/dashboard/page.test.tsx`、`docs/Tasks/v1.1.0/design-spec.md`
+- **問題**: 320 / 390 手機與 768 平板，收入 / 支出卡放 `NT$12,345,679` 這類八位數金額時被裁掉。
+- **根因**: task-016 的 `StatTile` 字級固定 `text-2xl` / `text-3xl`，加上 §17 的 `whitespace-nowrap`；半寬卡片（320 寬時內容約 104px）放不下。§18 只處理了桌機 hero 卡，沒有把「字級要跟可用寬度一起檢查」推廣到手機半寬卡。
+- **修正**: 1. 卡片設 `@container`，數值帶 `--chars`（字數），字級 `clamp(0.875rem, 100cqi/(字數×0.62), 原上限)`，下限 14px（FE-059），保留 nowrap；2. 窄於 360px 收支卡改單欄（`grid-cols-1 min-[360px]:grid-cols-2`，跨欄改 `min-[360px]:col-span-2`，單欄時不能有 `col-span-2` 否則長出隱含第二欄）；3. design-spec §2.5 字級表、§9.2 RWD 對應同步（→ §28）。`StatTile.test.tsx`、`dashboard/page.test.tsx` 的 class 斷言改成新寫法下的同一需求；e2e S-RWD-02（數字不裁切且字級 ≥14px）。
+- **rule**: FE-059、FE-064
+- **後續**: 已解除。十位數以上金額在窄卡片碰到 14px 下限仍會超出，屬極端值不處理。
+
+## §23 — 平板橫向帳戶卡的編輯 / 刪除鈕被擠出卡片（同 §21 稽核）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: `ecdd1dc`，併入 main `84bd8a9`
+- **files**: `frontend/src/components/accounts/AccountCard.tsx`
+- **問題**: 1024 寬三欄時，長數字餘額（如 `1234567890.12`）把編輯 / 刪除鈕推出卡片右緣，整頁多出 2~15px 水平捲動。
+- **根因**: task-020 的 `AccountCard` 文字欄沒有 `min-w-0 flex-1`、按鈕欄沒有 `shrink-0`；不含空白的長數字無法換行，只能把同列元素往外推。
+- **修正**: 文字欄 `min-w-0 flex-1`、名稱 `break-words`、餘額 `break-all tabular-nums`、按鈕欄 `shrink-0`。e2e S-RWD-03（6 種寬度按鈕都在卡片內，且至少找到 6 顆）。
+- **rule**: NONE
+- **後續**: 已解除。
+
+## §24 — 手機交易卡長備註撐高整張卡、金額與幣別被拆字（同 §21 稽核）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: `ecdd1dc`（初修）、`ffd3d90`（審查後補強），併入 main `84bd8a9`
+- **files**: `frontend/src/components/TransactionList.tsx`（`TransactionCard`）、`docs/Tasks/v1.1.0/design-spec.md`
+- **問題**: 長備註不截斷，一筆可拉到整個螢幕高；金額欄 `{amount} {currency}` 同一行，窄螢幕把「TWD」拆成「T / WD」，320 寬時「日期・分類」只剩約 76px 被截掉分類。
+- **根因**: 交易清單重做（`6b145a9`）時行動卡文字欄沒限行數，金額與幣別放同一個可換行的 span，左右欄沒有寬度分配。
+- **修正**: 第一行 `truncate`、備註 `line-clamp-2`、帳戶名另起一行 `truncate`（審查後補，避免被備註省略號吃掉）；金額數字 `whitespace-nowrap`（手機 `text-base`、`sm:text-lg`），幣別另起一行 `text-sm`（FE-059 禁必讀資訊用 `text-xs`）。design-spec §9.3 行動端卡片描述同步（→ §28）。e2e S-RWD-04（備註 ≤2 行、文字不壓到金額、≥375 寬第一行不截斷、帳戶名獨立可見）。
+- **rule**: FE-059
+- **後續**: 已解除。交易卡 / 帳戶卡金額仍是後端原字串（`50000.00`、無千分位），與總覽 `NT$50,000` 不一致，另議。
+
+## §25 — 總覽期間選擇器手機字級 14px，iPhone 點下去會自動放大（同 §21 稽核）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: `ecdd1dc`，併入 main `84bd8a9`
+- **files**: `frontend/src/components/dashboard/PeriodSelector.tsx`
+- **問題**: 期間 `select` 與月份 `input` 在手機是 14px；iOS Safari 對小於 16px 的輸入框聚焦時會自動放大頁面。
+- **根因**: task-016 的 `CONTROL_CLASS` 套用 FE-059「mobile 密集元素 `text-sm md:text-base`」，但該條沒有區分「輸入框」；其他頁表單用 `text-base` 所以只有這裡出事。
+- **修正**: `CONTROL_CLASS` 一律 `text-base`。e2e S-RWD-05（手機寬度所有頁面的輸入框字級 ≥16px）。
+- **rule**: NONE
+- **後續**: 已解除。reflect 候選：FE-059 補一句「輸入框 / select / textarea 在 mobile 也必須 ≥16px（iOS 聚焦放大）」。
+
+## §26 — 獨立的文字連結 / 按鈕只有 20px 高（同 §21 稽核）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: `ecdd1dc`，併入 main `84bd8a9`
+- **files**: `frontend/src/components/dashboard/NetWorthCard.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/app/assets/page.tsx`、`frontend/src/app/login/page.tsx`、`frontend/src/app/register/page.tsx`、`frontend/src/components/transactions/TransactionFormDialog.tsx`
+- **問題**: 「查看全部」「查看全部 / 管理帳戶」「設定定期還款」「還沒有帳號？註冊」「已經有帳號？登入」「更多欄位」在手機與觸控平板只有 20px 高。
+- **根因**: 這些是純文字連結 / 按鈕，只有字高、沒有撐高；FE-058 的 44px 規則在 task 驗收時只檢查了 icon 按鈕。
+- **修正**: `inline-flex min-h-11 items-center`；桌機需要緊湊的兩處改用 `can-hover:min-h-0`（只有真的有滑鼠才縮，觸控平板維持 44px）。e2e S-RWD-06（320 / 390 / 768 高度 ≥44px，找不到目標即失敗）。
+- **rule**: FE-058
+- **後續**: 已解除。
+
+## §27 — 行動交易卡：收支類型只靠顏色區分、卡片按鈕內又包刪除按鈕（§21~§26 獨立審查時發現，使用者要求一併修）
 
 - **time**: 2026-11-18T12:20:00+08:00
-- **commit**: pending（分支 `fix/rwd`）
-- **files**: `frontend/src/components/TransactionList.tsx`（`TransactionCard`）、`frontend/src/components/TransactionList.test.tsx`
-- **問題**: (1) 行動卡片金額只有顏色區分收入 / 支出 / 轉帳，沒有正負號或文字，讀屏與色覺障礙者分不出（WCAG 1.4.1）；(2) 整張卡片是 `role="button"`，裡面又包「刪除」按鈕，button 的子元素會被當純內容，部分讀屏把「刪除」併進卡片名稱、無法單獨操作；刪除鈕名稱只有「刪除」，多筆時聽不出是哪一筆。
-- **根因**: 既存自卡片版面初版（`CurvedCard interactive onClick`），桌機表格有「收支類型」欄所以沒被注意。
-- **修正**: 卡片不再是 role=button，改成並列兩顆獨立按鈕：編輯按鈕包圖示與文字、用 `::after` 撐滿整張卡片（點卡片任何地方仍是編輯），名稱含 sr-only「收支類型 帶號金額 幣別」；畫面上的金額加正負號（收入 `+`、支出 `-`、轉帳不加，同 Dashboard 最近交易）並 `aria-hidden` 避免重讀；刪除鈕 `relative z-10` 疊在上層，名稱改「刪除 日期 明細」。新增單元測試 S-A11Y-01（名稱讀得出「支出」與金額、畫面有負號）、S-A11Y-02（無巢狀互動元件、刪除鈕名稱指出哪一筆、點編輯開表單），先紅後綠。
+- **commit**: `ffd3d90`，併入 main `84bd8a9`
+- **files**: `frontend/src/components/TransactionList.tsx`（`TransactionCard`）、`frontend/src/components/TransactionList.test.tsx`、`docs/Tasks/v1.1.0/design-spec.md`
+- **問題**: (1) 行動卡片金額只有顏色區分收入 / 支出 / 轉帳，沒有正負號或文字，讀屏與色覺障礙者分不出（WCAG 1.4.1）；(2) 整張卡片是 `role="button"`，裡面又包「刪除」按鈕；button 的子元素會被當成純內容，部分讀屏把「刪除」併進卡片名稱、無法單獨操作；刪除鈕名稱只有「刪除」，多筆時聽不出是哪一筆。
+- **根因**: 交易清單重做（`6b145a9`）沿用 `CurvedCard interactive onClick` 把整張卡做成按鈕，再把刪除鈕放進去；design-spec §9.3 只寫「金額依收支類型上色」，桌機表格另有「收支類型」欄，所以行動卡缺文字類型一直沒被注意。
+- **修正**: 卡片不再是 role=button，改成並列兩顆獨立按鈕：編輯按鈕包圖示與文字、用 `::after` 撐滿整張卡片（點卡片任何地方仍是編輯），名稱含 sr-only「收支類型 帶號金額 幣別」；畫面金額加正負號（收入 `+`、支出 `-`、轉帳不加，同 Dashboard 最近交易）並 `aria-hidden` 避免重讀；刪除鈕 `relative z-10` 疊在上層，名稱改「刪除 日期 明細」。單元測試 S-A11Y-01、S-A11Y-02 先紅後綠。正負號規則抽共用（→ §28 同批 chore）。
 - **rule**: NONE（WCAG 1.4.1 / ARIA button 子元素為 presentational）
-- **後續**: 已解除。iOS VoiceOver 實機未驗。另：全套 vitest 在 Pi 高負載（load ~10）時 `settings/page.test.tsx` PIN 兩案、`accounts/page.test.tsx` 新增帳戶偶發逾時，main 上同樣會發生（連跑 3 次失敗 1 次），單獨跑皆過，非本次引入。
+- **後續**: 已解除。iOS VoiceOver 實機未驗。另：全套 vitest 在 Pi 高負載（load ~10）時 `settings/page.test.tsx` PIN 兩案、`accounts/page.test.tsx` 新增帳戶偶發 5 秒逾時，main 上同樣會發生（連跑 3 次失敗 1 次），單獨跑皆過，非本次引入。
+
+## §28 — §21~§27 修正改了版面與互動，design-spec 沒有同步（manager-project 思路審查發現）
+
+- **time**: 2026-11-18T15:10:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `docs/Tasks/v1.1.0/design-spec.md`（§2.5、§9.2、§9.3）
+- **問題**: 程式已改成金額字級自動縮放、窄於 360px 單欄、交易卡加正負號與兩顆按鈕，design-spec 仍寫 Hero `text-4xl`、「行動端垂直堆疊」、「金額依收支類型上色、明細/帳戶小字在下」，規格與程式兩個真相。§2.5 的 `text-4xl` 其實從 §18 起就已不符。
+- **根因**: 修 bug 的路徑只要求寫 `fixed.md`，沒有「修正改到規格描述的行為時要同步 design-spec」這一步；§18 已發生過同類偏差而未回寫。
+- **修正**: design-spec §2.5 字級表改成自動縮放規則並補輸入框 16px 一列；§9.2 RWD 對應補兩欄 / 單欄規則；§9.3 行動卡片改寫成現況並標「【預設，可改】」與來源日期。
+- **rule**: CORE-071（既有規格實作偏差）
+- **後續**: reflect 候選：fixed 條目新增必填欄「規格是否已同步：是 / 不涉及」，修正碰到 design-spec 有描述的行為時必須同 commit 更新。
+
+## §29 — 金額正負號規則在三處各自定義（manager-project 思路審查發現）
+
+- **time**: 2026-11-18T15:10:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `frontend/src/utils/format.ts`（新增）、`frontend/src/utils/format.test.ts`（新增）、`frontend/src/components/dashboard/StatTile.tsx`、`frontend/src/components/dashboard/StatTile.test.tsx`、`frontend/src/components/dashboard/NetWorthCard.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/TransactionList.tsx`、`frontend/src/components/TransactionList.test.tsx`
+- **問題**: `formatAmount` 放在 `StatTile.tsx` 被兩個外部檔引用；交易正負號在 `dashboard/page.tsx`（`signedTransactionAmount`）與 `TransactionList.tsx`（§27 新增的 `AMOUNT_SIGN`）各寫一份。
+- **根因**: task-016 時 `utils/` 不在 affected_files 內，`formatAmount` 暫置 StatTile 並註明「落地後應整批搬過去」，之後一直沒搬；§27 新增正負號時沿用「就地寫」而非抽共用。
+- **修正**: 新增 `utils/format.ts`（`formatAmount`、`transactionAmountSign`），三處改引用；`formatAmount` 的單元測試搬到 `utils/format.test.ts` 並補正負號三案；`TransactionList.test.tsx` 補「收入顯示 + 號、轉帳不加號、讀屏名稱帶類型」一案。畫面輸出不變。
+- **rule**: FE-044
+- **後續**: 已解除。
+
+## §30 — RWD e2e 對正式站執行，正式 DB 留下 6 個測試帳號（manager-project 思路審查發現）
+
+- **time**: 2026-11-18T15:20:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `frontend/e2e/rwd-layout.spec.ts`、`.github/workflows/e2e.yml`
+- **問題**: `rwd-layout.spec.ts` 沒設 `E2E_BASE_URL` 時預設打 `localhost:3000`，在這台部署主機上就是正式站；§21~§27 驗證期間在正式 DB 建了 6 個 `e2e-rwd-*@example.com` 帳號與其壓力資料，沒有清理。
+- **根因**: e2e 的預設目標沿用「本機 = 開發 stack」的假設，但這台主機的 3000 是正式服務；同類問題見本檔 §13（e2e 殘留污染共用 DB），當時只清資料、沒有在 spec 加防護。
+- **修正**: 1. spec 開頭註明禁止對正式站執行，`test.skip` 除非設 `E2E_ALLOW_SEED=1`（無網路實測 23 個全部略過、不會註冊）；2. CI e2e workflow（全新 compose stack）設 `E2E_ALLOW_SEED: '1'`；3. 使用者同意後清除 6 個測試帳號：先備份 `_db-backups/expense-tracker-web-db-1/pre-e2e-rwd-cleanup-20261118.dump`，同一交易依外鍵順序實體刪除（交易 57、分類 35、標籤 60 等），真實帳號未動。
+- **rule**: DB-012（實體刪除，依使用者要求，同 10-29 清測試帳號先例）
+- **後續**: 其他 e2e spec 仍會對預設目標註冊帳號，未加同樣防護；本機要跑 e2e 應另起獨立測試 stack。
+
+## §31 — DB engine 未隱藏 SQL 參數，非預期 DB 錯誤會把 email 印進 log（harness-scan `scan-261118152403` R-PII-001）
+
+- **time**: 2026-11-18T15:45:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `backend/app/core/db.py`、`backend/tests/test_db_engine.py`（新增）
+- **問題**: 登入查 email 時若 DB 斷線、逾時等非預期錯誤，`exceptions.py:57` 的 500 handler 以 `logger.exception` 記錄，SQLAlchemy 例外字串含 `[parameters: ('someone@x.com',)]`，可能連帶 `password_hash`。
+- **根因**: `create_async_engine` 預設 `hide_parameters=False`；R-PII-001 只比對 log 呼叫裡的欄位名稱，抓不到經例外字串間接帶出的參數，前次掃描因此沒發現。
+- **修正**: `create_async_engine(..., hide_parameters=True)`；新增 `tests/test_db_engine.py` 斷言 `engine.sync_engine.hide_parameters is True`（先紅後綠）。
+- **rule**: DB-029、BE-053
+- **後續**: BE-053 要求的全域 log 遮罩 filter（`app/core/logging.py`）仍未做，見 scan 報告第 4 章；reflect 候選：DB-029 或 BE-053 補「DB engine 必須 `hide_parameters=True`」。

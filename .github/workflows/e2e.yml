@@ -63,6 +63,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - working-directory: ./frontend
+        env:
+          # 全新的 CI stack，允許會寫入測試帳號的 spec（rwd-layout.spec.ts）執行
+          E2E_ALLOW_SEED: '1'
         run: |
           npm ci
           npx playwright install --with-deps chromium

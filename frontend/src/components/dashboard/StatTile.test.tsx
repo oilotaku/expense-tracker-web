@@ -1,22 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { StatTile, formatAmount } from './StatTile'
-
-describe('formatAmount', () => {
-  it('加上千分位與 NT$ 前綴，小數點捨去', () => {
-    expect(formatAmount('45000.00')).toBe('NT$45,000')
-  })
-
-  it('signed 時正值加正號、負值一律顯示負號', () => {
-    expect(formatAmount('17000.00', true)).toBe('+NT$17,000')
-    expect(formatAmount('-17000.00', true)).toBe('-NT$17,000')
-    expect(formatAmount('-120.00')).toBe('-NT$120')
-  })
-
-  it('無法解析的字串原樣輸出，不顯示 NaN', () => {
-    expect(formatAmount('n/a')).toBe('n/a')
-  })
-})
+import { StatTile } from './StatTile'
 
 describe('StatTile', () => {
   it('預設渲染標籤與格式化後金額', () => {

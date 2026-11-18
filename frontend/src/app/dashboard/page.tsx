@@ -22,7 +22,8 @@ import {
   toPeriodRange,
   type PeriodSelection,
 } from '@/components/dashboard/PeriodSelector'
-import { StatTile, formatAmount } from '@/components/dashboard/StatTile'
+import { StatTile } from '@/components/dashboard/StatTile'
+import { formatAmount, transactionAmountSign } from '@/utils/format'
 import { TrendLineChart, type TrendPoint } from '@/components/dashboard/TrendLineChart'
 import {
   TransactionFormDialog,
@@ -140,9 +141,7 @@ function signedTransactionAmount(transaction: TransactionResponse, currency: str
   const amount = Number(transaction.amount)
   if (!Number.isFinite(amount)) return `${transaction.amount} ${currency}`
   const absolute = amount.toLocaleString('zh-Hant-TW', { maximumFractionDigits: 0 })
-  if (transaction.transaction_type === 'transfer') return `${absolute} ${currency}`
-  const sign = transaction.transaction_type === 'income' ? '+' : '-'
-  return `${sign}${absolute} ${currency}`
+  return `${transactionAmountSign(transaction.transaction_type)}${absolute} ${currency}`
 }
 
 /**

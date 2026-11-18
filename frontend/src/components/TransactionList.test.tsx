@@ -313,6 +313,28 @@ describe('TransactionList', () => {
       expect(list.getByText('-120.50')).toBeInTheDocument()
     })
 
+    it('S-A11Y-01 收入顯示 + 號、轉帳不加號，讀屏名稱帶收支類型', () => {
+      useListTransactionsQuery.mockReturnValue({
+        data: {
+          items: [
+            { ...SAMPLE_TRANSACTION, transaction_uid: 't2', description: '薪水', amount: '30000.00', transaction_type: 'income' },
+            { ...SAMPLE_TRANSFER_OUTBOUND, description: '轉帳到銀行' },
+          ],
+          total: 2,
+        },
+        isLoading: false,
+        error: undefined,
+      })
+      const { container } = render(<TransactionList />)
+      const list = within(mobileList(container))
+
+      expect(list.getByText('+30000.00')).toBeInTheDocument()
+      expect(list.getByRole('button', { name: /^(?!刪除).*薪水/ })).toHaveAccessibleName(expect.stringContaining('收入 +30000.00'))
+      expect(list.getByText('500.00')).toBeInTheDocument()
+      expect(list.queryByText(/^[+-]500\.00$/)).not.toBeInTheDocument()
+      expect(list.getByRole('button', { name: /^(?!刪除).*轉帳到銀行/ })).toHaveAccessibleName(expect.stringContaining('轉帳 500.00'))
+    })
+
     it('S-A11Y-02 卡片內沒有巢狀互動元件：編輯與刪除是兩顆獨立按鈕，刪除鈕名稱指出是哪一筆', () => {
       const { container } = render(<TransactionList />)
       const list = mobileList(container)

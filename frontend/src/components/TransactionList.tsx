@@ -27,6 +27,7 @@ import {
   type TransactionResponse,
   type TransactionType,
 } from '@/lib/api/transactionsApi'
+import { transactionAmountSign } from '@/utils/format'
 import { formatDate } from '@/utils/datetime'
 
 // 顯示時區固定 Asia/Taipei、全年 +08:00 無 DST（→ CORE-041）；期間篩選的 <input type="date">
@@ -120,12 +121,6 @@ const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = {
   transfer: '轉帳',
 }
 
-// 行動卡片金額的正負號（同 Dashboard 最近交易的 +/- 寫法）；轉帳不分方向不加號
-const AMOUNT_SIGN: Record<TransactionType, string> = {
-  expense: '-',
-  income: '+',
-  transfer: '',
-}
 
 // 轉帳兩列（→ transfer_group_uid）各自只知道「自己的帳戶」+「對方的帳戶」，統一算成
 // 「來源 → 目標」方向的顯示字串，不管當前這一列是 OUT 還是 IN（→ TransactionResponse
@@ -383,7 +378,7 @@ function TransactionCard({
         : 'text-text-primary'
 
   const typeLabel = TRANSACTION_TYPE_LABEL[transaction.transaction_type]
-  const signedAmount = `${AMOUNT_SIGN[transaction.transaction_type]}${transaction.amount}`
+  const signedAmount = `${transactionAmountSign(transaction.transaction_type)}${transaction.amount}`
   const description = transaction.description || '（無明細）'
 
   // 編輯與刪除是兩顆並列的獨立按鈕（卡片本身不再是 role=button，避免按鈕裡包按鈕讓讀屏無法單獨操作刪除）。
