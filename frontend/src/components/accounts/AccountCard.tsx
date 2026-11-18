@@ -77,16 +77,16 @@ export function AccountCard({
   return (
     <CurvedCard>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <EntityIcon icon={account.icon} color={account.color} />
-          <div className="flex flex-col">
-            <span className="text-base font-medium text-text-primary">{account.name}</span>
-            <span className="text-sm text-text-secondary">
+          <div className="flex min-w-0 flex-col">
+            <span className="break-words text-base font-medium text-text-primary">{account.name}</span>
+            <span className="break-all text-sm text-text-secondary tabular-nums">
               {account.balance} {account.currency}
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={toggleEditing}

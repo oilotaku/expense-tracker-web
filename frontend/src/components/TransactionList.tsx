@@ -383,20 +383,23 @@ function TransactionCard({
   return (
     <CurvedCard padding="sm" interactive onClick={() => onEdit(transaction)}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <EntityIcon icon={categoryIcon.icon} color={categoryIcon.color} size="sm" />
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-sm text-text-secondary">
+            <span className="truncate text-sm text-text-secondary">
               {formatDate(transaction.transaction_date)}・{categoryName}
             </span>
-            <span className="text-sm text-text-secondary">
+            {/* 長備註最多兩行，完整內容點卡片進編輯看 */}
+            <span className="line-clamp-2 break-words text-sm text-text-secondary">
               {transaction.description || '（無明細）'}・{accountName}
             </span>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className={`text-lg font-semibold ${amountColor}`}>
-            {transaction.amount} {currency}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {/* 數字不斷行、幣別另起一行小字：窄螢幕把空間留給左欄的日期・分類與備註 */}
+          <span className={`flex flex-col items-end font-semibold ${amountColor}`}>
+            <span className="whitespace-nowrap text-base tabular-nums sm:text-lg">{transaction.amount}</span>
+            <span className="text-sm font-medium">{currency}</span>
           </span>
           <button
             type="button"

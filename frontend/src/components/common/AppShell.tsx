@@ -175,7 +175,7 @@ export function AppShell({ children, onAddClick = noop, onLogout = noop }: AppSh
         settingsItem={SETTINGS_ITEM}
         onLogout={onLogout}
       />
-      <main className="min-h-dvh flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
+      <main className="min-h-dvh min-w-0 flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       <BottomNav
         items={BOTTOM_NAV_ITEMS}
         moreItems={BOTTOM_NAV_MORE_ITEMS}

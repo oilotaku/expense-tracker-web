@@ -36,9 +36,16 @@ describe('StatTile', () => {
     render(<StatTile label="結餘" value="17000.00" signed hero />)
 
     const value = screen.getByText('+NT$17,000')
-    expect(value).toHaveClass('text-3xl')
-    expect(value).toHaveClass('lg:text-3xl')
-    expect(value).not.toHaveClass('lg:text-4xl')
+    // 字級改為依卡片寬度自動縮放（clamp），上限即原本的 text-3xl（1.875rem），且沒有 desktop 放大
+    expect(value).toHaveClass('text-[length:clamp(0.75rem,calc(100cqi/(var(--chars)*0.62)),1.875rem)]')
+    expect(value.className).not.toMatch(/lg:text-\[length:[^\]]*2\.25rem\)\]|lg:text-4xl/)
+  })
+
+  it('S-RWD-02 數值帶字數變數給 container query 縮字：窄卡片放長金額時字變小而不是被裁掉', () => {
+    render(<StatTile label="收入" value="12345678.90" tone="income" />)
+    const value = screen.getByText('NT$12,345,679')
+    expect(value.style.getPropertyValue('--chars')).toBe(String('NT$12,345,679'.length))
+    expect(value.closest('.\\@container')).not.toBeNull()
   })
 
   it('數值一律禁止斷行，避免瀏覽器把負號單獨斷成一行（結餘卡負值 + hero 大字級最容易踩到）', () => {

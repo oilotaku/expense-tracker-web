@@ -78,7 +78,7 @@ export function toPeriodRange(selection: PeriodSelection): PeriodRange {
 }
 
 const CONTROL_CLASS =
-  'min-h-11 rounded-md border border-border bg-surface px-3 text-sm text-text-primary md:min-h-9 md:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
+  'min-h-11 rounded-md border border-border bg-surface px-3 text-base text-text-primary md:min-h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
 
 export interface PeriodSelectorProps {
   value: PeriodSelection

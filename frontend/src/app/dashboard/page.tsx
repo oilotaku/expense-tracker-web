@@ -405,11 +405,11 @@ function DashboardContent(): ReactNode {
           </div>
 
           <CurvedCard className="flex flex-col gap-4">
-            <div className="flex items-baseline justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold text-text-primary md:text-2xl">最近交易</h2>
               <Link
                 href="/transactions"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 md:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                className="inline-flex min-h-11 items-center text-sm font-medium text-primary-600 hover:text-primary-700 md:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
               >
                 查看全部 →
               </Link>

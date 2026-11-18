@@ -159,7 +159,7 @@ function LoginView(): ReactNode {
                 改用 PIN 快速登入
               </button>
             )}
-            <Link href="/register" className="text-center text-sm text-primary-600 underline">
+            <Link href="/register" className="inline-flex min-h-11 items-center justify-center text-center text-sm text-primary-600 underline">
               還沒有帳號？註冊
             </Link>
           </>

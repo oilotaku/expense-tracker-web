@@ -208,3 +208,16 @@
 - **修正**: `CategoryOption` 補 `color`/`icon`；`EntityIcon` 新增 `sm`（32px）；表格分類欄與行動卡片左側顯示圖示，規則同 iOS：分類圖示、轉帳固定 `bank`、找不到分類退回 `other`（後兩者用 `--color-chart-other`）。自訂圖示沿用 `EntityIcon` 處理。
 - **rule**: NONE
 - **後續**: 已解除。
+
+## §21 — RWD 稽核：平板/橫向手機總覽整頁水平溢出、長金額被裁、帳戶卡按鈕出界、交易卡長備註撐高、iOS 輸入框放大、連結點擊高度不足（使用者請求「記帳網站 RWD」，Playwright 多寬度稽核發現）
+
+（§20 已由未合併的 `fix/react-doctor` 分支使用，本條跳號避免合併撞號。）
+
+- **time**: 2026-11-18T11:30:00+08:00
+- **commit**: pending（分支 `fix/rwd`）
+- **files**: `frontend/src/components/common/AppShell.tsx`、`frontend/src/components/dashboard/{StatTile,PeriodSelector,NetWorthCard}.tsx`、`frontend/src/app/dashboard/page.tsx`、`frontend/src/components/accounts/AccountCard.tsx`、`frontend/src/components/TransactionList.tsx`、`frontend/src/app/{assets,login,register}/page.tsx`、`frontend/src/components/transactions/TransactionFormDialog.tsx`、`frontend/e2e/rwd-layout.spec.ts`（新增）
+- **問題**: 以大金額/長名稱/長備註資料在 320~1920 共 9 種寬度掃全部頁面：(1) 總覽在 768 平板直向、844x390 橫向手機、1024 平板橫向、1280 桌機分別多出 230~531px 水平捲動；(2) 320/390 手機與 768 平板的收入/支出卡 `NT$12,345,679` 這類八位數金額被裁掉；(3) 1024 帳戶頁長數字餘額把編輯/刪除鈕擠出卡片；(4) 手機交易卡長備註不截斷，一筆可拉到整個螢幕高，大金額與幣別被擠到斷字；(5) 總覽期間選擇器 14px，iPhone 點下去會自動放大；(6)「查看全部」「設定定期還款」「註冊/登入」「更多欄位」連結只有 20px 高。
+- **根因**: (1) `AppShell` 的 `<main>` 是 `flex-1` 卻沒 `min-w-0`，flex 子項最小寬度預設為內容寬，recharts / 不斷行金額把它撐開；(2) `StatTile` 固定 `text-2xl`/`text-3xl` + `whitespace-nowrap`（§17/§18），半寬卡片放不下八位數；(3) `AccountCard` 文字欄沒 `min-w-0 flex-1`、按鈕欄沒 `shrink-0`；(4) `TransactionCard` 文字欄沒限行數，金額欄 `{amount} {currency}` 同一行；(5) `PeriodSelector` 的 `CONTROL_CLASS` 行動端 `text-sm`；(6) 純文字連結沒有撐高。
+- **修正**: (1) `main` 加 `min-w-0`；(2) `StatTile` 卡片設 `@container`，數值帶 `--chars`（字數），字級 `clamp(0.75rem, 100cqi/(字數×0.62), 原上限)`，保留 nowrap；(3) 文字欄 `min-w-0 flex-1`、名稱 `break-words`、餘額 `break-all`、按鈕欄 `shrink-0`；(4) 第一行 `truncate`、備註 `line-clamp-2`，金額數字 `whitespace-nowrap`（手機 `text-base`、`sm:text-lg`）、幣別另起一行 `text-sm`；(5) 一律 `text-base`；(6) `inline-flex min-h-11 items-center`，有滑鼠時（`can-hover:`）才縮回。新增 e2e `rwd-layout.spec.ts`（S-RWD-01~06，23 個 case），改前對線上跑 15 紅、改後對預覽映像 23 綠；`StatTile.test.tsx` 的字級斷言改成新寫法下的同一需求。
+- **rule**: FE-058（連結點擊高度）、FE-064（金額卡改 container query）；其餘 NONE
+- **後續**: 已解除。未處理：320 寬下十位數（數十億）金額仍會碰到 12px 字級下限而略超出；交易卡/帳戶卡/總覽帳戶列的金額仍是後端原字串（`50000.00`、無千分位），與總覽金額卡的 `NT$50,000` 格式不一致，屬顯示格式議題另議。e2e 會在正式 DB 建 `e2e-rwd-*@example.com` 帳號（註冊限流每 IP 每小時 5 次，spec 已把登入狀態快取到 `E2E_STATE_DIR` 或 tmp 30 分鐘）。
