@@ -320,3 +320,14 @@
 - **修正**: 1. spec 開頭註明禁止對正式站執行，`test.skip` 除非設 `E2E_ALLOW_SEED=1`（無網路實測 23 個全部略過、不會註冊）；2. CI e2e workflow（全新 compose stack）設 `E2E_ALLOW_SEED: '1'`；3. 使用者同意後清除 6 個測試帳號：先備份 `_db-backups/expense-tracker-web-db-1/pre-e2e-rwd-cleanup-20261118.dump`，同一交易依外鍵順序實體刪除（交易 57、分類 35、標籤 60 等），真實帳號未動。
 - **rule**: DB-012（實體刪除，依使用者要求，同 10-29 清測試帳號先例）
 - **後續**: 其他 e2e spec 仍會對預設目標註冊帳號，未加同樣防護；本機要跑 e2e 應另起獨立測試 stack。
+
+## §31 — DB engine 未隱藏 SQL 參數，非預期 DB 錯誤會把 email 印進 log（harness-scan `scan-261118152403` R-PII-001）
+
+- **time**: 2026-11-18T15:45:00+08:00
+- **commit**: pending（分支 `chore/rwd-review-fixes`）
+- **files**: `backend/app/core/db.py`、`backend/tests/test_db_engine.py`（新增）
+- **問題**: 登入查 email 時若 DB 斷線、逾時等非預期錯誤，`exceptions.py:57` 的 500 handler 以 `logger.exception` 記錄，SQLAlchemy 例外字串含 `[parameters: ('someone@x.com',)]`，可能連帶 `password_hash`。
+- **根因**: `create_async_engine` 預設 `hide_parameters=False`；R-PII-001 只比對 log 呼叫裡的欄位名稱，抓不到經例外字串間接帶出的參數，前次掃描因此沒發現。
+- **修正**: `create_async_engine(..., hide_parameters=True)`；新增 `tests/test_db_engine.py` 斷言 `engine.sync_engine.hide_parameters is True`（先紅後綠）。
+- **rule**: DB-029、BE-053
+- **後續**: BE-053 要求的全域 log 遮罩 filter（`app/core/logging.py`）仍未做，見 scan 報告第 4 章；reflect 候選：DB-029 或 BE-053 補「DB engine 必須 `hide_parameters=True`」。
