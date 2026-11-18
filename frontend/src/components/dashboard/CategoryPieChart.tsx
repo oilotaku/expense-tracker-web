@@ -59,9 +59,29 @@ export function foldCategorySlices(data: readonly CategorySlice[]): FoldedCatego
   ]
 }
 
+export type CategoryLegendLayout = 'inline' | 'side'
+
 export interface CategoryLegendProps {
   slices: readonly FoldedCategorySlice[]
   formatValue: (amount: number) => string
+  /**
+   * `inline`：圖下方置中換行（長條圖）。`side`：容器夠寬（`@md`）時改成圖右側的直式清單，
+   * 一行一類、金額與占比靠右，窄容器時同 inline（圓餅圖）。
+   */
+  layout?: CategoryLegendLayout
+}
+
+const LEGEND_LIST_CLASS: Record<CategoryLegendLayout, string> = {
+  inline: 'flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-3 text-sm text-text-secondary',
+  side: 'flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-3 text-sm text-text-secondary @md:min-w-0 @md:max-w-xs @md:flex-1 @md:flex-col @md:flex-nowrap @md:gap-y-2 @md:pt-0 @md:text-base',
+}
+const LEGEND_NAME_CLASS: Record<CategoryLegendLayout, string> = {
+  inline: '',
+  side: '@md:min-w-0 @md:flex-1 @md:truncate',
+}
+const LEGEND_SHARE_CLASS: Record<CategoryLegendLayout, string> = {
+  inline: 'tabular-nums',
+  side: 'tabular-nums @md:w-12 @md:text-right',
 }
 
 /**
@@ -76,15 +96,11 @@ function formatShare(amount: number, total: number): string {
   return percent > 0 && percent < 0.5 ? '<1%' : `${Math.round(percent)}%`
 }
 
-export function CategoryLegend({ slices, formatValue }: CategoryLegendProps): ReactNode {
+export function CategoryLegend({ slices, formatValue, layout = 'inline' }: CategoryLegendProps): ReactNode {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
   // 圖形本身對讀屏隱藏（見 ChartFrame），這份清單是讀屏唯一的資料來源，所以百分比也放進來
   return (
-    <ul
-      className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-3 text-sm text-text-secondary"
-      role="list"
-      aria-label="支出分類明細"
-    >
+    <ul className={LEGEND_LIST_CLASS[layout]} role="list" aria-label="支出分類明細">
       {slices.map((slice) => (
         <li key={slice.id} className="flex items-center gap-1.5">
           <span
@@ -92,9 +108,9 @@ export function CategoryLegend({ slices, formatValue }: CategoryLegendProps): Re
             className="h-2.5 w-2.5 shrink-0 rounded-full"
             style={{ backgroundColor: slice.color }}
           />
-          <span>{slice.label}</span>
+          <span className={LEGEND_NAME_CLASS[layout]}>{slice.label}</span>
           <span className="tabular-nums text-text-primary">{formatValue(slice.amount)}</span>
-          <span className="tabular-nums">{formatShare(slice.amount, total)}</span>
+          <span className={LEGEND_SHARE_CLASS[layout]}>{formatShare(slice.amount, total)}</span>
         </li>
       ))}
     </ul>
@@ -171,30 +187,35 @@ export function CategoryPieChart({ data, formatValue = defaultFormatValue }: Cat
     return <p className="py-8 text-center text-sm text-text-muted">尚無分類資料</p>
   }
 
+  // 卡片夠寬（`@md`，內寬 ≥ 448px）時圖在左、圖例在右，避免圓餅只佔中間、左右大片留白
   return (
-    <div>
-      <ChartFrame>
-        <ResponsiveContainer width="100%" height={240}>
-          <PieChart accessibilityLayer={false}>
-            <Pie
-              data={[...slices]}
-              dataKey="amount"
-              nameKey="label"
-              innerRadius="55%"
-              outerRadius="80%"
-              paddingAngle={2}
-              label={renderPercentLabel}
-              labelLine={false}
-            >
-              {slices.map((slice) => (
-                <Cell key={slice.id} fill={slice.color} stroke="var(--color-surface)" />
-              ))}
-            </Pie>
-            <Tooltip formatter={(value) => formatValue(Number(value))} />
-          </PieChart>
-        </ResponsiveContainer>
-      </ChartFrame>
-      <CategoryLegend slices={slices} formatValue={formatValue} />
+    <div className="@container">
+      <div className="flex flex-col @md:flex-row @md:items-center @md:justify-center @md:gap-6">
+        <div className="w-full @md:w-64 @md:shrink-0">
+          <ChartFrame>
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart accessibilityLayer={false}>
+                <Pie
+                  data={[...slices]}
+                  dataKey="amount"
+                  nameKey="label"
+                  innerRadius="58%"
+                  outerRadius="90%"
+                  paddingAngle={2}
+                  label={renderPercentLabel}
+                  labelLine={false}
+                >
+                  {slices.map((slice) => (
+                    <Cell key={slice.id} fill={slice.color} stroke="var(--color-surface)" />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => formatValue(Number(value))} />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartFrame>
+        </div>
+        <CategoryLegend slices={slices} formatValue={formatValue} layout="side" />
+      </div>
     </div>
   )
 }

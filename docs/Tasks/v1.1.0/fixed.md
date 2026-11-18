@@ -342,3 +342,14 @@
 - **修正**: 1. 折疊桶改名「其餘 N 類」；2. 新增 `ChartFrame`（`aria-hidden`）包住圓餅 / 長條圖，並設 `accessibilityLayer={false}`；3. 圖例清單加 `aria-label="支出分類明細"`，每項加占比（<0.5% 顯示 `<1%`）；4. design-spec §2.3 同步。單元測試 S-CHART-01（桶名不重複）、S-CHART-02（圖例含占比與名稱）、S-CHART-03（圓餅 / 長條圖 aria-hidden、無 role=application）先紅後綠；`ChartTypeSwitcher.test.tsx` 斷言改成新桶名。
 - **rule**: NONE（WCAG 1.1.1 / 4.1.2）
 - **後續**: 折線圖（`TrendLineChart`）同樣是無名稱的 application，但圖例只有系列名、沒有數值，不能直接隱藏，需另做文字摘要（例：每期收入 / 支出表格），未處理。
+
+## §33 — 總覽「支出分類」圓餅圖左右與下方留白過多（使用者回報「留空太多」）
+
+- **time**: 2026-11-18T16:40:00+08:00
+- **commit**: pending（分支 `fix/pie-whitespace`）
+- **files**: `frontend/src/components/dashboard/CategoryPieChart.tsx`、`frontend/src/components/dashboard/ChartTypeSwitcher.tsx`、`frontend/e2e/dashboard-chart-layout.spec.ts`（新增）、`docs/Tasks/v1.1.0/design-spec.md`
+- **問題**: 桌機 1280 寬時圖表區 595×240，圓餅外半徑只有 92px 置中，左右各空約 200px，圖例另起一段放下方；卡片又被同列「帳戶總覽」撐到 510px 高，底部空 74px。
+- **根因**: 圓餅圖只有「圖在上、圖例在下」一種排法，沒有依可用寬度調整（task-016 依手機版設計後直接沿用到桌機，FE-064 卡片應依父容器寬度切版）；`ChartTypeSwitcher` 沒有吃滿卡片剩餘高度，grid 同列等高撐出的空間全部落在卡片底部。
+- **修正**: 1. 圓餅圖外層 `@container`，`@md`（內寬 ≥ 448px）時改左右排：圓餅固定 256px 寬、圖例直式清單（`CategoryLegend layout="side"`，金額與占比靠右、最寬 320px、`@md:text-base`），兩者置中；2. 圓餅半徑放大（inner 58%、outer 90%）；3. `ChartTypeSwitcher` 外層與圖表容器 `flex-1`、圖表上下置中。長條圖不變。以攔截 API 的假資料截圖比對 390 / 768 / 1280 / 1920：1280 卡片底部空白 74px → 24px（= 內距），無水平溢出。新增 e2e S-CHART-04（桌機圖例在圓餅右側、底部只剩內距）、S-CHART-05（手機上下排），全程假資料、不寫 DB；改前對正式站 S-CHART-04 兩案紅、改後對預覽映像 3 案綠。
+- **rule**: FE-064
+- **後續**: 已解除。768 平板卡片內寬 432px 仍是上下排（未達 448px）。
