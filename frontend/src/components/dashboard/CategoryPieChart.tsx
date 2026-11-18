@@ -15,7 +15,6 @@ export interface FoldedCategorySlice extends CategorySlice {
 
 const MAX_VISIBLE_CATEGORIES = 8
 const OTHER_SLICE_ID = '__other__'
-const OTHER_LABEL = '其他'
 
 /**
  * design-spec §2.3/§2.3.1 圖表色票：CSS variable（非寫死 hex）讓圓餅/長條圖隨 Light/Dark 主題
@@ -35,7 +34,7 @@ export const CATEGORY_CHART_COLOR_VARS: readonly string[] = [
 export const CATEGORY_CHART_OTHER_COLOR = 'var(--color-chart-other)'
 
 /**
- * design-spec §2.3 Pie/Bar 折疊規則：超過 8 類時取金額前 8 大分類 + 其餘全部併為「其他」（固定
+ * design-spec §2.3 Pie/Bar 折疊規則：超過 8 類時取金額前 8 大分類 + 其餘全部併為「其餘 N 類」（固定
  * 中性灰，非生成色），最多 9 段。≤8 類則全部個別上色，不折疊。`CategoryBarChart` 共用本函式，
  * 確保兩種圖表類型的折疊結果與配色順序一致。
  */
@@ -55,7 +54,8 @@ export function foldCategorySlices(data: readonly CategorySlice[]): FoldedCatego
 
   return [
     ...visible.map((slice, index) => ({ ...slice, color: CATEGORY_CHART_COLOR_VARS[index] as string })),
-    { id: OTHER_SLICE_ID, label: OTHER_LABEL, amount: otherAmount, color: CATEGORY_CHART_OTHER_COLOR },
+    // 不叫「其他」：系統預設分類就有「其他」（design-spec A17），同名會出現兩個「其他」
+    { id: OTHER_SLICE_ID, label: `其餘 ${rest.length} 類`, amount: otherAmount, color: CATEGORY_CHART_OTHER_COLOR },
   ]
 }
 
@@ -70,11 +70,20 @@ export interface CategoryLegendProps {
  * `--color-text-*` token，不用圖表色當文字色。Pie/Bar 共用同一份，folded slices 已含配色，
  * 不用重繞 recharts 內建 Legend payload。
  */
+function formatShare(amount: number, total: number): string {
+  if (total <= 0) return '0%'
+  const percent = (amount / total) * 100
+  return percent > 0 && percent < 0.5 ? '<1%' : `${Math.round(percent)}%`
+}
+
 export function CategoryLegend({ slices, formatValue }: CategoryLegendProps): ReactNode {
+  const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
+  // 圖形本身對讀屏隱藏（見 ChartFrame），這份清單是讀屏唯一的資料來源，所以百分比也放進來
   return (
     <ul
       className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-3 text-sm text-text-secondary"
       role="list"
+      aria-label="支出分類明細"
     >
       {slices.map((slice) => (
         <li key={slice.id} className="flex items-center gap-1.5">
@@ -85,10 +94,24 @@ export function CategoryLegend({ slices, formatValue }: CategoryLegendProps): Re
           />
           <span>{slice.label}</span>
           <span className="tabular-nums text-text-primary">{formatValue(slice.amount)}</span>
+          <span className="tabular-nums">{formatShare(slice.amount, total)}</span>
         </li>
       ))}
     </ul>
   )
+}
+
+export interface ChartFrameProps {
+  children: ReactNode
+}
+
+/**
+ * 圖形區塊對讀屏隱藏：recharts 3 預設的 accessibilityLayer 會把 svg 標成沒有名稱的
+ * `role="application"` 並可 Tab 進入，讀屏只聽到一個空的應用程式；資料改由 `CategoryLegend`
+ * 提供（名稱、金額、百分比），圖表元件同時設 `accessibilityLayer={false}`。
+ */
+export function ChartFrame({ children }: ChartFrameProps): ReactNode {
+  return <div aria-hidden="true">{children}</div>
 }
 
 export interface CategoryPieChartProps {
@@ -138,7 +161,7 @@ export function renderPercentLabel(props: PieLabelRenderProps): ReactNode {
 }
 
 /**
- * 分類圓餅圖（design-spec §2.3/§4）：超過 8 類自動折疊為「其他」（`foldCategorySlices`），
+ * 分類圓餅圖（design-spec §2.3/§4）：超過 8 類自動折疊為「其餘 N 類」（`foldCategorySlices`），
  * 色票走 CSS variable，切片內文字（百分比標籤）與下方圖例一律用 `--color-text-*` token。
  */
 export function CategoryPieChart({ data, formatValue = defaultFormatValue }: CategoryPieChartProps): ReactNode {
@@ -150,25 +173,27 @@ export function CategoryPieChart({ data, formatValue = defaultFormatValue }: Cat
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={240}>
-        <PieChart>
-          <Pie
-            data={[...slices]}
-            dataKey="amount"
-            nameKey="label"
-            innerRadius="55%"
-            outerRadius="80%"
-            paddingAngle={2}
-            label={renderPercentLabel}
-            labelLine={false}
-          >
-            {slices.map((slice) => (
-              <Cell key={slice.id} fill={slice.color} stroke="var(--color-surface)" />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value) => formatValue(Number(value))} />
-        </PieChart>
-      </ResponsiveContainer>
+      <ChartFrame>
+        <ResponsiveContainer width="100%" height={240}>
+          <PieChart accessibilityLayer={false}>
+            <Pie
+              data={[...slices]}
+              dataKey="amount"
+              nameKey="label"
+              innerRadius="55%"
+              outerRadius="80%"
+              paddingAngle={2}
+              label={renderPercentLabel}
+              labelLine={false}
+            >
+              {slices.map((slice) => (
+                <Cell key={slice.id} fill={slice.color} stroke="var(--color-surface)" />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => formatValue(Number(value))} />
+          </PieChart>
+        </ResponsiveContainer>
+      </ChartFrame>
       <CategoryLegend slices={slices} formatValue={formatValue} />
     </div>
   )
