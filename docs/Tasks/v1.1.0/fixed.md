@@ -331,3 +331,14 @@
 - **修正**: `create_async_engine(..., hide_parameters=True)`；新增 `tests/test_db_engine.py` 斷言 `engine.sync_engine.hide_parameters is True`（先紅後綠）。
 - **rule**: DB-029、BE-053
 - **後續**: BE-053 要求的全域 log 遮罩 filter（`app/core/logging.py`）仍未做，見 scan 報告第 4 章；reflect 候選：DB-029 或 BE-053 補「DB engine 必須 `hide_parameters=True`」。
+
+## §32 — 支出分類圖例出現兩個「其他」，圓餅 / 長條圖對讀屏是沒有名稱的 application（使用者貼上總覽「支出分類」HTML 回報）
+
+- **time**: 2026-11-18T16:00:00+08:00
+- **commit**: pending（分支 `fix/pie-other-label`）
+- **files**: `frontend/src/components/dashboard/CategoryPieChart.tsx`、`frontend/src/components/dashboard/CategoryBarChart.tsx`、`frontend/src/components/dashboard/CategoryPieChart.test.tsx`、`frontend/src/components/dashboard/ChartTypeSwitcher.test.tsx`、`docs/Tasks/v1.1.0/design-spec.md`
+- **問題**: (1) 超過 8 類時圖例同時有使用者的「其他」分類（NT$4,500）與折疊桶「其他」（NT$250），分不出來；(2) svg 是 `role="application"`、`<title>`/`<desc>` 空白、可 Tab 進入，讀屏只聽到一個沒有名稱的應用程式；(3) 占比只畫在圖上，讀屏聽不到。
+- **根因**: (1) 2026-11-01 折疊規則把桶名寫死成「其他」，沒對照 A17 系統預設分類也叫「其他」；(2) recharts 3 預設開啟 `accessibilityLayer`，圖表沒有提供名稱也沒有關掉；(3) 圖例設計時只當「對比度不足的 relief channel」（design-spec §2.3），沒有把它當讀屏的資料來源。
+- **修正**: 1. 折疊桶改名「其餘 N 類」；2. 新增 `ChartFrame`（`aria-hidden`）包住圓餅 / 長條圖，並設 `accessibilityLayer={false}`；3. 圖例清單加 `aria-label="支出分類明細"`，每項加占比（<0.5% 顯示 `<1%`）；4. design-spec §2.3 同步。單元測試 S-CHART-01（桶名不重複）、S-CHART-02（圖例含占比與名稱）、S-CHART-03（圓餅 / 長條圖 aria-hidden、無 role=application）先紅後綠；`ChartTypeSwitcher.test.tsx` 斷言改成新桶名。
+- **rule**: NONE（WCAG 1.1.1 / 4.1.2）
+- **後續**: 折線圖（`TrendLineChart`）同樣是無名稱的 application，但圖例只有系列名、沒有數值，不能直接隱藏，需另做文字摘要（例：每期收入 / 支出表格），未處理。

@@ -98,7 +98,7 @@ describe('ChartTypeSwitcher', () => {
     expect(screen.getByTestId('chart-bar')).toBeInTheDocument()
   })
 
-  it('超過 8 類分類自動併為「其他」（透過 renderChart 整合 CategoryPieChart，→ §2.3 折疊規則）', () => {
+  it('超過 8 類分類自動併為「其餘 N 類」（透過 renderChart 整合 CategoryPieChart，→ §2.3 折疊規則）', () => {
     const manyCategories: CategorySlice[] = Array.from({ length: 10 }, (_, index) => ({
       id: `cat-${index}`,
       label: `分類${index}`,
@@ -106,7 +106,7 @@ describe('ChartTypeSwitcher', () => {
     }))
     render(<ChartTypeSwitcher renderChart={() => <CategoryPieChart data={manyCategories} />} />)
     expect(screen.getAllByRole('listitem')).toHaveLength(9)
-    expect(screen.getByText('其他')).toBeInTheDocument()
+    expect(screen.getByText('其餘 2 類')).toBeInTheDocument()
   })
 
   it('prefers-reduced-motion 開啟時，圖表切換容器跳過動畫（initial=skip, duration=0）', () => {
