@@ -44,8 +44,9 @@ export function ChartTypeSwitcher({ value, onChange, renderChart }: ChartTypeSwi
     onChange?.(next)
   }
 
+  // 外層 flex-1：卡片被同列較高的卡片撐高時，多出的高度給圖表區並上下置中，不全部堆在卡片底部
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <div
         role="tablist"
         aria-label="圖表類型"
@@ -76,6 +77,7 @@ export function ChartTypeSwitcher({ value, onChange, renderChart }: ChartTypeSwi
           animate={{ opacity: 1, scale: 1 }}
           exit={reducedMotion ? undefined : { opacity: 0, scale: 0.98 }}
           transition={reducedMotion ? INSTANT_TRANSITION : SWITCH_TRANSITION}
+          className="flex flex-1 flex-col justify-center"
         >
           {renderChart(current)}
         </motion.div>
